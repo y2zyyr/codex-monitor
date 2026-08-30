@@ -1,25 +1,29 @@
-# Tibo Codex Monitor
+# Tibo Codex Monitor — Codex Usage Limit Reset & Rate-Limit Tracker
 
-[Live site](https://tibo.modelyard.dev/) · [中文界面](https://tibo.modelyard.dev/zh/) · [Latest events](https://tibo.modelyard.dev/latest/) · [Reset history](https://tibo.modelyard.dev/reset-history/) · [Rate-limit updates](https://tibo.modelyard.dev/rate-limit-updates/)
+**[Open the live monitor →](https://tibo.modelyard.dev/)** · [中文介绍](README.zh-CN.md) · [中文界面](https://tibo.modelyard.dev/zh/) · [Latest events](https://tibo.modelyard.dev/latest/) · [Reset history](https://tibo.modelyard.dev/reset-history/) · [Rate-limit updates](https://tibo.modelyard.dev/rate-limit-updates/)
 
-An unofficial community monitor for public updates from [Tibo (@thsottiaux)](https://x.com/thsottiaux) about Codex usage resets, rate limits, and subscription changes.
+Tibo Codex Monitor is an unofficial community dashboard for public updates from [Tibo (@thsottiaux)](https://x.com/thsottiaux) about Codex usage limit resets, rate limits, ChatGPT Work usage, and subscription changes.
 
-The live site labels each event with its source and verification status so visitors can quickly distinguish direct X API evidence from indexed reports. It is independent and not affiliated with OpenAI.
+It turns those updates into a timestamped reset history and rate-limit tracker. Each event includes its source and verification status, helping visitors distinguish direct X API evidence from indexed reports. It is independent and not affiliated with OpenAI.
+
+## Why this project
+
+Codex reset announcements are often short public posts and can be easy to miss. This project collects the relevant signals in one bilingual monitor without accessing user accounts or changing usage limits.
 
 ## What it includes
 
-- Bilingual English and Simplified Chinese pages
+- Bilingual English and Simplified Chinese Codex monitor pages
 - English dates in New York time and Chinese dates in Beijing time
-- Event timeline with reset, time-change, and policy-update categories
+- Codex usage reset history with reset, time-change, and policy-update categories
 - Source and verification labels for each event
 - Automatic source monitoring with Cloudflare Workers and D1
-- Public pages for the [monitor](https://tibo.modelyard.dev/), [API](https://tibo.modelyard.dev/api/events), and [health status](https://tibo.modelyard.dev/api/health)
+- Public pages for the [Codex monitor](https://tibo.modelyard.dev/), [events API](https://tibo.modelyard.dev/api/events), and [health status](https://tibo.modelyard.dev/api/health)
 
 ## Screenshots
 
-![English homepage](audit-evidence/production-en.png)
+![Codex usage limit reset monitor in English](audit-evidence/production-en.png)
 
-![Chinese homepage](audit-evidence/production-zh.png)
+![Codex usage limit reset monitor in Simplified Chinese](audit-evidence/production-zh.png)
 
 ## Run locally
 
