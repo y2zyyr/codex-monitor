@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="12" fill="#0a0a0f"/>
+  <g transform="translate(20, 20)" fill="none" stroke="#4a8eff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 2L2 21l28 19 28-19L30 2z"/>
+    <path d="M2 43l28 19 28-19"/>
+    <path d="M2 28l28 19 28-19"/>
+  </g>
+  <text x="50" y="80" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#9090a0" text-anchor="middle">CODEX</text>
+</svg>

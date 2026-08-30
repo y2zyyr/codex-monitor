@@ -1,0 +1,44 @@
+{
+  "name": "codex-monitor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./static",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "codex-monitor-db",
+      "database_id": "replace-with-your-d1-database-id"
+    }
+  ],
+  "vars": {
+    "LLM_BASE_URL": "https://api.openai.com/v1",
+    "LLM_MODEL": "gpt-4o-mini",
+    "LLM_MAX_TOKENS": "2000",
+    "MONITORED_ACCOUNTS": "thsottiaux",
+    "SITE_URL": "https://example.com",
+    "SITE_NAME": "Tibo Codex Monitor",
+    "GOOGLE_ANALYTICS_ID": "",
+    "GOOGLE_SITE_VERIFICATION": "",
+    "TELEGRAM_ADMIN_USER_ID": "",
+    "X_API_AUTOMATIC_SYNC": "true",
+    "X_API_USER_ID": "",
+    "X_API_POLL_INTERVAL_MINUTES": "15",
+    "X_API_STALE_AFTER_MINUTES": "30",
+    "X_API_MAX_SYNC_ATTEMPTS_PER_DAY": "96",
+    "X_API_MAX_PAGES_PER_SYNC": "3",
+    "X_API_MAX_RESULTS_PER_PAGE": "100",
+    "WEB_SEARCH_ENABLED": "false",
+    "MAX_WEB_SEARCH_REQUESTS_PER_DAY": "6",
+    "NORMAL_SEARCH_INTERVAL_HOURS": "4",
+    "BRAVE_SEARCH_PRICE_PER_1000_USD": "5",
+    "BRAVE_MONTHLY_CREDIT_USD": "5"
+  }
+}

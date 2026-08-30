@@ -1,0 +1,19 @@
+# X API credentials (Twitter API v2)
+X_API_BEARER_TOKEN=your_x_api_bearer_token_here
+# Optional but recommended: set the stable numeric user id to avoid a
+# username-resolution request on the first Worker run.
+# X_API_USER_ID=your_x_user_id_here
+
+# LLM API credentials (OpenAI-compatible)
+LLM_API_KEY=your_llm_api_key_here
+
+# Optional: Override base URL for compatible providers
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+
+# Telegram operator webhook
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_WEBHOOK_SECRET=replace_with_a_long_random_secret
+TELEGRAM_ADMIN_USER_ID=your_telegram_admin_user_id_here
+# Optional: restrict the bot to one Telegram chat as well.
+# TELEGRAM_ADMIN_CHAT_ID=

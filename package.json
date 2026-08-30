@@ -1,0 +1,30 @@
+{
+  "name": "codex-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler build",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:watch": "vitest",
+    "db:migrate": "wrangler d1 migrations apply codex-monitor-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply codex-monitor-db --local",
+    "db:create": "wrangler d1 create codex-monitor-db",
+    "seed": "node scripts/seed.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "node --check static/app.js && tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260820.1",
+    "@playwright/test": "^1.62.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.0.0"
+  }
+}

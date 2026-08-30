@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /__cron/
+Disallow: /*.json
+
+Sitemap: https://tibo.modelyard.dev/sitemap.xml
