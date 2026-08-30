@@ -15,7 +15,7 @@
     "db:create": "wrangler d1 create codex-monitor-db",
     "seed": "node scripts/seed.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "node --check static/app.js && tsc --noEmit"
+    "lint": "node --check static/app.js && node --check static/analytics.js && tsc --noEmit"
   },
   "dependencies": {
     "hono": "^4.6.0"

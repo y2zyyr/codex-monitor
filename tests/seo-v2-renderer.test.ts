@@ -151,7 +151,10 @@ describe('SEO V2 renderer and index policy', () => {
     const unconfigured = renderHomepage(data, 'en');
 
     expect(configured).toContain('https://www.googletagmanager.com/gtag/js?id=G-FV8BHY6E9V');
-    expect(configured).toContain("gtag('config', 'G-FV8BHY6E9V')");
+    expect(configured).toContain("gtag('config', 'G-FV8BHY6E9V',");
+    expect(configured).toContain('"page_language":"en"');
+    expect(configured).toContain('"page_type":"home"');
+    expect(configured).toContain('<script src="/analytics.js" defer></script>');
     expect(configured).toContain('<meta name="google-site-verification" content="EfJyXGVCtaAcX-j12S5h2Sauw7rcVTZHOegr4QUCuzc">');
     expect(unconfigured).not.toContain('googletagmanager.com/gtag/js');
     expect(unconfigured).not.toContain('google-site-verification');

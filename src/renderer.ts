@@ -151,10 +151,32 @@ function safeJsonForScript(value: unknown): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-function renderGoogleAnalytics(analyticsId: string | undefined): string {
+function analyticsPageType(meta: SeoMeta): string {
+  if (meta.eventId !== null) return 'event_detail';
+  if (meta.isHomepage) return 'home';
+  if (!meta.canonical) return 'not_found';
+
+  const path = new URL(meta.canonical).pathname;
+  if (path.includes('/latest/')) return 'latest';
+  if (path.includes('/reset-history/')) return 'reset_history';
+  if (path.includes('/rate-limit-updates/')) return 'rate_limit_updates';
+  if (path.includes('/faq/')) return 'faq';
+  if (path.includes('/methodology/')) return 'methodology';
+  return 'page';
+}
+
+function renderGoogleAnalytics(
+  analyticsId: string | undefined,
+  context: { pageLanguage: 'en' | 'zh'; pageType: string },
+): string {
   const id = analyticsId?.trim() || '';
   if (!/^G-[A-Z0-9]+$/i.test(id)) return '';
   const escapedId = escapeHtml(id);
+  const pageContext = safeJsonForScript({
+    page_language: context.pageLanguage,
+    page_type: context.pageType,
+    content_group: context.pageType,
+  });
   return [
     '  <!-- Google tag (gtag.js) — Tibo Codex Monitor property only -->',
     '  <script async src="https://www.googletagmanager.com/gtag/js?id=' + escapedId + '"></script>',
@@ -162,7 +184,7 @@ function renderGoogleAnalytics(analyticsId: string | undefined): string {
     '    window.dataLayer = window.dataLayer || [];',
     '    function gtag(){dataLayer.push(arguments);}',
     "    gtag('js', new Date());",
-    "    gtag('config', '" + escapedId + "');",
+    "    gtag('config', '" + escapedId + "', " + pageContext + ");",
     '  </script>',
   ].join('\n');
 }
@@ -227,6 +249,13 @@ function isIndexedEvent(event: MonitorEvent): boolean {
 
 function sourceQualityClass(event: MonitorEvent): 'indexed' | 'direct' | 'official' {
   return isOfficialEvent(event) ? 'official' : isIndexedEvent(event) ? 'indexed' : 'direct';
+}
+
+function analyticsEvidenceSource(event: MonitorEvent): 'official' | 'web_indexed' | 'x_direct' | 'unknown' {
+  if (isOfficialEvent(event)) return 'official';
+  if (isIndexedEvent(event)) return 'web_indexed';
+  if (event.source_quality === 'DIRECT' || event.evidence_quality === 'DIRECT') return 'x_direct';
+  return 'unknown';
 }
 
 /** SSR and hydration use the same fixed timezone selected by the page language. */
@@ -477,7 +506,10 @@ function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
     '  <title>' + escapeHtml(meta.title) + '</title>',
     '  <meta name="description" content="' + escapeHtml(meta.description) + '">',
     renderGoogleSiteVerification(integrations?.googleSiteVerification),
-    renderGoogleAnalytics(integrations?.googleAnalyticsId),
+    renderGoogleAnalytics(integrations?.googleAnalyticsId, {
+      pageLanguage: meta.lang,
+      pageType: analyticsPageType(meta),
+    }),
     canonical ? '  <link rel="canonical" href="' + escapeHtml(canonical) + '">' : '',
     '  <meta name="robots" content="' + escapeHtml(meta.robots || 'index, follow') + '">',
     '',
@@ -515,6 +547,7 @@ function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
     '  <link rel="alternate icon" href="/favicon.ico">',
     '  <link rel="alternate" type="application/rss+xml" title="' + escapeHtml(isZh ? 'Tibo 监控 RSS' : 'Tibo Monitor RSS') + '" href="' + SITE_URL + '/feed.xml">',
     '  <script src="/local-time.js" defer></script>',
+    '  <script src="/analytics.js" defer></script>',
     '</head>',
   ].join('\n');
 }
@@ -661,7 +694,7 @@ function renderLandingEventItem(event: MonitorEvent, lang: 'en' | 'zh', headingL
   const summary = eventSummary(event, lang);
   const heading = 'h' + headingLevel;
   const source = event.source_url
-    ? '<a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer">' + (lang === 'zh' ? '查看来源' : 'View source') + '</a>'
+    ? '<a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + (lang === 'zh' ? '查看来源' : 'View source') + '</a>'
     : '<span>' + (lang === 'zh' ? '来源未知' : 'Source unknown') + '</span>';
   return [
     '<li class="landing-event-item">',
@@ -830,7 +863,7 @@ export function renderLandingPage(data: LandingPageData, lang: 'en' | 'zh', inte
           '    <h3>' + (isZh ? '最近记录的事件' : 'Latest recorded event') + '</h3>',
           '    <p class="featured-event-title"><a href="' + getEventUrl(latestEvent.id!, lang) + '">' + escapeHtml(eventTitle(latestEvent, lang)) + '</a></p>',
           renderEventTrustFacts(latestEvent, lang),
-          latestEvent.source_url ? '    <p class="primary-source"><strong>' + (isZh ? '主要来源：' : 'Primary source: ') + '</strong><a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(latestEvent.source_url) + '</a></p>' : '',
+          latestEvent.source_url ? '    <p class="primary-source"><strong>' + (isZh ? '主要来源：' : 'Primary source: ') + '</strong><a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(latestEvent.id)) + '" data-analytics-event-category="' + escapeHtml(latestEvent.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(latestEvent)) + '">' + escapeHtml(latestEvent.source_url) + '</a></p>' : '',
           '  </div>',
         ].filter(Boolean).join('\n')
         : '  <p class="empty-state">' + (isZh ? '当前状态：未知，尚无事件记录。' : 'Current status: Unknown; no event is recorded.') + '</p>',
@@ -1036,7 +1069,7 @@ export function renderHomepage(data: HomepageData, lang: 'en' | 'zh', integratio
       '    </div>',
     '    <div class="event-highlight-meta">',
       '      <span>' + localTimeElement(latestEvent.published_at, formatDateForLanguage(latestEvent.published_at, lang), 'event-time') + '</span>',
-      latestEvent.source_url ? '      <a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer">' + (isZh ? '查看来源' : 'View source') + ' →</a>' : '',
+      latestEvent.source_url ? '      <a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(latestEvent.id)) + '" data-analytics-event-category="' + escapeHtml(latestEvent.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(latestEvent)) + '">' + (isZh ? '查看来源' : 'View source') + ' →</a>' : '',
     '    </div>',
       '  </div>',
       '  <a href="' + escapeHtml(eventUrl) + '" class="event-highlight-title-link">',
@@ -1370,7 +1403,7 @@ export function renderEventPage(data: EventPageData, lang: 'en' | 'zh', integrat
     '<section class="modal-section">',
     '  <h2 class="modal-label">' + (isZh ? '查看原帖' : 'View Original') + '</h2>',
     event.source_url
-      ? '  <a class="modal-link" href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer">' + (isZh ? '打开来源 →' : 'Open source →') + '</a>'
+      ? '  <a class="modal-link" href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + (isZh ? '打开来源 →' : 'Open source →') + '</a>'
       : '  <div class="modal-value">' + escapeHtml(unavailable) + '</div>',
     '</section>',
   ].join('\n'));
@@ -1441,7 +1474,7 @@ export function renderEventPage(data: EventPageData, lang: 'en' | 'zh', integrat
     '',
     '    <main>',
     '      <!-- Event Detail -->',
-    '      <article class="event-detail-page">',
+    '      <article class="event-detail-page" data-analytics-page-type="event_detail" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '" data-analytics-verification-status="' + escapeHtml(getVerificationStatusCode(event)) + '">',
     '      <header class="event-detail-header">',
     '        <h1 class="event-detail-title">' + escapeHtml(title) + '</h1>',
     '        <div class="event-detail-meta">',

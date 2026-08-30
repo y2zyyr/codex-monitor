@@ -692,7 +692,7 @@ function renderEventHighlight(event) {
     '    </div>',
     '    <div class="event-highlight-meta">',
     '      <span>' + formatDate(event.published_at, lang) + '</span>',
-    event.source_url ? '      <a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">' + t('viewOriginal') + ' →</a>' : '',
+    event.source_url ? '      <a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(getAnalyticsEvidenceSource(event)) + '" onclick="event.stopPropagation()">' + t('viewOriginal') + ' →</a>' : '',
     '    </div>',
     '  </div>',
     '  <a href="' + getEventPath(event.id) + '" class="event-highlight-title-link">',
@@ -875,6 +875,13 @@ function getSourceQualityLabel(event) {
   if (isIndexedEvent(event)) return t('indexedSource');
   if (event && (event.source_quality === 'DIRECT' || event.evidence_quality === 'DIRECT')) return t('directSource');
   return t('unknownSourceType');
+}
+
+function getAnalyticsEvidenceSource(event) {
+  if (isOfficialEvent(event)) return 'official';
+  if (isIndexedEvent(event)) return 'web_indexed';
+  if (event && (event.source_quality === 'DIRECT' || event.evidence_quality === 'DIRECT')) return 'x_direct';
+  return 'unknown';
 }
 
 function getVerificationLabel(event) {
@@ -1527,7 +1534,18 @@ function escapeHtml(str) {
 // --- Modal Controls ---
 function openModal(id) {
   const event = events.find(function(e) { return e.id === id; });
-  if (event) renderModal(event);
+  if (event) {
+    if (window.tiboAnalytics && typeof window.tiboAnalytics.track === 'function') {
+      window.tiboAnalytics.track('view_event_detail', {
+        event_id: String(event.id),
+        event_category: event.category,
+        evidence_source: getAnalyticsEvidenceSource(event),
+        verification_status: event.verification_status || 'PENDING',
+        view_method: 'modal',
+      });
+    }
+    renderModal(event);
+  }
 }
 function closeModal() {
   const modal = document.getElementById('eventModal');
