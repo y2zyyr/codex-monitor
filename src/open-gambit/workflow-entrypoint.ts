@@ -16,7 +16,11 @@ export class OpenGambitAnalysisWorkflow extends WorkflowEntrypoint<Env, GambitWo
       timeout: '5 minutes',
     }, async () => runQualifiedGambitWorkflow(event.payload, {
       repository: new GambitRepository(this.env.DB),
-      providers: createConfiguredProviders(this.env),
+      // Cloudflare Workflow step fetches reject AbortSignal instances. The
+      // enclosing five-minute step timeout plus the bounded per-run budgets
+      // still cap this path; ordinary Worker/local paths keep signal-based
+      // request cancellation in the provider adapter.
+      providers: createConfiguredProviders(this.env, (input, init) => globalThis.fetch(input, init ? { ...init, signal: undefined } : undefined)),
       roles: getGambitModelRoleConfig(this.env),
       budget: gambitBudgetFromEnv(this.env),
     }));
