@@ -61,6 +61,7 @@ app.use('*', async (c, next) => {
 
 function siteIntegrations(env: Env): SiteIntegrations {
   return {
+    siteUrl: env.SITE_URL,
     googleAnalyticsId: env.GOOGLE_ANALYTICS_ID,
     googleSiteVerification: env.GOOGLE_SITE_VERIFICATION,
   };
@@ -296,7 +297,7 @@ app.get('/sitemap.xml', async (c) => {
       { page: 'methodology', indexable: true, lastmod },
     ];
 
-    const xml = renderSitemap(events, lastmod, landingPages, gambitArticles.map(article => ({ slug: article.slug, modifiedAt: article.modifiedAt })) as GambitSitemapArticle[]);
+    const xml = renderSitemap(events, lastmod, landingPages, gambitArticles.map(article => ({ slug: article.slug, modifiedAt: article.modifiedAt })) as GambitSitemapArticle[], c.env.SITE_URL);
     return c.newResponse(xml, 200, {
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': 'public, max-age=3600, s-maxage=3600',
@@ -318,14 +319,14 @@ app.get('/feed.xml', async (c) => {
       repo.getLatestDirectResetEvent(),
     ]);
     const visibleManualReset = effectiveManualResetReport(manualReset, latestDirectReset);
-    return c.newResponse(renderRssFeed(eventsResult.data, 'zh', toPublicManualResetReport(visibleManualReset)), 200, {
+    return c.newResponse(renderRssFeed(eventsResult.data, 'zh', toPublicManualResetReport(visibleManualReset), c.env.SITE_URL), 200, {
       'Content-Type': 'application/rss+xml; charset=utf-8',
       'Cache-Control': 'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[RSS] Error:', msg);
-    return c.newResponse(renderRssFeed([], 'zh', null), 500, {
+    return c.newResponse(renderRssFeed([], 'zh', null, c.env.SITE_URL), 500, {
       'Content-Type': 'application/rss+xml; charset=utf-8',
       'Cache-Control': 'no-store',
     });
@@ -349,7 +350,7 @@ app.get('/robots.txt', async (c) => {
     'Disallow: /__cron/',
     'Disallow: /*.json',
     '',
-    'Sitemap: https://tibo.modelyard.dev/sitemap.xml',
+    'Sitemap: ' + (c.env.SITE_URL?.replace(/\/+$/u, '') || 'https://tibo.modelyard.dev') + '/sitemap.xml',
     '',
   ].join('\n');
 
@@ -399,7 +400,7 @@ for (const locale of SITE_LOCALES.filter(candidate => candidate !== 'en')) {
 // The moderation console is intentionally a single noindex route. Its API
 // still requires the server-side COMMUNITY_ADMIN_TOKEN on every request.
 app.get('/admin/community', (c) => c.redirect('/admin/community/', 301));
-app.get('/admin/community/', (c) => new Response(renderAdminCommunityPage(), {
+app.get('/admin/community/', (c) => new Response(renderAdminCommunityPage(siteIntegrations(c.env)), {
   status: 200,
   headers: {
     'Content-Type': 'text/html; charset=utf-8',

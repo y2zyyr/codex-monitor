@@ -399,6 +399,8 @@ const CATEGORY_LABELS: Record<SiteLocale, Record<string, string>> = {
 };
 
 export interface SiteIntegrations {
+  /** Canonical first-party origin for this deployment, including staging. */
+  siteUrl?: string;
   /** Public GA4 web-stream Measurement ID for this site only. */
   googleAnalyticsId?: string;
   /** Public Search Console HTML-tag verification token for this site only. */
@@ -615,13 +617,13 @@ function getCommunityPath(lang: SiteLocale): string {
   return COMMUNITY_PATHS[lang];
 }
 
-function getCommunityUrl(lang: SiteLocale): string {
-  return SITE_URL + getCommunityPath(lang);
+function getCommunityUrl(lang: SiteLocale, siteUrl = SITE_URL): string {
+  return siteUrl + getCommunityPath(lang);
 }
 
-function getLandingUrl(page: LandingPageKey, lang: SiteLocale): string {
+function getLandingUrl(page: LandingPageKey, lang: SiteLocale, siteUrl = SITE_URL): string {
   const path = LANDING_PAGE_PATHS[page];
-  return SITE_URL + localePath(path, lang);
+  return siteUrl + localePath(path, lang);
 }
 
 function getLandingPath(page: LandingPageKey, lang: SiteLocale): string {
@@ -1389,6 +1391,25 @@ function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
   ].join('\n');
 }
 
+function normalizeSiteUrl(value?: string): string {
+  const candidate = value?.trim();
+  if (!candidate) return SITE_URL;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) return SITE_URL;
+    if (parsed.pathname !== '/' && parsed.pathname !== '') return SITE_URL;
+    return parsed.origin;
+  } catch {
+    return SITE_URL;
+  }
+}
+
+function renderSiteDocument(meta: SeoMeta, body: string, integrations?: SiteIntegrations): string {
+  const html = renderHead(meta, integrations) + '\n' + body;
+  const siteUrl = normalizeSiteUrl(integrations?.siteUrl);
+  return siteUrl === SITE_URL ? html : html.replaceAll(SITE_URL, siteUrl);
+}
+
 const PRIMARY_NAV_LABELS: Record<SiteLocale, {
   latest: string;
   'reset-history': string;
@@ -2009,7 +2030,7 @@ export function renderLandingPage(data: LandingPageData, lang: SiteLocale, integ
     '</body>',
     '</html>',
   ].join('\n');
-  return renderHead(meta, integrations) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
 function renderHomepageEventLink(
@@ -2194,10 +2215,10 @@ export function renderCommunityPage(data: CommunityPageData, lang: SiteLocale, i
     '</body>',
     '</html>',
   ].filter(line => line !== '').join('\n');
-  return renderHead(meta, integrations) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
-export function renderAdminCommunityPage(): string {
+export function renderAdminCommunityPage(integrations?: SiteIntegrations): string {
   const meta: SeoMeta = {
     lang: 'en',
     title: 'ModelYard Community moderation | Tibo Monitor',
@@ -2279,7 +2300,7 @@ export function renderAdminCommunityPage(): string {
     '</body>',
     '</html>',
   ].join('\n');
-  return renderHead(meta) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
 // ── Homepage SSR ──
@@ -2630,7 +2651,7 @@ export function renderHomepage(data: HomepageData, lang: SiteLocale, integration
     '</html>',
   ].join('\n');
 
-  return renderHead(meta, integrations) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
 // ── Event Page SSR ──
@@ -2879,7 +2900,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
     '</html>',
   ].join('\n');
 
-  return renderHead(meta, integrations) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
 // ── 404 Page ──
@@ -2917,7 +2938,7 @@ export function render404(lang: SiteLocale, integrations?: SiteIntegrations): st
     '</html>',
   ].join('\n');
 
-  return renderHead(meta, integrations) + '\n' + body;
+  return renderSiteDocument(meta, body, integrations);
 }
 
 // ── RSS Feed ──
@@ -2935,7 +2956,9 @@ export function renderRssFeed(
   events: MonitorEvent[],
   lang: SiteLocale = 'zh',
   manualReset: ManualResetReportPublic | null = null,
+  siteUrl?: string,
 ): string {
+  const baseUrl = normalizeSiteUrl(siteUrl);
   const visibleEvents = events.filter(event => event.id !== undefined).slice(0, 20);
   const channelTitle = lang === 'zh' ? 'Tibo Codex 监控' : 'Tibo Codex Monitor';
   const channelDescription = lang === 'zh'
@@ -2944,7 +2967,7 @@ export function renderRssFeed(
   const eventItems = visibleEvents.map(event => {
     const title = eventTitle(event, lang);
     const summary = eventSummary(event, lang);
-    const eventUrl = SITE_URL + getEventUrl(event.id!, lang);
+    const eventUrl = baseUrl + getEventUrl(event.id!, lang);
     const description = [
       summary,
       event.source_text ? (lang === 'zh' ? '原始来源：' : 'Source text: ') + event.source_text : '',
@@ -2975,7 +2998,7 @@ export function renderRssFeed(
       lang === 'zh' ? '系统自动报告。' : 'Automated report.',
       manualReset.note ? (lang === 'zh' ? '备注：' : 'Note: ') + manualReset.note : '',
     ].filter(Boolean).join('\n\n');
-    const homepageUrl = SITE_URL + (lang === 'zh' ? '/zh/' : '/');
+    const homepageUrl = baseUrl + (lang === 'zh' ? '/zh/' : '/');
     feedItems.push({
       date: manualReset.resetAt,
       markup: [
@@ -3003,11 +3026,11 @@ export function renderRssFeed(
     '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
     '  <channel>',
     '    <title>' + escapeXml(channelTitle) + '</title>',
-    '    <link>' + SITE_URL + (lang === 'zh' ? '/zh/' : '/') + '</link>',
+    '    <link>' + baseUrl + (lang === 'zh' ? '/zh/' : '/') + '</link>',
     '    <description>' + escapeXml(channelDescription) + '</description>',
     '    <language>' + (lang === 'zh' ? 'zh-CN' : 'en') + '</language>',
     '    <lastBuildDate>' + rssDate(latestDate || new Date().toISOString()) + '</lastBuildDate>',
-    '    <atom:link href="' + SITE_URL + '/feed.xml" rel="self" type="application/rss+xml" />',
+    '    <atom:link href="' + baseUrl + '/feed.xml" rel="self" type="application/rss+xml" />',
     items.join('\n'),
     '  </channel>',
     '</rss>',
@@ -3027,14 +3050,15 @@ export interface GambitSitemapArticle {
   modifiedAt?: string | null;
 }
 
-export function renderSitemap(events: MonitorEvent[], lastmod: string | null, landingPages: SitemapLandingPage[] = [], gambitArticles: GambitSitemapArticle[] = []): string {
+export function renderSitemap(events: MonitorEvent[], lastmod: string | null, landingPages: SitemapLandingPage[] = [], gambitArticles: GambitSitemapArticle[] = [], siteUrl?: string): string {
+  const baseUrl = normalizeSiteUrl(siteUrl);
   const urls: string[] = [];
   const normalizedLastmod = normalizeSitemapDate(lastmod);
 
   // Homepage
   urls.push([
     '  <url>',
-    '    <loc>' + SITE_URL + '/</loc>',
+    '    <loc>' + baseUrl + '/</loc>',
     sitemapLastmodMarkup(normalizedLastmod),
     '    <changefreq>hourly</changefreq>',
     '    <priority>1.0</priority>',
@@ -3044,7 +3068,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
   for (const locale of SITE_LOCALES.filter(candidate => candidate !== 'en')) {
     urls.push([
       '  <url>',
-      '    <loc>' + SITE_URL + localePath('/', locale) + '</loc>',
+      '    <loc>' + baseUrl + localePath('/', locale) + '</loc>',
       sitemapLastmodMarkup(normalizedLastmod),
       '    <changefreq>hourly</changefreq>',
       '    <priority>0.9</priority>',
@@ -3056,7 +3080,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
   // posts intentionally do not receive indexable URLs.
   urls.push(SITE_LOCALES.map(locale => [
     '  <url>',
-    '    <loc>' + getCommunityUrl(locale) + '</loc>',
+    '    <loc>' + getCommunityUrl(locale, baseUrl) + '</loc>',
     sitemapLastmodMarkup(normalizedLastmod),
     '    <changefreq>daily</changefreq>',
     '    <priority>0.8</priority>',
@@ -3072,7 +3096,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
     const landingLastmod = normalizeSitemapDate(landing.lastmod || lastmod);
     urls.push(SITE_LOCALES.map(locale => [
       '  <url>',
-      '    <loc>' + getLandingUrl(landing.page, locale) + '</loc>',
+      '    <loc>' + getLandingUrl(landing.page, locale, baseUrl) + '</loc>',
       sitemapLastmodMarkup(landingLastmod),
       '    <changefreq>daily</changefreq>',
       '    <priority>0.8</priority>',
@@ -3085,7 +3109,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
   // caller. English and Chinese are the V1 locales for this domain.
   urls.push(['en', 'zh'].map(locale => [
     '  <url>',
-    '    <loc>' + SITE_URL + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + '</loc>',
+    '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + '</loc>',
     sitemapLastmodMarkup(normalizedLastmod),
     '    <changefreq>daily</changefreq>',
     '    <priority>0.7</priority>',
@@ -3095,7 +3119,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
     const articleLastmod = normalizeSitemapDate(article.modifiedAt || lastmod);
     urls.push(['en', 'zh'].map(locale => [
       '  <url>',
-      '    <loc>' + SITE_URL + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + encodeURIComponent(article.slug) + '/</loc>',
+      '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + encodeURIComponent(article.slug) + '/</loc>',
       sitemapLastmodMarkup(articleLastmod),
       '    <changefreq>daily</changefreq>',
       '    <priority>0.7</priority>',
@@ -3109,7 +3133,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
     const eventUpdated = normalizeSitemapDate(event.updated_at || event.created_at || lastmod);
     urls.push([
       '  <url>',
-      '    <loc>' + SITE_URL + '/events/' + event.id + '</loc>',
+      '    <loc>' + baseUrl + '/events/' + event.id + '</loc>',
       sitemapLastmodMarkup(eventUpdated),
       '    <changefreq>daily</changefreq>',
       '    <priority>0.8</priority>',
@@ -3119,7 +3143,7 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
     for (const locale of SITE_LOCALES.filter(candidate => candidate !== 'en' && eventHasLocalizedContent(event, candidate))) {
       urls.push([
         '  <url>',
-        '    <loc>' + SITE_URL + getEventUrl(event.id, locale) + '</loc>',
+        '    <loc>' + baseUrl + getEventUrl(event.id, locale) + '</loc>',
         sitemapLastmodMarkup(eventUpdated),
         '    <changefreq>daily</changefreq>',
         '    <priority>0.7</priority>',
