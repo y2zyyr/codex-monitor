@@ -111,22 +111,46 @@ openGambitApi.get('/_staging/provider-diagnostic', async (c) => {
       }),
     });
     const body = await response.text();
+    let eventCount = 0;
+    let deltaContentChars = 0;
+    let messageContentChars = 0;
+    let usage = false;
+    const finishReasons = new Set<string>();
     let content = '';
     for (const line of body.split(/\r?\n/u)) {
       if (!line.startsWith('data:')) continue;
       const payload = line.slice(5).trim();
       if (!payload || payload === '[DONE]') continue;
       try {
-        const chunk = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: unknown } }> };
-        const delta = chunk.choices?.[0]?.delta?.content;
-        if (typeof delta === 'string') content += delta;
+        const chunk = JSON.parse(payload) as {
+          choices?: Array<{
+            finish_reason?: unknown;
+            delta?: { content?: unknown };
+            message?: { content?: unknown };
+          }>;
+          usage?: unknown;
+        };
+        eventCount += 1;
+        if (chunk.usage) usage = true;
+        const choice = chunk.choices?.[0];
+        if (choice?.finish_reason) finishReasons.add(String(choice.finish_reason));
+        const delta = choice?.delta?.content;
+        if (typeof delta === 'string') {
+          deltaContentChars += delta.length;
+          content += delta;
+        }
+        const message = choice?.message?.content;
+        if (typeof message === 'string') {
+          messageContentChars += message.length;
+          content += message;
+        }
       } catch {
         // Keep the diagnostic body-free and fail closed on malformed events.
       }
     }
     let structuredJson = false;
     try { structuredJson = Boolean(JSON.parse(content)?.ok === true); } catch { /* checked below */ }
-    return c.json({ status: response.status, elapsedMs: Date.now() - started, responseBytes: body.length, structuredJson });
+    return c.json({ status: response.status, elapsedMs: Date.now() - started, responseBytes: body.length, responseContentType: response.headers.get('content-type') || '', eventCount, deltaContentChars, messageContentChars, contentChars: content.length, finishReasons: [...finishReasons], usage, structuredJson });
   } catch (error) {
     return c.json({
       status: 502,
