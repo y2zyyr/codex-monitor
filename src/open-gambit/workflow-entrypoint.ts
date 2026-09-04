@@ -13,7 +13,7 @@ export class OpenGambitAnalysisWorkflow extends WorkflowEntrypoint<Env, GambitWo
   async run(event: Readonly<WorkflowEvent<GambitWorkflowInput>>, step: WorkflowStep): Promise<GambitWorkflowResult> {
     if (this.env.BUILD_ENVIRONMENT === 'staging' && event.payload.candidateId === 0) {
       return step.do('staging-provider-diagnostic', { retries: { limit: 0, delay: '1 second' }, timeout: '1 minute' }, async () => {
-        const provider = createConfiguredProviders(this.env).triage;
+        const provider = createConfiguredProviders(this.env, (input, init) => globalThis.fetch(input, init ? { ...init, signal: undefined } : undefined)).triage;
         const baseResult = { workflowId: event.payload.workflowId, status: 'NEEDS_HUMAN_REVIEW' as const, candidateId: 0 };
         if (!provider) return { ...baseResult, reason: 'DIAGNOSTIC_PROVIDER_UNAVAILABLE' };
         try {
