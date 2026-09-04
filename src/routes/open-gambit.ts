@@ -73,6 +73,62 @@ openGambitApi.get('/articles/:slug', async (c) => {
   }
 });
 
+// Temporary staging-only connectivity probe used during the isolated
+// preflight. It reports no provider response body, model output, or secret.
+openGambitApi.get('/_staging/provider-diagnostic', async (c) => {
+  if (c.env.BUILD_ENVIRONMENT !== 'staging') return c.json({ error: 'NOT_FOUND' }, 404);
+  const denied = await requireAdmin(c);
+  if (denied) return denied;
+  const baseUrl = c.env.GAMBIT_LLM_BASE_URL?.trim().replace(/\/+$/u, '') || '';
+  const apiKey = c.env.GAMBIT_LLM_API_KEY?.trim() || '';
+  if (!baseUrl || !apiKey) return c.json({ error: 'CONFIGURATION_UNAVAILABLE' }, 503);
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
+  const started = Date.now();
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(20_000),
+      headers,
+      body: JSON.stringify({
+        model: c.env.GAMBIT_LLM_MODEL,
+        messages: [
+          { role: 'system', content: 'Return only valid JSON.' },
+          { role: 'user', content: 'Return exactly {"ok":true,"fixture":"TEST_ONLY"}.' },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 40,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    });
+    const body = await response.text();
+    let content = '';
+    for (const line of body.split(/\r?\n/u)) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const chunk = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: unknown } }> };
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string') content += delta;
+      } catch {
+        // Keep the diagnostic body-free and fail closed on malformed events.
+      }
+    }
+    let structuredJson = false;
+    try { structuredJson = Boolean(JSON.parse(content)?.ok === true); } catch { /* checked below */ }
+    return c.json({ status: response.status, elapsedMs: Date.now() - started, responseBytes: body.length, structuredJson });
+  } catch (error) {
+    return c.json({
+      status: 502,
+      elapsedMs: Date.now() - started,
+      errorName: error instanceof Error ? error.name : 'unknown',
+      errorConstructor: error && typeof error === 'object' && 'constructor' in error ? String(error.constructor?.name || 'unknown') : 'unknown',
+    }, 502);
+  }
+});
+
 openGambitApi.get('/review', async (c) => {
   const denied = await requireAdmin(c);
   if (denied) return denied;
