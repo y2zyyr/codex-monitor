@@ -96,13 +96,12 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
     const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
     let lastError = 'provider_error';
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
+      const signal = AbortSignal.timeout(request.timeoutMs);
       const started = Date.now();
       try {
         const response = await this.fetchImpl(endpoint, {
           method: 'POST',
-          signal: controller.signal,
+          signal,
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.options.apiKey}`,
@@ -157,10 +156,8 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
           latencyMs: Date.now() - started,
         };
       } catch (error) {
-        lastError = error instanceof DOMException && error.name === 'AbortError' ? 'timeout' : 'network_error';
+        lastError = isTimeoutError(error) ? 'timeout' : 'network_error';
         if (attempt + 1 < maxAttempts) await boundedBackoff(attempt);
-      } finally {
-        clearTimeout(timeout);
       }
     }
     throw new GambitProviderError(lastError);
@@ -202,6 +199,12 @@ function completionFromPayload(payload: CompletionPayload): ParsedCompletion {
     inputTokens: finiteOptional(payload.usage?.prompt_tokens),
     outputTokens: finiteOptional(payload.usage?.completion_tokens),
   };
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('name' in error)) return false;
+  const name = String(error.name);
+  return name === 'AbortError' || name === 'TimeoutError';
 }
 
 export class GambitProviderError extends Error {
