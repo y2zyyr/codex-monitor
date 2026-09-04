@@ -35,6 +35,7 @@ test.describe('Tibo Monitor production frontend', () => {
     });
 
     await page.goto('/');
+    await page.waitForFunction(() => typeof (window as typeof window & { openModal?: unknown }).openModal === 'function');
     await expect(page.locator('.timeline-item').first()).toBeVisible();
 
     const renderedCategories = await page.locator('.timeline-item').evaluateAll((items) =>
@@ -49,10 +50,9 @@ test.describe('Tibo Monitor production frontend', () => {
     await expect(page.locator('#lastResetValue')).not.toHaveText('—');
     await expect(page.locator('#latestChangeValue')).not.toHaveText('—');
     const expectedApiPaths = [
-      '/api/health',
       '/api/status',
       '/api/events?limit=50',
-      '/api/events?category=RESET_COMPLETED',
+      '/api/events?category=RESET_COMPLETED&limit=100',
       '/api/reset/current',
     ];
     await expect.poll(() => expectedApiPaths.every((path) =>
@@ -79,7 +79,8 @@ test.describe('Tibo Monitor production frontend', () => {
     await page.getByRole('button', { name: '×' }).click();
     await expect(page.locator('#eventModal')).toBeHidden();
 
-    await page.getByRole('button', { name: 'Switch language to Simplified Chinese' }).click();
+    await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: '中文' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page.locator('#timelineTitle')).toHaveText('时间线');
     await expect(page.locator('#cardLabelLastReset')).toHaveText('最近重置');
@@ -116,13 +117,16 @@ test.describe('Tibo Monitor production frontend', () => {
     await expect(page.locator('#eventModal')).toBeHidden();
 
     await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: 'English' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await page.getByRole('button', { name: 'Switch language to Simplified Chinese' }).click();
+    await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: '中文' }).click();
     await expect(page).toHaveURL(/\/zh\/$/);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page.locator('#timelineTitle')).toHaveText('时间线');
     await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: 'English' }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 
@@ -138,8 +142,10 @@ test.describe('Tibo Monitor production frontend', () => {
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await page.goto('/');
+    await page.waitForFunction(() => typeof (window as typeof window & { openModal?: unknown }).openModal === 'function');
     await expect(page.locator('.timeline-item').first()).toBeVisible();
-    await page.getByRole('button', { name: 'Switch language to Simplified Chinese' }).click();
+    await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: '中文' }).click();
     await page.getByRole('button', { name: '政策' }).click();
     await expect(page.locator('.timeline-item').first()).toBeVisible();
     await page.locator('.timeline-item').first().locator('.timeline-dot').click();

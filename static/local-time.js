@@ -1,43 +1,51 @@
 // Format SSR timestamps in the site's fixed interface timezone.
-// English uses New York time; Chinese uses Beijing time. This keeps the same
-// page consistent across devices instead of changing with browser location.
 (function () {
+  'use strict';
+
+  var timeApi = window.TiboLocaleTime;
   var SQLITE_UTC_TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
 
   function parseStoredUtc(value) {
+    if (timeApi && typeof timeApi.parseStoredUtc === 'function') return timeApi.parseStoredUtc(value);
     var stringValue = String(value);
     var sqliteMatch = stringValue.match(SQLITE_UTC_TIMESTAMP_PATTERN);
     return new Date(sqliteMatch ? sqliteMatch[1] + 'T' + sqliteMatch[2] + 'Z' : stringValue);
   }
 
+  function localeKey() {
+    return timeApi ? timeApi.localeKey(document.documentElement.lang) : 'en';
+  }
+
   function timezone() {
-    return document.documentElement.lang === 'zh-CN'
-      ? 'Asia/Shanghai'
-      : 'America/New_York';
+    return timeApi ? timeApi.timeZone(document.documentElement.lang) : '';
   }
 
   function render(element) {
+    if (!timeApi) return;
     var iso = element.getAttribute('data-local-time');
     if (!iso) return;
     var date = parseStoredUtc(iso);
     if (Number.isNaN(date.getTime())) return;
 
-    var lang = document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en-US';
+    var key = localeKey();
+    var lang = timeApi.intlLocale(document.documentElement.lang);
     var format = element.getAttribute('data-local-format') === 'date' ? 'date' : 'datetime';
     var options = format === 'date'
-      ? { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: timezone() }
+      ? { month: key === 'zh' ? 'numeric' : 'short', day: 'numeric', timeZone: timezone() }
       : {
           year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
+          month: key === 'zh' ? 'numeric' : 'short',
+          day: 'numeric',
           hour: '2-digit',
           minute: '2-digit',
-          hour12: false,
+          hour12: key === 'en',
           timeZone: timezone(),
+          timeZoneName: 'short',
         };
+    if (format === 'date' && key === 'zh') options.year = 'numeric';
     var value = new Intl.DateTimeFormat(lang, options).format(date);
-    element.textContent = format === 'date' ? value : value + ' ' + timezone();
-    element.title = timezone();
+    element.textContent = value;
+    element.title = value;
   }
 
   function renderAll() {

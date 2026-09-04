@@ -1,5 +1,13 @@
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /__cron/
+Disallow: /*.json
+
 User-agent: *
 Allow: /
+Disallow: /admin/
 Disallow: /api/
 Disallow: /__cron/
 Disallow: /*.json

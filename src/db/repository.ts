@@ -1,9 +1,11 @@
 // ============================================================
 // Codex Usage Monitor - D1 Repository
 // ============================================================
+import { EVENT_CATEGORIES, EVENT_TRANSLATION_LOCALES } from '../types';
 import type {
   D1SourcePostRow,
   D1MonitorEventRow,
+  D1MonitorEventTranslationRow,
   D1MonitorRunRow,
   D1SettingRow,
   SourcePost,
@@ -21,6 +23,9 @@ import type {
   ManualResetReport,
   ManualResetReportStatus,
   DisplayTimeZone,
+  EventTranslationLocale,
+  EventTranslationStatus,
+  MonitorEventTranslation,
 } from '../types';
 import { isStaleApproximateReset } from '../utils/search-schedule';
 import {
@@ -31,14 +36,23 @@ import {
 } from '../utils/timezone';
 import { buildCompletedResetHintResult, isCompletedResetHint } from '../classifier/types';
 
-const HISTORY_CATEGORIES = [
-  'RESET_PLANNED',
-  'RESET_COMPLETED',
-  'RESET_TIME_CHANGED',
-  'POLICY_CHANGE',
-] as const;
+// History is a public-event aggregate. Keep IRRELEVANT out because that
+// classifier result is deliberately never inserted into monitor_events.
+const HISTORY_CATEGORIES = EVENT_CATEGORIES.filter(
+  (category): category is Exclude<EventCategory, 'IRRELEVANT'> => category !== 'IRRELEVANT',
+);
 
 const EVENT_SEARCH_EXPRESSION = "LOWER(COALESCE(e.title_en, '') || ' ' || COALESCE(e.title_zh, '') || ' ' || COALESCE(e.summary_en, '') || ' ' || COALESCE(e.summary_zh, '') || ' ' || COALESCE(sp.text, ''))";
+const MISSING_EVENT_TRANSLATION_CLAUSE = `(
+  ${EVENT_TRANSLATION_LOCALES.map(language => `NOT EXISTS (
+    SELECT 1 FROM monitor_event_translations met
+    WHERE met.event_id = e.id
+      AND met.language = '${language}'
+      AND met.status = 'translated'
+      AND COALESCE(met.title, '') <> ''
+      AND COALESCE(met.summary, '') <> ''
+  )`).join('\n  OR ')}
+)`;
 
 function shiftDateOnly(date: string, deltaDays: number): string {
   const shifted = new Date(`${date}T00:00:00Z`);
@@ -117,6 +131,21 @@ function mapMonitorEvent(row: D1MonitorEventRow & { source_text?: string }): Mon
     verified_at: row.verified_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+function mapMonitorEventTranslation(row: D1MonitorEventTranslationRow): MonitorEventTranslation | null {
+  if (!EVENT_TRANSLATION_LOCALES.includes(row.language as EventTranslationLocale)) return null;
+  const status: EventTranslationStatus = row.status === 'translated' || row.status === 'failed' || row.status === 'pending'
+    ? row.status
+    : 'pending';
+  return {
+    language: row.language as EventTranslationLocale,
+    title: row.title,
+    summary: row.summary,
+    status,
+    provider: row.provider,
+    translated_at: row.translated_at,
   };
 }
 
@@ -553,6 +582,101 @@ export class Repository {
 
   // ==================== Monitor Events ====================
 
+  private async eventTranslationsForEvents(
+    eventIds: number[],
+  ): Promise<Map<number, Partial<Record<EventTranslationLocale, MonitorEventTranslation>>>> {
+    const grouped = new Map<number, Partial<Record<EventTranslationLocale, MonitorEventTranslation>>>();
+    if (eventIds.length === 0) return grouped;
+    const placeholders = eventIds.map(() => '?').join(',');
+    const { results } = await this.db.prepare(`
+      SELECT id, event_id, language, title, summary, status, provider, translated_at, last_error, created_at, updated_at
+      FROM monitor_event_translations
+      WHERE event_id IN (${placeholders})
+      ORDER BY event_id ASC, id ASC
+    `).bind(...eventIds).all<D1MonitorEventTranslationRow>();
+    for (const row of results) {
+      const translation = mapMonitorEventTranslation(row);
+      if (!translation) continue;
+      const translations = grouped.get(row.event_id) ?? {};
+      translations[translation.language] = translation;
+      grouped.set(row.event_id, translations);
+    }
+    return grouped;
+  }
+
+  private async attachEventTranslations(events: MonitorEvent[]): Promise<MonitorEvent[]> {
+    if (events.length === 0) return events;
+    const translations = await this.eventTranslationsForEvents(
+      events.filter(event => event.id !== undefined).map(event => event.id!),
+    );
+    return events.map(event => ({
+      ...event,
+      translations: event.id === undefined ? undefined : translations.get(event.id) ?? {},
+    }));
+  }
+
+  async upsertEventTranslation(input: {
+    eventId: number;
+    language: EventTranslationLocale;
+    title: string | null;
+    summary: string | null;
+    status: EventTranslationStatus;
+    provider: string | null;
+    translatedAt: string | null;
+    lastError: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }): Promise<void> {
+    await this.db.prepare(`
+      INSERT INTO monitor_event_translations (
+        event_id, language, title, summary, status, provider, translated_at, last_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(event_id, language) DO UPDATE SET
+        title = excluded.title,
+        summary = excluded.summary,
+        status = excluded.status,
+        provider = excluded.provider,
+        translated_at = excluded.translated_at,
+        last_error = excluded.last_error,
+        updated_at = excluded.updated_at
+    `).bind(
+      input.eventId,
+      input.language,
+      input.title,
+      input.summary,
+      input.status,
+      input.provider,
+      input.translatedAt,
+      input.lastError,
+      input.createdAt,
+      input.updatedAt,
+    ).run();
+  }
+
+  async getEventsNeedingTranslations(limit = 1): Promise<MonitorEvent[]> {
+    const boundedLimit = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 10)) : 1;
+    const { results } = await this.db.prepare(`
+      SELECT e.*, sp.source_account, sp.text as source_text, sp.fetched_at as observed_at, sp.source_quality, sp.first_discovered_via, sp.last_verified_via
+      FROM monitor_events e
+      JOIN source_posts sp ON e.source_post_id = sp.id
+      WHERE e.verification_status <> 'REJECTED'
+        AND ${MISSING_EVENT_TRANSLATION_CLAUSE}
+      ORDER BY julianday(COALESCE(e.published_at, e.created_at)) ASC, e.id ASC
+      LIMIT ?
+    `).bind(boundedLimit).all<D1MonitorEventRow & { source_text: string }>();
+    return this.attachEventTranslations(results.map(mapMonitorEvent));
+  }
+
+  async countEventsNeedingTranslations(): Promise<number> {
+    const row = await this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM monitor_events e
+      WHERE e.verification_status <> 'REJECTED'
+        AND ${MISSING_EVENT_TRANSLATION_CLAUSE}
+    `).first<{ count: number }>();
+    return Number(row?.count) || 0;
+  }
+
   async insertEvent(event: Omit<MonitorEvent, 'id' | 'created_at' | 'updated_at'>): Promise<number | null> {
     const { meta } = await this.db
       .prepare(
@@ -594,7 +718,9 @@ export class Repository {
       `)
       .bind(id)
       .first<D1MonitorEventRow & { source_text: string }>();
-    return row ? mapMonitorEvent(row) : null;
+    if (!row) return null;
+    const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
+    return event ?? null;
   }
 
   async getEvents(options: EventQueryOptions = {}): Promise<PaginatedResponse<MonitorEvent>> {
@@ -679,18 +805,20 @@ export class Repository {
       .all<D1MonitorEventRow & { source_text: string }>();
 
     const hasMore = results.length > limit;
-    const items = results.slice(0, limit).map(mapMonitorEvent);
+    const items = await this.attachEventTranslations(results.slice(0, limit).map(mapMonitorEvent));
     const lastItem = items[items.length - 1];
     const lastSortValue = lastItem?.published_at ?? lastItem?.created_at ?? null;
     const nextCursor = hasMore && lastItem?.id && lastSortValue
       ? Repository.encodeEventCursor(lastSortValue, lastItem.id)
       : null;
 
+    const countFromClause = query
+      ? 'FROM monitor_events e JOIN source_posts sp ON e.source_post_id = sp.id'
+      : 'FROM monitor_events e';
     const countRow = await this.db
       .prepare(`
         SELECT COUNT(*) as count
-        FROM monitor_events e
-        JOIN source_posts sp ON e.source_post_id = sp.id
+        ${countFromClause}
         ${countWhereClause}
       `)
       .bind(...countBindParams)
@@ -786,7 +914,9 @@ export class Repository {
         LIMIT 1
       `)
       .first<D1MonitorEventRow & { source_text: string }>();
-    return row ? mapMonitorEvent(row) : null;
+    if (!row) return null;
+    const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
+    return event ?? null;
   }
 
   async getLatestResetEvent(): Promise<MonitorEvent | null> {
@@ -801,7 +931,9 @@ export class Repository {
         LIMIT 1
       `)
       .first<D1MonitorEventRow & { source_text: string }>();
-    return row ? mapMonitorEvent(row) : null;
+    if (!row) return null;
+    const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
+    return event ?? null;
   }
 
   /**
@@ -823,7 +955,9 @@ export class Repository {
         LIMIT 1
       `)
       .first<D1MonitorEventRow & { source_text: string }>();
-    return row ? mapMonitorEvent(row) : null;
+    if (!row) return null;
+    const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
+    return event ?? null;
   }
 
   async getLatestPolicyEvent(): Promise<MonitorEvent | null> {
@@ -838,7 +972,9 @@ export class Repository {
         LIMIT 1
       `)
       .first<D1MonitorEventRow & { source_text: string }>();
-    return row ? mapMonitorEvent(row) : null;
+    if (!row) return null;
+    const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
+    return event ?? null;
   }
 
   async getEventCount(): Promise<number> {
@@ -905,7 +1041,7 @@ export class Repository {
 
   async getLatestSuccessfulRun(): Promise<MonitorRun | null> {
     const row = await this.db
-      .prepare("SELECT * FROM monitor_runs WHERE status = 'completed' AND error_message IS NULL ORDER BY julianday(finished_at) DESC, id DESC LIMIT 1")
+      .prepare("SELECT * FROM monitor_runs WHERE status = 'completed' AND error_message IS NULL ORDER BY finished_at DESC, id DESC LIMIT 1")
       .first<D1MonitorRunRow>();
     return row ? mapMonitorRun(row) : null;
   }
@@ -1207,10 +1343,12 @@ export class Repository {
     `).bind(now, now, now).run();
   }
 
-  async getActiveResetCycle(): Promise<any | null> {
-    // Reads can happen between scheduled Cron runs. Keep the state machine
-    // current for status/health/API consumers as well as the worker itself.
-    await this.advanceResetCycleState();
+  async getActiveResetCycle(options: { advance?: boolean } = {}): Promise<any | null> {
+    // State advancement is explicit for read paths. Public status/health
+    // endpoints are polled frequently and must not turn every read into three
+    // UPDATE statements; Cron and /reset/current still advance state before
+    // reading when they need a real-time transition.
+    if (options.advance !== false) await this.advanceResetCycleState();
     return await this.db.prepare(`
       SELECT rc.*
       FROM reset_cycles rc

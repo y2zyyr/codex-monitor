@@ -4,6 +4,7 @@
 
 const API_BASE = '/api';
 const SITE_URL = 'https://tibo.modelyard.dev';
+const TIME_API = window.TiboLocaleTime;
 
 // --- Complete i18n Dictionary ---
 const messages = {
@@ -12,10 +13,11 @@ const messages = {
     // Fallbacks mirror the SSR metadata. On the homepage the injected
     // window.__SSR_META__ object is authoritative, so hydration cannot
     // silently replace the server title or description.
-    siteTitle: 'Codex Usage Limit Resets & Rate Limit Updates | Tibo Monitor',
-    siteDescription: 'Track public Codex usage resets, limit changes, and subscription updates from Tibo (@thsottiaux).',
+    siteTitle: 'Tibo Codex Reset Tracker | Usage Limits & Policy Updates',
+    siteDescription: 'Track Tibo’s public OpenAI Codex usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and policy updates with source and verification status.',
+    intro: 'Track Tibo’s public Codex reset signals, usage limits, and policy updates; every event includes its source and verification status.',
     monitoring: 'Monitoring',
-    toggleLanguage: 'Switch language to Simplified Chinese',
+    toggleLanguage: 'Choose language',
 
     // Status badges
     live: 'LIVE',
@@ -38,6 +40,14 @@ const messages = {
     lastNewPost: 'last new post',
     lastCheckedUnavailable: 'No successful check yet',
     latestEventTitle: 'Latest event',
+    statusAnswerTitle: 'Current reset status',
+    statusAnswerLead: 'See the latest known reset state first, then open an event for its source and verification details.',
+    lastConfirmedReset: 'Last confirmed reset',
+    lastRecordedReset: 'Last recorded reset',
+    nextKnownReset: 'Next known reset',
+    checkingLiveStatus: 'Checking live reset status…',
+    viewResetHistory: 'View reset history',
+    viewLatestEvent: 'View latest event',
 
     // Search and export
     searchEvents: 'Search events',
@@ -67,7 +77,7 @@ const messages = {
     resetCountdown: 'Reset Countdown',
     noResetScheduled: 'No reset currently scheduled.',
     expectedReset: 'Expected reset',
-    yourLocalTime: 'New York time',
+    yourLocalTime: 'Displayed time',
     announcedBy: 'Announced by',
     viewSource: 'View source',
     resetTimeReached: 'Expected reset time reached.',
@@ -103,6 +113,9 @@ const messages = {
     resetCompleted: 'Reset Completed',
     resetTimeChanged: 'Time Changed',
     policyChange: 'Policy',
+    codexUpdate: 'Codex Update',
+    roadmapHint: 'Roadmap Hint',
+    featureDiscussion: 'Feature Discussion',
 
     // Latest decision
     latestDecision: 'Latest Decision',
@@ -122,12 +135,15 @@ const messages = {
     originalSource: 'Original Source',
     source: 'Source',
     published: 'Published',
-    beijingTime: 'New York time',
+    beijingTime: 'Displayed time',
     resetTime: 'Reset Time',
     effectiveTime: 'Effective Time',
     confidence: 'Confidence',
     publishedTimeUnavailable: 'Published time unavailable',
     viewOriginal: 'View original post',
+    verificationStatus: 'Verification status',
+    firstDiscoveredVia: 'First discovered via',
+    lastVerifiedVia: 'Last verified via',
 
     // Empty state
     sourceNotConfiguredTitle: 'No public source is connected yet.',
@@ -156,10 +172,11 @@ const messages = {
   },
   'zh-CN': {
     // Site
-    siteTitle: 'Codex 使用额度重置与限额更新｜Tibo 监控',
-    siteDescription: '追踪 Tibo（@thsottiaux）公开发布的 Codex 额度重置、限额变化和订阅更新。',
+    siteTitle: 'Tibo Codex 重置追踪｜额度与政策更新',
+    siteDescription: '追踪 Tibo 公开发布的 Codex 额度重置、ChatGPT Work 限额、GPT/Codex 限速与政策更新；每条记录附来源和验证状态。',
+    intro: '追踪 Tibo 公开发布的 Codex 重置信号、额度和政策更新；每条事件都附来源和验证状态。',
     monitoring: '正在监控',
-    toggleLanguage: '切换为英文',
+    toggleLanguage: '选择语言',
 
     // Status badges
     live: '正常监控',
@@ -182,6 +199,14 @@ const messages = {
     lastNewPost: '最近新帖',
     lastCheckedUnavailable: '尚无成功检查',
     latestEventTitle: '最新事件',
+    statusAnswerTitle: '当前重置状态',
+    statusAnswerLead: '先查看已知的最新重置状态，再打开事件查看来源和验证详情。',
+    lastConfirmedReset: '最近一次已确认重置',
+    lastRecordedReset: '最近记录的重置',
+    nextKnownReset: '下一次已知重置',
+    checkingLiveStatus: '正在检查实时重置状态……',
+    viewResetHistory: '查看重置历史',
+    viewLatestEvent: '查看最新事件',
 
     // Search and export
     searchEvents: '搜索事件',
@@ -211,7 +236,7 @@ const messages = {
     resetCountdown: '重置倒计时',
     noResetScheduled: '目前没有已知的重置计划。',
     expectedReset: '预计重置',
-    yourLocalTime: '北京时间',
+    yourLocalTime: '显示时间',
     announcedBy: '发布者',
     viewSource: '查看原帖',
     resetTimeReached: '预计重置时间已到',
@@ -247,6 +272,9 @@ const messages = {
     resetCompleted: '重置完成',
     resetTimeChanged: '时间变更',
     policyChange: '政策',
+    codexUpdate: 'Codex 产品更新',
+    roadmapHint: '路线图线索',
+    featureDiscussion: '功能讨论',
 
     // Latest decision
     latestDecision: '最新动态',
@@ -266,12 +294,15 @@ const messages = {
     originalSource: '原始来源',
     source: '来源',
     published: '发布时间',
-    beijingTime: '北京时间',
+    beijingTime: '显示时间',
     resetTime: '重置时间',
     effectiveTime: '生效时间',
     confidence: '置信度',
     publishedTimeUnavailable: '发布时间未知',
     viewOriginal: '查看原帖',
+    verificationStatus: '验证状态',
+    firstDiscoveredVia: '首次发现来源',
+    lastVerifiedVia: '最近验证来源',
 
     // Empty state
     sourceNotConfiguredTitle: '尚未接入公开数据源。',
@@ -300,15 +331,82 @@ const messages = {
   }
 };
 
+// The header language menu exposes all supported locales. The additional
+// dictionaries intentionally inherit the complete English key set so a newly
+// added dashboard string cannot become blank while its translation is added.
+messages.ja = Object.assign({}, messages.en, {
+  siteTitle: 'Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
+  siteDescription: 'Tibo（@thsottiaux）が公開した Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
+  intro: 'Tibo（@thsottiaux）が公開した Codex のリセット、使用量制限、ポリシー更新を追跡します。各イベントに出典と確認状態を表示します。',
+  monitoring: '監視中', toggleLanguage: '言語を選択', live: '稼働中',
+  lastReset: '最近のリセット', currentPolicy: '最新ポリシー変更', latestChange: '最新の更新', lastChecked: '最終確認', sourceStatus: '情報源',
+  statusAnswerTitle: '現在のリセット状態', statusAnswerLead: 'まず既知の最新リセット状態を確認し、イベントを開いて出典と確認の詳細をご覧ください。', lastConfirmedReset: '最後に確認されたリセット', lastRecordedReset: '最後に記録されたリセット', nextKnownReset: '次に予定されているリセット', checkingLiveStatus: 'リセットの状態を確認中…', viewResetHistory: 'リセット履歴を見る', viewLatestEvent: '最新イベントを見る',
+  xDirectSource: 'X 直接ソース', webIndexedSource: 'ウェブ検索インデックス', lastNewPost: '最新の投稿', lastCheckedUnavailable: '確認済みの実行はまだありません', latestEventTitle: '最新イベント',
+  searchEvents: 'イベントを検索', searchPlaceholder: 'タイトル、概要、ソースを検索', fromDate: '開始', toDate: '終了', clearFilters: 'クリア', export: 'エクスポート', exporting: 'ダウンロードを準備中…', exportReady: 'ダウンロードの準備ができました', exportFailed: 'エクスポートに失敗しました',
+  manualResetReportedTitle: 'サーバーのリセット報告', manualResetReported: 'サーバーが使用量のリセットを報告しました。', manualResetSource: 'サーバー監視', manualResetDisclaimer: '自動報告です。', manualResetConfirmed: 'リセット報告', manualResetTimeLabel: '報告時刻',
+  daysSinceLastReset: '公開された最後のリセットから {days} 日', averageResetInterval: '完了したリセットの平均間隔：約 {days} 日（{count} 件）', noHistoricalReset: '履歴はまだありません。', historyReferenceDisclaimer: '履歴の参考値',
+  resetCountdown: 'リセットまでのカウントダウン', noResetScheduled: '現在予定されているリセットはありません。', expectedReset: '予定されるリセット', yourLocalTime: 'ニューヨーク時間', announcedBy: '発表者', viewSource: 'ソースを見る', resetTimeReached: '予定時刻に到達しました。', waitingForConfirmation: '確認を待っています…', lastConfirmationCheck: '最終確認', minutesAgo: '分前', resetConfirmed: 'リセット確認済み', confirmedBy: '確認元', resetLikelyCompleted: 'リセット完了の可能性', multipleReports: '複数の公開報告がリセットを示しています。', noOfficialConfirmation: '公式確認待ちです。', indexedSource: 'ウェブ検索インデックス', directSource: 'X API 直接ソース', officialSource: '公式ソース', directlyVerified: '直接確認済み', officiallyVerified: '公式確認済み', indexedOnly: 'インデックスのみ', discoveredViaSearch: 'ウェブ検索で発見', awaitingDirectVerification: '直接ソースの確認待ち', pendingVerification: '確認待ち', unknownSourceType: '不明なソース種別', indexedResetSchedule: 'リセット予定を発見 · 直接ソース待ち', directResetSchedule: 'リセット予定を確認済み', resetTimeChanged: 'リセット時刻が変更されました', previously: '以前', now: '現在', exactTimeNotAnnounced: '時刻は未発表',
+  timeline: 'タイムライン', all: 'すべて', resetPlanned: 'リセット予定', resetCompleted: 'リセット完了', resetTimeChanged: '時刻変更', policyChange: 'ポリシー', codexUpdate: 'Codex 更新', roadmapHint: 'ロードマップのヒント', featureDiscussion: '機能ディスカッション', latestDecision: '最新の判断', noEvents: '表示できるイベントはありません。', noEventsDetail: 'イベントはまだ記録されていません。', loading: 'イベントを読み込み中…', failedToLoad: '監視データを読み込めません。',
+  type: '種類', title: 'タイトル', summary: '概要', chineseTitle: '中国語タイトル', englishSummary: '英語の概要', chineseSummary: '中国語の概要', aiSummary: 'AI 概要', originalSource: '元のソース', source: 'ソース', published: '公開日時', beijingTime: 'ニューヨーク時間', resetTime: 'リセット時刻', effectiveTime: '適用時刻', confidence: '信頼度', publishedTimeUnavailable: '公開時刻は不明です', viewOriginal: '元の投稿を見る', verificationStatus: '確認ステータス', firstDiscoveredVia: '最初の発見元', lastVerifiedVia: '最後の確認元',
+  sourceNotConfiguredTitle: '公開ソースはまだ接続されていません。', aiClassifierReady: 'AI 分類器の準備完了：', monitoringWillBegin: '公開ソースを接続すると監視が始まります。', footer: '非公式モニター · OpenAI とは提携していません。',
+  categoryPlanned: 'リセット予定', categoryCompleted: 'リセット完了', categoryTimeChanged: '時刻変更', categoryPolicy: 'ポリシー変更', resetExpected: 'リセット予定', notAnnounced: '未発表', resetDue: 'リセット時刻', checking: '確認中', ago: '前', secondsAgo: '秒前', minutesAgoShort: '分前', hoursAgoShort: '時間前', daysAgoShort: '日前',
+});
+messages.es = Object.assign({}, messages.en, {
+  siteTitle: 'Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
+  siteDescription: 'Consulta los restablecimientos públicos de Tibo Codex, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
+  intro: 'Consulta los restablecimientos, límites y políticas públicas de Tibo Codex; cada evento incluye su fuente y estado de verificación.',
+  monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'EN DIRECTO',
+  lastReset: 'Último restablecimiento', currentPolicy: 'Último cambio de política', latestChange: 'Última actualización', lastChecked: 'Última comprobación', sourceStatus: 'Fuente de información',
+  statusAnswerTitle: 'Estado actual del restablecimiento', statusAnswerLead: 'Consulta primero el estado conocido más reciente y abre un evento para ver su fuente y verificación.', lastConfirmedReset: 'Último restablecimiento confirmado', lastRecordedReset: 'Último restablecimiento registrado', nextKnownReset: 'Próximo restablecimiento conocido', checkingLiveStatus: 'Comprobando el estado del restablecimiento…', viewResetHistory: 'Ver historial de restablecimientos', viewLatestEvent: 'Ver el último evento',
+  xDirectSource: 'X directo', webIndexedSource: 'Índice web', lastNewPost: 'última publicación', lastCheckedUnavailable: 'Aún no hay comprobaciones correctas', latestEventTitle: 'Último evento',
+  searchEvents: 'Buscar eventos', searchPlaceholder: 'Buscar títulos, resúmenes o texto de fuente', fromDate: 'Desde', toDate: 'Hasta', clearFilters: 'Limpiar', export: 'Exportar', exporting: 'Preparando la descarga…', exportReady: 'Descarga preparada', exportFailed: 'Error al exportar',
+  manualResetReportedTitle: 'Informe de restablecimiento del servidor', manualResetReported: 'El servidor informó de un restablecimiento del uso.', manualResetSource: 'Supervisión del servidor', manualResetDisclaimer: 'Informe automático.', manualResetConfirmed: 'RESTABLECIMIENTO INFORMADO', manualResetTimeLabel: 'Hora del informe',
+  daysSinceLastReset: 'Días desde el último restablecimiento público: {days}', averageResetInterval: 'Intervalo medio de restablecimientos completados: unos {days} días ({count} registros)', noHistoricalReset: 'Aún no hay historial.', historyReferenceDisclaimer: 'Referencia histórica',
+  resetCountdown: 'Cuenta atrás para el restablecimiento', noResetScheduled: 'No hay ningún restablecimiento programado.', expectedReset: 'Restablecimiento previsto', yourLocalTime: 'Hora de Nueva York', announcedBy: 'Anunciado por', viewSource: 'Ver fuente', resetTimeReached: 'Se alcanzó la hora prevista.', waitingForConfirmation: 'Esperando confirmación…', lastConfirmationCheck: 'Última comprobación', minutesAgo: 'minutos', resetConfirmed: 'RESTABLECIMIENTO CONFIRMADO', confirmedBy: 'Confirmado por', resetLikelyCompleted: 'RESTABLECIMIENTO PROBABLEMENTE COMPLETADO', multipleReports: 'Varios informes públicos indican un restablecimiento.', noOfficialConfirmation: 'Pendiente de confirmación oficial.', indexedSource: 'Índice de búsqueda web', directSource: 'API directa de X', officialSource: 'Fuente oficial', directlyVerified: 'Verificado directamente', officiallyVerified: 'Verificado oficialmente', indexedOnly: 'Solo indexado', discoveredViaSearch: 'Descubierto mediante búsqueda web', awaitingDirectVerification: 'Esperando verificación de la fuente directa', pendingVerification: 'Verificación pendiente', unknownSourceType: 'Tipo de fuente desconocido', indexedResetSchedule: 'Horario de restablecimiento encontrado · fuente directa pendiente', directResetSchedule: 'Horario de restablecimiento verificado', resetTimeChanged: 'Hora del restablecimiento modificada', previously: 'Antes', now: 'Ahora', exactTimeNotAnnounced: 'hora no anunciada',
+  timeline: 'Línea temporal', all: 'Todos', resetPlanned: 'Restablecimiento previsto', resetCompleted: 'Restablecimiento completado', resetTimeChanged: 'Hora modificada', policyChange: 'Política', codexUpdate: 'Actualización de Codex', roadmapHint: 'Pista de hoja de ruta', featureDiscussion: 'Debate de funciones', latestDecision: 'Última decisión', noEvents: 'No hay eventos que mostrar.', noEventsDetail: 'Aún no se han registrado eventos.', loading: 'Cargando eventos…', failedToLoad: 'No se pueden cargar los datos de supervisión.',
+  type: 'Tipo', title: 'Título', summary: 'Resumen', chineseTitle: 'Título en chino', englishSummary: 'Resumen en inglés', chineseSummary: 'Resumen en chino', aiSummary: 'Resumen de IA', originalSource: 'Fuente original', source: 'Fuente', published: 'Publicado', beijingTime: 'Hora de Nueva York', resetTime: 'Hora del restablecimiento', effectiveTime: 'Hora efectiva', confidence: 'Confianza', publishedTimeUnavailable: 'Hora de publicación no disponible', viewOriginal: 'Ver publicación original', verificationStatus: 'Estado de verificación', firstDiscoveredVia: 'Descubierto inicialmente mediante', lastVerifiedVia: 'Verificado por última vez mediante',
+  sourceNotConfiguredTitle: 'Aún no hay una fuente pública conectada.', aiClassifierReady: 'Clasificador de IA listo:', monitoringWillBegin: 'La supervisión comenzará al conectar una fuente pública.', footer: 'Monitor independiente · No afiliado a OpenAI.',
+  categoryPlanned: 'Restablecimiento previsto', categoryCompleted: 'Restablecimiento completado', categoryTimeChanged: 'Hora modificada', categoryPolicy: 'Cambio de política', resetExpected: 'Restablecimiento previsto', notAnnounced: 'no anunciado', resetDue: 'restablecimiento pendiente', checking: 'Comprobando', ago: 'hace', secondsAgo: 's', minutesAgoShort: 'min', hoursAgoShort: 'h', daysAgoShort: 'd',
+});
+messages.fr = Object.assign({}, messages.en, {
+  siteTitle: 'Suivi des réinitialisations Tibo Codex | Limites et politiques',
+  siteDescription: 'Suivez les réinitialisations publiques de Tibo Codex, les limites de ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
+  intro: 'Suivez les réinitialisations, limites et politiques publiques de Tibo Codex ; chaque événement inclut sa source et son état de vérification.',
+  monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'EN DIRECT',
+  lastReset: 'Dernière réinitialisation', currentPolicy: 'Dernier changement de politique', latestChange: 'Dernière mise à jour', lastChecked: 'Dernière vérification', sourceStatus: 'Source d’information',
+  statusAnswerTitle: 'État actuel de la réinitialisation', statusAnswerLead: 'Consultez d’abord le dernier état connu, puis ouvrez un événement pour voir sa source et sa vérification.', lastConfirmedReset: 'Dernière réinitialisation confirmée', lastRecordedReset: 'Dernière réinitialisation enregistrée', nextKnownReset: 'Prochaine réinitialisation connue', checkingLiveStatus: 'Vérification de l’état de la réinitialisation…', viewResetHistory: 'Voir l’historique des réinitialisations', viewLatestEvent: 'Voir le dernier événement',
+  xDirectSource: 'X direct', webIndexedSource: 'Index web', lastNewPost: 'dernier post', lastCheckedUnavailable: 'Aucune vérification réussie pour le moment', latestEventTitle: 'Dernier événement',
+  searchEvents: 'Rechercher des événements', searchPlaceholder: 'Rechercher des titres, résumés ou sources', fromDate: 'Du', toDate: 'Au', clearFilters: 'Effacer', export: 'Exporter', exporting: 'Préparation du téléchargement…', exportReady: 'Téléchargement prêt', exportFailed: 'Échec de l’export',
+  manualResetReportedTitle: 'Rapport de réinitialisation du serveur', manualResetReported: 'Le serveur a signalé une réinitialisation de l’utilisation.', manualResetSource: 'Surveillance du serveur', manualResetDisclaimer: 'Rapport automatique.', manualResetConfirmed: 'RÉINITIALISATION SIGNALÉE', manualResetTimeLabel: 'Heure du rapport',
+  daysSinceLastReset: 'Jours depuis la dernière réinitialisation publique : {days}', averageResetInterval: 'Intervalle moyen des réinitialisations terminées : environ {days} jours ({count} enregistrements)', noHistoricalReset: 'Aucun historique pour le moment.', historyReferenceDisclaimer: 'Référence historique',
+  resetCountdown: 'Compte à rebours de la réinitialisation', noResetScheduled: 'Aucune réinitialisation n’est actuellement prévue.', expectedReset: 'Réinitialisation prévue', yourLocalTime: 'Heure de New York', announcedBy: 'Annoncé par', viewSource: 'Voir la source', resetTimeReached: 'L’heure prévue est atteinte.', waitingForConfirmation: 'En attente de confirmation…', lastConfirmationCheck: 'Dernière vérification', minutesAgo: 'minutes', resetConfirmed: 'RÉINITIALISATION CONFIRMÉE', confirmedBy: 'Confirmé par', resetLikelyCompleted: 'RÉINITIALISATION PROBABLEMENT TERMINÉE', multipleReports: 'Plusieurs signalements publics indiquent une réinitialisation.', noOfficialConfirmation: 'Confirmation officielle en attente.', indexedSource: 'Index de recherche web', directSource: 'API X directe', officialSource: 'Source officielle', directlyVerified: 'Vérifié directement', officiallyVerified: 'Vérifié officiellement', indexedOnly: 'Index uniquement', discoveredViaSearch: 'Trouvé via une recherche web', awaitingDirectVerification: 'En attente de vérification par la source directe', pendingVerification: 'Vérification en attente', unknownSourceType: 'Type de source inconnu', indexedResetSchedule: 'Horaire trouvé · source directe en attente', directResetSchedule: 'Horaire vérifié', resetTimeChanged: 'Heure de réinitialisation modifiée', previously: 'Avant', now: 'Maintenant', exactTimeNotAnnounced: 'heure non annoncée',
+  timeline: 'Chronologie', all: 'Tous', resetPlanned: 'Réinitialisation prévue', resetCompleted: 'Réinitialisation terminée', resetTimeChanged: 'Heure modifiée', policyChange: 'Politique', codexUpdate: 'Mise à jour Codex', roadmapHint: 'Indice de feuille de route', featureDiscussion: 'Discussion de fonctionnalité', latestDecision: 'Dernière décision', noEvents: 'Aucun événement à afficher.', noEventsDetail: 'Aucun événement n’est encore enregistré.', loading: 'Chargement des événements…', failedToLoad: 'Impossible de charger les données de surveillance.',
+  type: 'Type', title: 'Titre', summary: 'Résumé', chineseTitle: 'Titre chinois', englishSummary: 'Résumé anglais', chineseSummary: 'Résumé chinois', aiSummary: 'Résumé IA', originalSource: 'Source originale', source: 'Source', published: 'Publié', beijingTime: 'Heure de New York', resetTime: 'Heure de réinitialisation', effectiveTime: 'Heure d’effet', confidence: 'Confiance', publishedTimeUnavailable: 'Heure de publication indisponible', viewOriginal: 'Voir le post original', verificationStatus: 'État de vérification', firstDiscoveredVia: 'Première découverte via', lastVerifiedVia: 'Dernière vérification via',
+  sourceNotConfiguredTitle: 'Aucune source publique n’est encore connectée.', aiClassifierReady: 'Classificateur IA prêt :', monitoringWillBegin: 'La surveillance commencera après la connexion d’une source publique.', footer: 'Moniteur indépendant · Non affilié à OpenAI.',
+  categoryPlanned: 'Réinitialisation prévue', categoryCompleted: 'Réinitialisation terminée', categoryTimeChanged: 'Heure modifiée', categoryPolicy: 'Changement de politique', resetExpected: 'Réinitialisation prévue', notAnnounced: 'non annoncée', resetDue: 'réinitialisation due', checking: 'Vérification', ago: 'il y a', secondsAgo: 's', minutesAgoShort: 'min', hoursAgoShort: 'h', daysAgoShort: 'j',
+});
+
+// These legacy keys are retained for compatibility with older render paths;
+// their value must follow the page's locale-neutral displayed-time wording.
+messages.ja.yourLocalTime = '表示時刻';
+messages.ja.beijingTime = '表示時刻';
+messages.es.yourLocalTime = 'Hora mostrada';
+messages.es.beijingTime = 'Hora mostrada';
+messages.fr.yourLocalTime = 'Heure affichée';
+messages.fr.beijingTime = 'Heure affichée';
+
 // --- Category Config ---
 const CATEGORY_ICONS = {
   RESET_PLANNED: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
   RESET_COMPLETED: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
   RESET_TIME_CHANGED: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><line x1="3" y1="3" x2="21" y2="21"/></svg>',
   POLICY_CHANGE: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>',
+  CODEX_UPDATE: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>',
+  ROADMAP_HINT: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 6c4-3 8 3 16 0v9c-8 3-12-3-16 0"/></svg>',
+  FEATURE_DISCUSSION: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H7l-4 3v-10.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></svg>',
 };
 
-const VALID_EVENT_FILTERS = ['ALL', 'RESET_PLANNED', 'RESET_COMPLETED', 'RESET_TIME_CHANGED', 'POLICY_CHANGE'];
+const VALID_EVENT_FILTERS = ['ALL', 'RESET_PLANNED', 'RESET_COMPLETED', 'RESET_TIME_CHANGED', 'POLICY_CHANGE', 'CODEX_UPDATE', 'ROADMAP_HINT', 'FEATURE_DISCUSSION'];
 // --- State ---
 let currentFilter = 'ALL';
 let currentQuery = { q: '', startDate: '', endDate: '' };
@@ -317,7 +415,6 @@ let eventsState = 'LOADING';
 let lang = 'en';
 let resetStatus = null;
 let countdownTimer = null;
-let healthData = null;
 let resetHistoryEvents = [];
 let resetHistoryState = 'LOADING';
 let resetHistoryRequestId = 0;
@@ -325,6 +422,9 @@ let searchDebounceTimer = null;
 let eventsRequestId = 0;
 let ssrHydrated = false;
 let initStarted = false;
+let dataRefreshTimer = null;
+let dataRefreshInFlight = false;
+const DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 // --- DOM References (cached) ---
 const $ = (sel) => document.querySelector(sel);
@@ -351,12 +451,45 @@ function getCategoryLabel(category) {
       RESET_COMPLETED: 'Reset Completed',
       RESET_TIME_CHANGED: 'Time Changed',
       POLICY_CHANGE: 'Policy Change',
+      CODEX_UPDATE: 'Codex Update',
+      ROADMAP_HINT: 'Roadmap Hint',
+      FEATURE_DISCUSSION: 'Feature Discussion',
     },
     'zh-CN': {
       RESET_PLANNED: '计划重置',
       RESET_COMPLETED: '重置完成',
       RESET_TIME_CHANGED: '时间变更',
       POLICY_CHANGE: '政策变更',
+      CODEX_UPDATE: 'Codex 产品更新',
+      ROADMAP_HINT: '路线图线索',
+      FEATURE_DISCUSSION: '功能讨论',
+    },
+    ja: {
+      RESET_PLANNED: 'リセット予定',
+      RESET_COMPLETED: 'リセット完了',
+      RESET_TIME_CHANGED: '時刻変更',
+      POLICY_CHANGE: 'ポリシー変更',
+      CODEX_UPDATE: 'Codex 更新',
+      ROADMAP_HINT: 'ロードマップのヒント',
+      FEATURE_DISCUSSION: '機能ディスカッション',
+    },
+    es: {
+      RESET_PLANNED: 'Restablecimiento previsto',
+      RESET_COMPLETED: 'Restablecimiento completado',
+      RESET_TIME_CHANGED: 'Hora modificada',
+      POLICY_CHANGE: 'Cambio de política',
+      CODEX_UPDATE: 'Actualización de Codex',
+      ROADMAP_HINT: 'Pista de hoja de ruta',
+      FEATURE_DISCUSSION: 'Debate de funciones',
+    },
+    fr: {
+      RESET_PLANNED: 'Réinitialisation prévue',
+      RESET_COMPLETED: 'Réinitialisation terminée',
+      RESET_TIME_CHANGED: 'Heure modifiée',
+      POLICY_CHANGE: 'Changement de politique',
+      CODEX_UPDATE: 'Mise à jour Codex',
+      ROADMAP_HINT: 'Indice de feuille de route',
+      FEATURE_DISCUSSION: 'Discussion de fonctionnalité',
     }
   };
   const dict = labels[lang] || labels.en;
@@ -366,21 +499,28 @@ function getCategoryLabel(category) {
 // --- Language Management ---
 function getInitialLanguage() {
   const path = window.location.pathname;
-  return path === '/zh' || path.startsWith('/zh/') ? 'zh-CN' : 'en';
+  if (path === '/zh' || path.startsWith('/zh/')) return 'zh-CN';
+  if (path === '/ja' || path.startsWith('/ja/')) return 'ja';
+  if (path === '/es' || path.startsWith('/es/')) return 'es';
+  if (path === '/fr' || path.startsWith('/fr/')) return 'fr';
+  return 'en';
 }
 
-function stripChinesePrefix(pathname) {
-  if (pathname === '/zh' || pathname === '/zh/') return '/';
-  if (pathname.startsWith('/zh/')) return pathname.slice(3) || '/';
+function stripLocalePrefix(pathname) {
+  if (/^\/(?:zh|ja|es|fr)\/?$/u.test(pathname)) return '/';
+  const match = pathname.match(/^\/(?:zh|ja|es|fr)(\/.*)$/u);
+  if (match) return match[1] || '/';
   return pathname || '/';
 }
 
+function localePrefix(targetLanguage) {
+  return targetLanguage === 'en' ? '' : targetLanguage === 'zh-CN' ? '/zh' : '/' + targetLanguage;
+}
+
 function localizedPath(targetLanguage) {
-  const basePath = stripChinesePrefix(window.location.pathname);
-  if (targetLanguage === 'zh-CN') {
-    return basePath === '/' ? '/zh/' : '/zh' + basePath;
-  }
-  return basePath;
+  const basePath = stripLocalePrefix(window.location.pathname);
+  const prefix = localePrefix(targetLanguage);
+  return prefix + (basePath === '/' ? '/' : basePath);
 }
 
 function isValidDateOnly(value) {
@@ -487,7 +627,7 @@ function setLanguage(targetLanguage) {
 }
 
 function getEventPath(id) {
-  return (lang === 'zh-CN' ? '/zh/events/' : '/events/') + id;
+  return localePrefix(lang) + '/events/' + id;
 }
 
 function applyLanguage() {
@@ -501,7 +641,7 @@ function applyLanguage() {
 }
 
 function updateHtmlLang() {
-  document.documentElement.lang = lang === 'zh-CN' ? 'zh-CN' : 'en';
+  document.documentElement.lang = lang === 'zh-CN' ? 'zh-CN' : lang;
   const serverMeta = window.__SSR_META__ && window.__SSR_META__.lang === lang
     ? window.__SSR_META__
     : null;
@@ -523,7 +663,8 @@ function updateHtmlLang() {
 function updateLanguageSwitcher() {
   const btn = document.getElementById('langSwitch');
   if (btn) {
-    btn.textContent = lang === 'zh-CN' ? 'English' : '中文';
+    const labels = { en: 'English', 'zh-CN': '中文', ja: '日本語', es: 'Español', fr: 'Français' };
+    btn.textContent = labels[lang] || labels.en;
     btn.setAttribute('aria-label', t('toggleLanguage'));
   }
 }
@@ -533,6 +674,7 @@ function translateAllUI() {
   // Use ID-based translation for all static elements
   const idMap = {
     monitoringLabel: 'monitoring',
+    introLede: 'intro',
     cardLabelLastReset: 'lastReset',
     cardLabelCurrentPolicy: 'currentPolicy',
     cardLabelLatestChange: 'latestChange',
@@ -544,6 +686,9 @@ function translateAllUI() {
     filterResetCompleted: 'resetCompleted',
     filterTimeChanged: 'resetTimeChanged',
     filterPolicyChange: 'policyChange',
+    filterCodexUpdate: 'codexUpdate',
+    filterRoadmapHint: 'roadmapHint',
+    filterFeatureDiscussion: 'featureDiscussion',
     timelineEmptyText: 'noEvents',
     emptyStateText: 'noEventsDetail',
     loadingText: 'loading',
@@ -551,6 +696,11 @@ function translateAllUI() {
     countdownTitle: 'resetCountdown',
     countdownEmptyText: 'noResetScheduled',
     latestEventTitle: 'latestEventTitle',
+    statusAnswerTitle: 'statusAnswerTitle',
+    statusAnswerLead: 'statusAnswerLead',
+    lastConfirmedResetLabel: 'lastConfirmedReset',
+    nextKnownResetLabel: 'nextKnownReset',
+    statusAnswerResetHistory: 'viewResetHistory',
     eventSearchLabel: 'searchEvents',
     startDateLabel: 'fromDate',
     endDateLabel: 'toDate',
@@ -642,7 +792,11 @@ function displayDateOnly(iso) {
 
 function eventMatchesCurrentQuery(event) {
   if (currentQuery.q) {
-    const haystack = [event.title_en, event.title_zh, event.summary_en, event.summary_zh, event.source_text]
+    const translatedText = event.translations ? Object.keys(event.translations).map(function(key) {
+      const translation = event.translations[key];
+      return translation && (translation.title || translation.summary) || '';
+    }) : [];
+    const haystack = [event.title_en, event.title_zh, event.summary_en, event.summary_zh].concat(translatedText, [event.source_text])
       .map(function(value) { return String(value || '').toLowerCase(); })
       .join(' ');
     if (haystack.indexOf(currentQuery.q.toLowerCase()) < 0) return false;
@@ -676,8 +830,8 @@ function renderEventHighlight(event) {
     return;
   }
 
-  const title = lang === 'zh-CN' ? (event.title_zh || event.title_en) : (event.title_en || event.title_zh);
-  const summary = lang === 'zh-CN' ? (event.summary_zh || event.summary_en) : (event.summary_en || event.summary_zh);
+  const title = getEventTitle(event);
+  const summary = getEventSummary(event);
   const sourceBadge = renderSourceBadge(event);
 
   container.innerHTML = [
@@ -747,8 +901,8 @@ function renderTimeline() {
     const dateStr = formatDateShort(event.published_at, lang);
     const showDate = dateStr !== lastDate;
     lastDate = dateStr;
-    const title = lang === 'zh-CN' ? (event.title_zh || event.title_en) : (event.title_en || event.title_zh);
-    const summary = lang === 'zh-CN' ? (event.summary_zh || event.summary_en) : (event.summary_en || event.summary_zh);
+    const title = getEventTitle(event);
+    const summary = getEventSummary(event);
     const sourceBadge = renderSourceBadge(event);
 
     html += [
@@ -783,25 +937,42 @@ function renderStatusCards(data) {
 
   renderManualResetNotice(data);
 
+  const resetEvent = data.latestDirectReset || data.lastReset || null;
   const reportedResetAt = data.manualReset && data.manualReset.resetAt
     ? data.manualReset.resetAt
-    : (data.lastReset && data.lastReset.published_at);
-  document.getElementById('lastResetValue').textContent =
-    reportedResetAt
-      ? (data.manualReset && data.manualReset.resetAt
-        ? formatManualResetTime(reportedResetAt, lang)
-        : formatDate(reportedResetAt, lang))
-      : '—';
+    : resetEvent
+      ? (resetEvent.reset_at || resetEvent.effective_at || resetEvent.published_at)
+      : null;
+  const resetText = reportedResetAt
+    ? (data.manualReset && data.manualReset.resetAt
+      ? formatManualResetTime(reportedResetAt, lang)
+      : formatDate(reportedResetAt, lang))
+    : t('statusUnknown');
 
-  document.getElementById('currentPolicyValue').textContent =
-    data.currentPolicy ? getTitle(data.currentPolicy) : '—';
-
-  document.getElementById('latestChangeValue').textContent =
-    data.latestEvent ? getTitle(data.latestEvent) : '—';
+  setStatusEventLink(
+    'lastResetValue',
+    data.manualReset && data.manualReset.resetAt ? null : resetEvent,
+    resetText,
+    'status_card',
+  );
+  setStatusEventLink(
+    'currentPolicyValue',
+    data.currentPolicy || null,
+    data.currentPolicy ? getTitle(data.currentPolicy) : t('statusUnknown'),
+    'status_card',
+  );
+  setStatusEventLink(
+    'latestChangeValue',
+    data.latestEvent || null,
+    data.latestEvent ? getTitle(data.latestEvent) : t('statusUnknown'),
+    'status_card',
+  );
 
   const checkedAt = data.lastCheckedAt || data.lastSuccessfulCron || null;
-  document.getElementById('lastCheckedValue').textContent =
-    checkedAt ? timeAgo(checkedAt, lang) : t('lastCheckedUnavailable');
+  const lastCheckedValue = document.getElementById('lastCheckedValue');
+  if (lastCheckedValue) lastCheckedValue.textContent = checkedAt ? timeAgo(checkedAt, lang) : t('lastCheckedUnavailable');
+  const answerLastUpdated = document.getElementById('statusAnswerLastUpdated');
+  if (answerLastUpdated) answerLastUpdated.textContent = checkedAt ? timeAgo(checkedAt, lang) : t('lastCheckedUnavailable');
 
   const sourceValue = document.getElementById('sourceStatusValue');
   if (sourceValue) {
@@ -820,8 +991,53 @@ function renderStatusCards(data) {
     sourceValue.textContent = sourceLabel;
   }
 
+  renderStatusAnswer(data, resetEvent, reportedResetAt, checkedAt);
   updateLiveBadge(data);
   updateMonitoredAccounts(data);
+}
+
+function setStatusEventLink(elementId, event, text, placement) {
+  const container = document.getElementById(elementId);
+  if (!container) return;
+  container.replaceChildren();
+  if (!event || !event.id) {
+    container.textContent = text || t('statusUnknown');
+    return;
+  }
+
+  const link = document.createElement('a');
+  link.className = 'status-card-link';
+  link.href = getEventPath(event.id);
+  link.textContent = text || t('statusUnknown');
+  link.setAttribute('data-analytics-placement', placement || 'status_card');
+  link.setAttribute('data-analytics-event-id', String(event.id));
+  if (event.category) link.setAttribute('data-analytics-event-category', event.category);
+  link.setAttribute('data-analytics-evidence-source', getAnalyticsEvidenceSource(event));
+  container.appendChild(link);
+}
+
+function renderStatusAnswer(data, resetEvent, reportedResetAt, checkedAt) {
+  const resetLabel = document.getElementById('lastConfirmedResetLabel');
+  const resetValue = document.getElementById('lastConfirmedResetValue');
+  if (resetLabel) resetLabel.textContent = data && (data.latestDirectReset || (data.manualReset && data.manualReset.resetAt))
+    ? t('lastConfirmedReset')
+    : t('lastRecordedReset');
+  if (resetValue) {
+    const resetText = reportedResetAt
+      ? (data.manualReset && data.manualReset.resetAt
+        ? formatManualResetTime(reportedResetAt, lang)
+        : formatDate(reportedResetAt, lang))
+      : t('statusUnknown');
+    setStatusEventLink(
+      'lastConfirmedResetValue',
+      data.manualReset && data.manualReset.resetAt ? null : resetEvent,
+      resetText,
+      'status_answer',
+    );
+  }
+  const answerLastUpdated = document.getElementById('statusAnswerLastUpdated');
+  if (answerLastUpdated) answerLastUpdated.textContent = checkedAt ? timeAgo(checkedAt, lang) : t('lastCheckedUnavailable');
+  renderResetAnswerValue();
 }
 
 function renderManualResetNotice(data) {
@@ -846,8 +1062,32 @@ function renderManualResetNotice(data) {
   ].filter(Boolean).join('\n');
 }
 
+function eventLocaleKey() {
+  return lang === 'zh-CN' ? 'zh' : lang;
+}
+
+function getEventTitle(event) {
+  const locale = eventLocaleKey();
+  if (locale === 'zh') return event.title_zh || event.title_en;
+  if (locale === 'en') return event.title_en || event.title_zh;
+  const translation = event.translations && event.translations[locale];
+  return translation && translation.status === 'translated' && translation.title
+    ? translation.title
+    : (event.title_en || event.title_zh);
+}
+
+function getEventSummary(event) {
+  const locale = eventLocaleKey();
+  if (locale === 'zh') return event.summary_zh || event.summary_en;
+  if (locale === 'en') return event.summary_en || event.summary_zh;
+  const translation = event.translations && event.translations[locale];
+  return translation && translation.status === 'translated' && translation.summary
+    ? translation.summary
+    : (event.summary_en || event.summary_zh);
+}
+
 function getTitle(event) {
-  return lang === 'zh-CN' ? (event.title_zh || event.title_en) : (event.title_en || event.title_zh);
+  return getEventTitle(event);
 }
 
 function renderSourceBadge(event) {
@@ -997,6 +1237,7 @@ const RESET_DAY_MS = 24 * 60 * 60 * 1000;
 const SQLITE_UTC_TIMESTAMP_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
 
 function parseStoredUtc(value) {
+  if (TIME_API && typeof TIME_API.parseStoredUtc === 'function') return TIME_API.parseStoredUtc(value);
   if (value === null || value === undefined || value === '') return new Date(NaN);
   const stringValue = String(value);
   const sqliteMatch = stringValue.match(SQLITE_UTC_TIMESTAMP_PATTERN);
@@ -1059,7 +1300,9 @@ function renderResetHistoryReference() {
 
   if (resetHistoryState === 'LOADING') return;
 
-  const statusLastReset = statusData && statusData.lastReset ? statusData.lastReset : null;
+  const statusLastReset = statusData && (statusData.latestDirectReset || statusData.lastReset)
+    ? (statusData.latestDirectReset || statusData.lastReset)
+    : null;
   const lastResetEvent = statusLastReset && resetEventTimestamp(statusLastReset) !== null
     ? statusLastReset
     : resetHistoryEvents.find(function(event) { return resetEventTimestamp(event) !== null; }) || null;
@@ -1099,10 +1342,42 @@ function renderResetHistoryReference() {
   }
 }
 
+function renderResetAnswerValue() {
+  const value = document.getElementById('nextKnownResetValue');
+  if (!value) return;
+  if (!resetStatus) {
+    value.textContent = t('checkingLiveStatus');
+    return;
+  }
+  if (resetStatus.status === 'ERROR') {
+    value.textContent = t('failedToLoad');
+    return;
+  }
+  if (resetStatus.status === 'NONE') {
+    value.textContent = t('noResetScheduled');
+    return;
+  }
+  if (resetStatus.status === 'CONFIRMED') {
+    const confirmation = resetStatus.confirmation || {};
+    const confirmedAt = confirmation.confirmedAt
+      ? formatDateTime(parseStoredUtc(confirmation.confirmedAt), lang, getDisplayTimezone())
+      : '';
+    value.textContent = t('resetConfirmed') + (confirmedAt ? ' · ' + confirmedAt : '');
+    return;
+  }
+  if (resetStatus.expectedResetAt) {
+    value.textContent = formatDateTime(parseStoredUtc(resetStatus.expectedResetAt), lang, getDisplayTimezone());
+    return;
+  }
+  value.textContent = getApproximateResetText(resetStatus);
+}
+
 function renderResetCountdown() {
   const section = document.getElementById('countdownSection');
   const display = document.getElementById('countdownDisplay');
   const empty = document.getElementById('countdownEmpty');
+
+  renderResetAnswerValue();
 
   if (resetStatus && resetStatus.status === 'ERROR') {
     section.style.display = 'block';
@@ -1115,7 +1390,18 @@ function renderResetCountdown() {
     return;
   }
 
-  if (!resetStatus || resetStatus.status === 'NONE') {
+  if (!resetStatus) {
+    section.style.display = 'block';
+    display.style.display = 'none';
+    empty.style.display = 'block';
+    document.getElementById('countdownEmptyText').textContent = t('checkingLiveStatus');
+    const historyReference = document.getElementById('countdownHistoryReference');
+    if (historyReference) historyReference.style.display = 'none';
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    return;
+  }
+
+  if (resetStatus.status === 'NONE') {
     section.style.display = 'block';
     display.style.display = 'none';
     empty.style.display = 'block';
@@ -1318,7 +1604,7 @@ function buildConfirmedInfo(status) {
     var confirmedTime = confirmation.type === 'MANUAL'
       ? formatManualResetTime(confirmation.confirmedAt, lang)
       : formatDateTime(d, lang, getUserTimezone());
-    var confirmedTimeLabel = confirmation.type === 'MANUAL' ? t('manualResetTimeLabel') : t('yourLocalTime');
+    var confirmedTimeLabel = confirmation.type === 'MANUAL' ? t('manualResetTimeLabel') : displayedTimeLabel(lang);
     parts.push('<div class="countdown-info-row"><span class="countdown-info-label">' + confirmedTimeLabel + '</span><span class="countdown-info-value">' + confirmedTime + '</span></div>');
   }
 
@@ -1333,33 +1619,40 @@ function getUserTimezone() {
   return getDisplayTimezone();
 }
 
+function getDisplayTimezoneForLanguage(l) {
+  if (TIME_API) return TIME_API.timeZone(l);
+  return 'UTC';
+}
+
 function getDisplayTimezone() {
-  return lang === 'zh-CN' ? 'Asia/Shanghai' : 'America/New_York';
+  return getDisplayTimezoneForLanguage(lang);
+}
+
+function displayedTimeLabel(l) {
+  const key = TIME_API ? TIME_API.localeKey(l) : (l === 'zh-CN' ? 'zh' : l);
+  return {
+    en: 'Displayed time',
+    zh: '显示时间',
+    ja: '表示時刻',
+    es: 'Hora mostrada',
+    fr: 'Heure affichée',
+  }[key] || 'Displayed time';
 }
 
 function formatDateTime(d, l, tz) {
-  if (l === 'zh-CN') {
-    var f = new Intl.DateTimeFormat('zh-CN', {
-      timeZone: tz,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    return f.format(d) + ' ' + tz;
-  }
-  var f = new Intl.DateTimeFormat('en-US', {
+  var locale = TIME_API ? TIME_API.intlLocale(l) : (l === 'zh-CN' ? 'zh-CN' : l === 'ja' ? 'ja-JP' : l === 'es' ? 'es-ES' : l === 'fr' ? 'fr-FR' : 'en-US');
+  var key = TIME_API ? TIME_API.localeKey(l) : (l === 'zh-CN' ? 'zh' : l);
+  var f = new Intl.DateTimeFormat(locale, {
     timeZone: tz,
     year: 'numeric',
-    month: 'short',
+    month: key === 'zh' ? 'numeric' : 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hour12: key === 'en',
+    timeZoneName: 'short',
   });
-  return f.format(d) + ' ' + tz;
+  return f.format(d);
 }
 
 // --- Render Modal ---
@@ -1371,8 +1664,8 @@ function renderModal(event) {
   if (confidencePercent < 50) confidenceClass = 'low';
   else if (confidencePercent < 80) confidenceClass = 'medium';
 
-  const title = lang === 'zh-CN' ? (event.title_zh || event.title_en) : (event.title_en || event.title_zh);
-  const summary = lang === 'zh-CN' ? (event.summary_zh || event.summary_en) : (event.summary_en || event.summary_zh);
+  const title = getEventTitle(event);
+  const summary = getEventSummary(event);
 
   var parts = [
     '<div class="modal-section"><div class="modal-label">' + t('type') + '</div><div>',
@@ -1435,13 +1728,13 @@ function renderModal(event) {
     '<div class="modal-section"><div class="modal-label">' + t('source') + '</div>',
     '<div class="modal-value">' + escapeHtml(getSourceQualityLabel(event)) + '</div></div>',
 
-    '<div class="modal-section"><div class="modal-label">' + (lang === 'zh-CN' ? '验证状态' : 'Verification status') + '</div>',
+    '<div class="modal-section"><div class="modal-label">' + t('verificationStatus') + '</div>',
     '<div class="modal-value">' + escapeHtml(getVerificationLabel(event)) + '</div></div>',
 
-    '<div class="modal-section"><div class="modal-label">' + (lang === 'zh-CN' ? '首次发现来源' : 'First discovered via') + '</div>',
+    '<div class="modal-section"><div class="modal-label">' + t('firstDiscoveredVia') + '</div>',
     '<div class="modal-value">' + escapeHtml(getDiscoveredViaLabel(event)) + '</div></div>',
 
-    '<div class="modal-section"><div class="modal-label">' + (lang === 'zh-CN' ? '最近验证来源' : 'Last verified via') + '</div>',
+    '<div class="modal-section"><div class="modal-label">' + t('lastVerifiedVia') + '</div>',
     '<div class="modal-value">' + escapeHtml(getLastVerifiedLabel(event)) + '</div></div>',
 
     '<div class="modal-section"><div class="modal-label">' + t('source') + '</div>',
@@ -1462,39 +1755,29 @@ function formatDate(iso, l) {
 }
 
 function manualResetTimezone(l) {
-  return l === 'zh-CN' ? 'Asia/Shanghai' : 'America/New_York';
+  return getDisplayTimezoneForLanguage(l);
 }
 
 function formatManualResetTime(iso, l) {
   if (!iso) return '';
   var d = parseStoredUtc(iso);
   if (isNaN(d.getTime())) return iso;
-  var tz = manualResetTimezone(l);
-  var parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(d);
-  var values = {};
-  parts.forEach(function (part) { values[part.type] = part.value; });
-  var hour = values.hour === '24' ? '00' : values.hour;
-  return values.year + '/' + values.month + '/' + values.day + ' ' + hour + ':' + values.minute + ' ' + tz;
+  return formatDateTime(d, l, manualResetTimezone(l));
 }
 
 function formatDateShort(iso, l) {
   if (!iso) return '';
   const d = parseStoredUtc(iso);
   if (isNaN(d.getTime())) return '';
-  const formatter = new Intl.DateTimeFormat(l === 'zh-CN' ? 'zh-CN' : 'en-US', {
+  var locale = TIME_API ? TIME_API.intlLocale(l) : (l === 'zh-CN' ? 'zh-CN' : l === 'ja' ? 'ja-JP' : l === 'es' ? 'es-ES' : l === 'fr' ? 'fr-FR' : 'en-US');
+  var key = TIME_API ? TIME_API.localeKey(l) : (l === 'zh-CN' ? 'zh' : l);
+  var options = {
     timeZone: getUserTimezone(),
-    year: 'numeric',
-    month: l === 'zh-CN' ? 'numeric' : 'short',
+    month: key === 'zh' ? 'numeric' : 'short',
     day: 'numeric',
-  });
+  };
+  if (key === 'zh') options.year = 'numeric';
+  const formatter = new Intl.DateTimeFormat(locale, options);
   return formatter.format(d);
 }
 
@@ -1517,6 +1800,24 @@ function timeAgo(iso, l) {
     if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
     if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
     return Math.floor(diff / 86400) + '天前';
+  }
+  if (l === 'ja') {
+    if (diff < 60) return diff + '秒前';
+    if (diff < 3600) return Math.floor(diff / 60) + '分前';
+    if (diff < 86400) return Math.floor(diff / 3600) + '時間前';
+    return Math.floor(diff / 86400) + '日前';
+  }
+  if (l === 'es') {
+    if (diff < 60) return 'hace ' + diff + ' s';
+    if (diff < 3600) return 'hace ' + Math.floor(diff / 60) + ' min';
+    if (diff < 86400) return 'hace ' + Math.floor(diff / 3600) + ' h';
+    return 'hace ' + Math.floor(diff / 86400) + ' d';
+  }
+  if (l === 'fr') {
+    if (diff < 60) return 'il y a ' + diff + ' s';
+    if (diff < 3600) return 'il y a ' + Math.floor(diff / 60) + ' min';
+    if (diff < 86400) return 'il y a ' + Math.floor(diff / 3600) + ' h';
+    return 'il y a ' + Math.floor(diff / 86400) + ' j';
   }
   if (diff < 60) return diff + 's ago';
   if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
@@ -1640,12 +1941,6 @@ function bindStaticEvents() {
     void loadEvents();
   });
 
-  const languageButton = document.getElementById('langSwitch');
-  if (languageButton) {
-    languageButton.addEventListener('click', function() {
-      setLanguage(lang === 'zh-CN' ? 'en' : 'zh-CN');
-    });
-  }
 }
 
 async function exportEvents(format) {
@@ -1683,17 +1978,6 @@ async function exportEvents(format) {
 // --- API-backed modules ---
 function reportApiFailure(path, error) {
   console.warn('[Tibo Monitor] API request failed: ' + path, error);
-}
-
-async function loadHealth() {
-  try {
-    healthData = await fetchAPI('/health');
-    return healthData;
-  } catch (err) {
-    healthData = null;
-    reportApiFailure('/health', err);
-    return null;
-  }
 }
 
 async function loadStatus() {
@@ -1787,6 +2071,7 @@ async function loadData() {
       if (window.__SSR_LAST_RESET__ || window.__SSR_MANUAL_RESET__ || window.__SSR_LAST_POLICY__ || window.__SSR_LATEST_EVENT__) {
         var ssrStatus = {
           lastReset: window.__SSR_LAST_RESET__ || null,
+          latestDirectReset: window.__SSR_LATEST_DIRECT_RESET__ || null,
           manualReset: window.__SSR_MANUAL_RESET__ || null,
           currentPolicy: window.__SSR_LAST_POLICY__ || null,
           latestEvent: window.__SSR_LATEST_EVENT__ || null,
@@ -1807,12 +2092,46 @@ async function loadData() {
   }
 
   await Promise.allSettled([
-    loadHealth(),
     loadStatus(),
     loadEvents(),
     loadResetHistory(),
     loadResetState(),
   ]);
+}
+
+async function refreshDataOnce() {
+  if (dataRefreshInFlight) return;
+  dataRefreshInFlight = true;
+  try {
+    await loadData();
+  } finally {
+    dataRefreshInFlight = false;
+  }
+}
+
+function stopDataRefresh() {
+  if (dataRefreshTimer !== null) {
+    window.clearTimeout(dataRefreshTimer);
+    dataRefreshTimer = null;
+  }
+}
+
+function scheduleDataRefresh() {
+  stopDataRefresh();
+  if (document.hidden) return;
+  dataRefreshTimer = window.setTimeout(function() {
+    dataRefreshTimer = null;
+    refreshDataOnce().then(scheduleDataRefresh, scheduleDataRefresh);
+  }, DATA_REFRESH_INTERVAL_MS);
+}
+
+function handleDataVisibilityChange() {
+  if (document.hidden) {
+    stopDataRefresh();
+    return;
+  }
+  void refreshDataOnce();
+  scheduleDataRefresh();
 }
 
 // --- Initialize ---
@@ -1824,9 +2143,10 @@ async function init() {
     lang = getInitialLanguage();
     syncFiltersFromUrl();
     bindStaticEvents();
+    document.addEventListener('visibilitychange', handleDataVisibilityChange);
     applyLanguage();
     await loadData();
-    window.setInterval(function() { void loadData(); }, 60000);
+    scheduleDataRefresh();
   } catch (err) {
     console.error('[Tibo Monitor] Frontend initialization failed', err);
     eventsState = 'ERROR';

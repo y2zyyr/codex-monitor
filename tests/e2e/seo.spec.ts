@@ -9,12 +9,13 @@ test.describe('SEO: Production smoke tests', () => {
     const html = await response.text();
 
     // Must have correct title
-    expect(html).toContain('<title>Codex Usage Limit Resets');
-    expect(html).toContain('Rate Limit Updates');
+    expect(html).toContain('<title>Tibo Codex Reset Tracker');
+    expect(html).toContain('Usage Limits &amp; Policy Updates');
 
     // Must have meta description
     expect(html).toContain('meta name="description"');
-    expect(html).toContain('Codex usage resets');
+    expect(html).toContain('OpenAI Codex usage-limit resets');
+    expect(html).toContain('GPT/Codex rate-limit changes');
 
     // Must have canonical
     expect(html).toContain('rel="canonical"');
@@ -135,12 +136,13 @@ test.describe('SEO: Production smoke tests', () => {
     expect(html).toContain('twitter:card');
     expect(html).toContain('Observed');
     expect(html).toContain('Verification');
+    expect(html).toContain('event-answer-panel');
 
     const article = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
       .map(match => JSON.parse(match[1].trim()))
       .find(schema => schema['@type'] === 'Article');
     expect(article).toBeDefined();
-    expect(article.headline).toBe(apiData.data[0].title_en);
+    expect(article.headline).toContain(apiData.data[0].title_en);
     expect(article.description).toBe(apiData.data[0].summary_en);
     expect(article.isBasedOn).toBe(apiData.data[0].source_url);
     expect(article.author).toBeUndefined();
@@ -238,7 +240,7 @@ test.describe('SEO: Production smoke tests', () => {
     expect(metadata.title).toBe(metadata.ogTitle);
     expect(metadata.title).toBe(metadata.twitterTitle);
     expect(metadata.description).toBe(metadata.twitterDescription);
-    expect(metadata.title).toContain('Codex Usage Limit Resets');
+    expect(metadata.title).toContain('Tibo Codex Reset Tracker');
   });
 
   test('hydrated homepage keeps visible list and ItemList synchronized', async ({ page }) => {
@@ -278,8 +280,10 @@ test.describe('SEO: Production smoke tests', () => {
     const response = await page.request.get(BASE + '/robots.txt');
     const text = await response.text();
     expect(response.status()).toBe(200);
+    expect(text).toContain('User-agent: OAI-SearchBot');
     expect(text).toContain('User-agent: *');
     expect(text).toContain('Allow: /');
+    expect(text).toContain('Disallow: /admin/');
     expect(text).toContain('Disallow: /api/');
     expect(text).toContain('Disallow: /__cron/');
     expect(text).toContain('Sitemap: https://tibo.modelyard.dev/sitemap.xml');
@@ -364,6 +368,7 @@ test.describe('SEO: Production smoke tests', () => {
 
     // Language switch works
     await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: '中文' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page.locator('#timelineTitle')).toHaveText('时间线');
   });

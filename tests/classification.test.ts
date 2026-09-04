@@ -1,18 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { EVENT_CATEGORIES } from '../src/types';
+import { EVENT_CATEGORIES, STATEMENT_NATURES } from '../src/types';
 import type { ClassificationResult, SourcePost } from '../src/types';
 
 describe('Classification Schema Validation', () => {
-  const validCategories = ['RESET_PLANNED', 'RESET_COMPLETED', 'RESET_TIME_CHANGED', 'POLICY_CHANGE', 'IRRELEVANT'];
+  const validCategories = [
+    'RESET_PLANNED',
+    'RESET_COMPLETED',
+    'RESET_TIME_CHANGED',
+    'POLICY_CHANGE',
+    'CODEX_UPDATE',
+    'ROADMAP_HINT',
+    'FEATURE_DISCUSSION',
+    'IRRELEVANT',
+  ];
 
   it('EVENT_CATEGORIES matches expected values', () => {
     expect(EVENT_CATEGORIES).toEqual(validCategories);
+  });
+
+  it('includes OBSERVATION as a non-factual statement nature', () => {
+    expect(STATEMENT_NATURES).toEqual([
+      'FACT',
+      'OBSERVATION',
+      'INTENTION',
+      'HINT',
+      'QUESTION',
+      'SPECULATION',
+    ]);
   });
 
   it('validates a valid RESET_PLANNED result', () => {
     const result: ClassificationResult = {
       relevant: true,
       category: 'RESET_PLANNED',
+      product_scope: 'CODEX',
+      statement_nature: 'INTENTION',
       confidence: 0.95,
       title_en: 'Full reset tomorrow',
       title_zh: '明天全面重置',
@@ -34,6 +56,8 @@ describe('Classification Schema Validation', () => {
     const result: ClassificationResult = {
       relevant: true,
       category: 'RESET_COMPLETED',
+      product_scope: 'CODEX',
+      statement_nature: 'FACT',
       confidence: 0.98,
       title_en: 'Reset propagated to accounts',
       title_zh: '重置已传播到账户',
@@ -53,6 +77,8 @@ describe('Classification Schema Validation', () => {
     const result: ClassificationResult = {
       relevant: true,
       category: 'RESET_TIME_CHANGED',
+      product_scope: 'CODEX',
+      statement_nature: 'FACT',
       confidence: 0.85,
       title_en: 'Reset moved to 2pm PT',
       title_zh: '重置时间改为太平洋时间下午2点',
@@ -71,6 +97,8 @@ describe('Classification Schema Validation', () => {
     const result: ClassificationResult = {
       relevant: true,
       category: 'POLICY_CHANGE',
+      product_scope: 'CODEX',
+      statement_nature: 'FACT',
       confidence: 0.97,
       title_en: 'Plus 5-hour limit restored',
       title_zh: 'Plus 账户恢复 5 小时额度限制',
@@ -85,10 +113,65 @@ describe('Classification Schema Validation', () => {
     expect(result.category).toBe('POLICY_CHANGE');
   });
 
+  it('supports product updates, roadmap hints, and feature discussions separately', () => {
+    const results: ClassificationResult[] = [
+      {
+        relevant: true,
+        category: 'CODEX_UPDATE',
+        product_scope: 'CODEX',
+        statement_nature: 'FACT',
+        confidence: 0.9,
+        title_en: 'Codex update shipped',
+        title_zh: 'Codex 更新已发布',
+        summary_en: 'A Codex product change is confirmed as available.',
+        summary_zh: 'Codex 产品变化已确认可用。',
+        effective_time: null,
+        reset_time: null,
+        reason: 'The post describes an already available change.',
+      },
+      {
+        relevant: true,
+        category: 'ROADMAP_HINT',
+        product_scope: 'CODEX',
+        statement_nature: 'INTENTION',
+        confidence: 0.7,
+        title_en: 'Codex roadmap direction',
+        title_zh: 'Codex 路线图方向',
+        summary_en: 'The post describes a future direction without confirming a release.',
+        summary_zh: '帖子描述了未来方向，但没有确认发布。',
+        effective_time: null,
+        reset_time: null,
+        reason: 'Future intent is not a shipped fact.',
+      },
+      {
+        relevant: true,
+        category: 'FEATURE_DISCUSSION',
+        product_scope: 'CODEX',
+        statement_nature: 'QUESTION',
+        confidence: 0.65,
+        title_en: 'Codex feature discussion',
+        title_zh: 'Codex 功能讨论',
+        summary_en: 'The post asks what Codex feature should be built next.',
+        summary_zh: '帖子询问下一步应该构建什么 Codex 功能。',
+        effective_time: null,
+        reset_time: null,
+        reason: 'A product question is relevant but is not a release announcement.',
+      },
+    ];
+
+    expect(results.map(result => [result.category, result.statement_nature])).toEqual([
+      ['CODEX_UPDATE', 'FACT'],
+      ['ROADMAP_HINT', 'INTENTION'],
+      ['FEATURE_DISCUSSION', 'QUESTION'],
+    ]);
+  });
+
   it('validates an IRRELEVANT result', () => {
     const result: ClassificationResult = {
       relevant: false,
       category: 'IRRELEVANT',
+      product_scope: 'OTHER',
+      statement_nature: 'SPECULATION',
       confidence: 0.0,
       title_en: 'Classification failed',
       title_zh: '分类失败',
@@ -112,6 +195,8 @@ describe('Classification Schema Validation', () => {
     const valid: ClassificationResult = {
       relevant: true,
       category: 'POLICY_CHANGE',
+      product_scope: 'CODEX',
+      statement_nature: 'FACT',
       confidence: 0.5,
       title_en: 'Test',
       title_zh: '测试',
@@ -130,6 +215,8 @@ describe('Classification Schema Validation', () => {
     const irrelevant: ClassificationResult = {
       relevant: false,
       category: 'IRRELEVANT',
+      product_scope: 'OTHER',
+      statement_nature: 'FACT',
       confidence: 0,
       title_en: 'Not relevant',
       title_zh: '不相关',

@@ -12,6 +12,7 @@ import {
   renderRssFeed,
   renderSitemap,
 } from '../src/renderer';
+import { formatDateTimeForLocale } from '../src/utils/timezone';
 
 function event(overrides: Partial<MonitorEvent> = {}): MonitorEvent {
   return {
@@ -58,6 +59,28 @@ describe('SEO V2 renderer and index policy', () => {
     expect(chinese).toContain('<h4>8月</h4>');
   });
 
+  it('renders canonical locale timezones in SSR timestamp markup', () => {
+    const current = event({ published_at: '2026-08-31T02:42:44.000Z' });
+    const rawZones = ['America/New_York', 'Asia/Shanghai', 'Asia/Tokyo', 'Europe/Paris', 'Europe/Madrid'];
+
+    for (const locale of ['en', 'zh', 'ja', 'fr', 'es'] as const) {
+      const html = renderHomepage({
+        events: [current],
+        latestEvent: current,
+        lastReset: current,
+        lastPolicy: current,
+        lastCheckedAt: null,
+        totalEvents: 1,
+      }, locale);
+      const timeText = [...html.matchAll(/<time[^>]*>([\s\S]*?)<\/time>/g)]
+        .map(match => match[1])
+        .join(' ');
+
+      expect(timeText).toContain(formatDateTimeForLocale(current.published_at, locale));
+      for (const zone of rawZones) expect(timeText).not.toContain(zone);
+    }
+  });
+
   it('keeps homepage visible event markup and ItemList in sync', () => {
     const events = [event(), event({ id: 24, source_post_id: 99, title_en: 'Earlier event', title_zh: '更早事件' })];
     const html = renderHomepage({
@@ -85,6 +108,9 @@ describe('SEO V2 renderer and index policy', () => {
     expect(html).toContain('id="sourceStatusValue">X Direct</div>');
     expect(html).toContain('href="https://tibo.modelyard.dev/feed.xml"');
     expect(html).toContain('every event includes its source and status.');
+    expect(html).toContain('OpenAI Codex');
+    expect(html).toContain('ChatGPT Work');
+    expect(html).toContain('GPT/Codex');
     expect(html).not.toContain('Last successful monitor check:');
     expect(html).not.toContain('Last source fetch:');
     expect(html).not.toContain('Data comes from public sources and is labelled');
@@ -124,13 +150,14 @@ describe('SEO V2 renderer and index policy', () => {
 
     expect(html).toContain('服务器重置报告');
     expect(html).toContain('服务器报告额度已重置。');
-    expect(html).toContain('>2026/08/28 14:30 Asia/Shanghai</time>');
+    const expectedTime = formatDateTimeForLocale(manualReset.resetAt, 'zh');
+    expect(html).toContain('>' + expectedTime + '</time>');
     expect(html).toContain('系统自动报告。');
     expect(html).not.toContain('Telegram');
     expect(html).toContain('verified in the account');
     expect(html).toContain('window.__SSR_MANUAL_RESET__');
     expect(feed).toContain('服务器报告：额度已重置');
-    expect(feed).toContain('服务器报告额度已重置。 2026/08/28 14:30 Asia/Shanghai');
+    expect(feed).toContain('服务器报告额度已重置。 ' + expectedTime);
     expect(feed).toContain('系统自动报告。');
     expect(feed).toContain('system-reset-report:7');
   });
@@ -154,13 +181,13 @@ describe('SEO V2 renderer and index policy', () => {
     expect(configured).toContain("gtag('config', 'G-FV8BHY6E9V',");
     expect(configured).toContain('"page_language":"en"');
     expect(configured).toContain('"page_type":"home"');
-    expect(configured).toContain('<script src="/analytics.js" defer></script>');
+    expect(configured).toMatch(/<script src="\/analytics\.js\?v=[^"]+" defer><\/script>/);
     expect(configured).toContain('<meta name="google-site-verification" content="EfJyXGVCtaAcX-j12S5h2Sauw7rcVTZHOegr4QUCuzc">');
     expect(unconfigured).not.toContain('googletagmanager.com/gtag/js');
     expect(unconfigured).not.toContain('google-site-verification');
   });
 
-  it('uses New York time for the English system report', () => {
+  it('uses the English default timezone for the English system report', () => {
     const manualReset: ManualResetReportPublic = {
       id: 8,
       resetAt: '2026-08-28T06:30:00.000Z',
@@ -180,9 +207,10 @@ describe('SEO V2 renderer and index policy', () => {
     const feed = renderRssFeed([], 'en', manualReset);
 
     expect(html).toContain('Server reported a usage reset.');
-    expect(html).toContain('>2026/08/28 02:30 America/New_York</time>');
+    const expectedTime = formatDateTimeForLocale(manualReset.resetAt, 'en');
+    expect(html).toContain('>' + expectedTime + '</time>');
     expect(html).toContain('Automated report.');
-    expect(feed).toContain('2026/08/28 02:30 America/New_York');
+    expect(feed).toContain(expectedTime);
   });
 
   it('emits Article data that is visible and source-linked on event pages', () => {
@@ -199,7 +227,8 @@ describe('SEO V2 renderer and index policy', () => {
     const article = jsonLdBlocks(html).find(schema => schema['@type'] === 'Article');
 
     expect(article).toBeDefined();
-    expect(article?.headline).toBe(current.title_en);
+    expect(article?.headline).toContain(current.title_en);
+    expect(article?.headline).toContain('2026');
     expect(article?.description).toBe(current.summary_en);
     expect(article?.datePublished).toBe(current.published_at);
     expect(article?.dateModified).toBe(current.updated_at);
@@ -211,9 +240,65 @@ describe('SEO V2 renderer and index policy', () => {
     expect(html).toContain('Effective');
     expect(html).toContain('Reset time');
     expect(html).toContain('What does this mean?');
+    expect(html).toContain('class="event-answer-panel"');
+    expect(html).toContain('At a glance');
     expect(html).not.toContain('Who is affected?');
     expect(html).toContain('DIRECT_VERIFIED');
     expect(html).toContain(current.source_url);
+  });
+
+  it('uses cached event translations and omits untranslated alternates from index signals', () => {
+    const localized = event({
+      translations: {
+        ja: {
+          language: 'ja',
+          title: 'Codex ポリシー更新',
+          summary: '日本語で確認できる十分なイベント概要です。',
+          status: 'translated',
+          provider: 'test',
+          translated_at: '2026-08-31T01:00:00.000Z',
+        },
+        es: {
+          language: 'es',
+          title: 'Actualización de política de Codex',
+          summary: 'Un resumen del evento disponible en español.',
+          status: 'translated',
+          provider: 'test',
+          translated_at: '2026-08-31T01:00:00.000Z',
+        },
+        fr: {
+          language: 'fr',
+          title: 'Mise à jour de la politique Codex',
+          summary: 'Un résumé de l’événement disponible en français.',
+          status: 'translated',
+          provider: 'test',
+          translated_at: '2026-08-31T01:00:00.000Z',
+        },
+      },
+    });
+    const japanese = renderEventPage({ event: localized, prevEvent: null, nextEvent: null, relatedEvents: [] }, 'ja');
+    const article = jsonLdBlocks(japanese).find(schema => schema['@type'] === 'Article');
+
+    expect(japanese).toContain('<title>Codex ポリシー更新 · 2026年8月26日 — Tibo Codex Monitor</title>');
+    expect(japanese).toContain('日本語で確認できる十分なイベント概要です。');
+    expect(japanese).toContain('<meta name="robots" content="index, follow">');
+    expect(japanese).toContain('hreflang="ja" href="https://tibo.modelyard.dev/ja/events/25"');
+    expect(japanese).toContain('hreflang="es" href="https://tibo.modelyard.dev/es/events/25"');
+    expect(japanese).toContain('hreflang="fr" href="https://tibo.modelyard.dev/fr/events/25"');
+    expect(article?.headline).toBe('Codex ポリシー更新 · 2026年8月26日');
+    expect(article?.description).toBe('日本語で確認できる十分なイベント概要です。');
+    expect(article?.inLanguage).toBe('ja');
+
+    const missingSpanish = renderEventPage({ event: event(), prevEvent: null, nextEvent: null, relatedEvents: [] }, 'es');
+    expect(missingSpanish).toContain('<meta name="robots" content="noindex, follow">');
+    expect(missingSpanish).not.toContain('hreflang="es" href="https://tibo.modelyard.dev/es/events/25"');
+
+    const sitemapBeforeBackfill = renderSitemap([event()], '2026-08-31T01:00:00.000Z');
+    expect(sitemapBeforeBackfill).not.toContain('/ja/events/25');
+    const sitemapAfterBackfill = renderSitemap([localized], '2026-08-31T01:00:00.000Z');
+    expect(sitemapAfterBackfill).toContain('/ja/events/25');
+    expect(sitemapAfterBackfill).toContain('/es/events/25');
+    expect(sitemapAfterBackfill).toContain('/fr/events/25');
   });
 
   it('renders a branded 404 without a homepage canonical', () => {

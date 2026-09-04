@@ -2,6 +2,7 @@
 // Codex Usage Monitor - API Routes
 // ============================================================
 import { Hono } from 'hono';
+import { buildProvenance } from '../provenance';
 import { cors } from 'hono/cors';
 import { DISPLAY_TIME_ZONES, EVENT_CATEGORIES } from '../types';
 import type { DisplayTimeZone, Env, EventQueryOptions, ManualResetReport, MonitorEvent } from '../types';
@@ -15,7 +16,7 @@ import { canUseSearchProvider, monitoredAccounts, WEB_SEARCH_PROVIDER_KEY } from
 import {
   providerUsageDate,
 } from '../utils/schedule';
-import { isDisplayTimeZone } from '../utils/timezone';
+import { DEFAULT_TIMEZONE_BY_LOCALE, isDisplayTimeZone } from '../utils/timezone';
 import { getXApiStatusSnapshot } from '../utils/x-api-status';
 import {
   getBraveMonthlyCreditUsd,
@@ -26,6 +27,9 @@ import {
   isWebSearchOverdue,
   nextWebSearchAt,
 } from '../utils/search-schedule';
+import community from './community';
+import adminCommunity from './admin-community';
+import openGambit from './open-gambit';
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -213,8 +217,13 @@ function directResetResponse(event: MonitorEvent) {
 // CORS
 api.use('*', cors({
   origin: '*',
-  allowMethods: ['GET', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Community-Admin-Token', 'X-Community-Agent-Secret'],
 }));
+
+api.route('/community', community);
+api.route('/admin/community', adminCommunity);
+api.route('/open-gambit', openGambit);
 
 // GET /api/events - List events with pagination
 api.get('/events', async (c) => {
@@ -308,7 +317,7 @@ api.get('/history', async (c) => {
   }
   const timeZone: DisplayTimeZone = rawTimeZone
     ? rawTimeZone as DisplayTimeZone
-    : 'Asia/Shanghai';
+    : DEFAULT_TIMEZONE_BY_LOCALE.zh;
 
   try {
     const repo = new Repository(c.env.DB);
@@ -360,7 +369,7 @@ api.get('/status', async (c) => {
       repo.getAllProviderStatuses(),
       getXApiStatusSnapshot(repo, c.env, now),
       repo.getProviderUsageSummary(WEB_SEARCH_PROVIDER_KEY, providerUsageDate(now)),
-      repo.getActiveResetCycle(),
+      repo.getActiveResetCycle({ advance: false }),
       repo.getSetting('web_search_last_attempt'),
       repo.getSetting('web_search_last_success'),
       repo.getLatestManualResetReport(),
@@ -426,6 +435,7 @@ api.get('/status', async (c) => {
       lastEventVerifiedAt: latestEvent?.verified_at ?? null,
       latestEvent,
       lastReset,
+      latestDirectReset,
       manualReset: toPublicManualResetReport(visibleManualResetReport),
       currentPolicy,
       lastRun,
@@ -476,6 +486,7 @@ api.get('/status', async (c) => {
       lastEventVerifiedAt: null,
       latestEvent: null,
       lastReset: null,
+      latestDirectReset: null,
       manualReset: null,
       currentPolicy: null,
       lastRun: null,
@@ -534,7 +545,7 @@ api.get('/health', async (c) => {
     const now = new Date();
     const xApiSnapshot = await getXApiStatusSnapshot(repo, c.env, now);
     const searchUsage = await repo.getProviderUsageSummary(WEB_SEARCH_PROVIDER_KEY, providerUsageDate(now));
-    const activeCycle = await repo.getActiveResetCycle();
+    const activeCycle = await repo.getActiveResetCycle({ advance: false });
     const lastSearchAttempt = await repo.getSetting('web_search_last_attempt');
     const lastSearchSuccess = await repo.getSetting('web_search_last_success');
 
@@ -643,6 +654,7 @@ api.get('/health', async (c) => {
         : searchLastSuccessAt,
       lastEventAt: latestEvent?.published_at ?? latestEvent?.created_at ?? null,
       checkedAt: now.toISOString(),
+      provenance: buildProvenance(c.env),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

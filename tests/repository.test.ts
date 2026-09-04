@@ -51,11 +51,15 @@ describe('D1 Repository', () => {
     });
 
     it('monitor_events category has CHECK constraint', () => {
-      const constraint = "CHECK(category IN ('RESET_PLANNED','RESET_COMPLETED','RESET_TIME_CHANGED','POLICY_CHANGE'))";
+      const constraint = "CHECK(category IN ('RESET_PLANNED','RESET_COMPLETED','RESET_TIME_CHANGED','POLICY_CHANGE','CODEX_UPDATE','ROADMAP_HINT','FEATURE_DISCUSSION'))";
       expect(constraint).toContain('RESET_PLANNED');
       expect(constraint).toContain('RESET_COMPLETED');
       expect(constraint).toContain('RESET_TIME_CHANGED');
       expect(constraint).toContain('POLICY_CHANGE');
+      expect(constraint).toContain('CODEX_UPDATE');
+      expect(constraint).toContain('ROADMAP_HINT');
+      expect(constraint).toContain('FEATURE_DISCUSSION');
+      expect(constraint).not.toContain('IRRELEVANT');
     });
   });
 
@@ -195,6 +199,31 @@ describe('D1 Repository', () => {
       expect(posts[0].canonical_post_id).toBe('2093573991965557198');
       expect(statement.bind).toHaveBeenCalledWith(50);
       expect(String((db.prepare as any).mock.calls[0][0])).toContain('LEFT JOIN monitor_events');
+    });
+  });
+
+  describe('Read-path efficiency', () => {
+    it('can read the active reset cycle without advancing state', async () => {
+      const statement = {
+        first: vi.fn().mockResolvedValue(null),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await new Repository(db).getActiveResetCycle({ advance: false });
+
+      expect(db.prepare).toHaveBeenCalledTimes(1);
+      expect(statement.first).toHaveBeenCalledTimes(1);
+    });
+
+    it('orders the latest successful run by the indexed timestamp columns', async () => {
+      const statement = {
+        first: vi.fn().mockResolvedValue(null),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await new Repository(db).getLatestSuccessfulRun();
+
+      expect(String((db.prepare as any).mock.calls[0][0])).toContain('ORDER BY finished_at DESC, id DESC');
     });
   });
 });

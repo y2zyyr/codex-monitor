@@ -9,13 +9,32 @@
     "not_found_handling": "single-page-application"
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/15 * * * *", "30 2 * * *", "30 14 * * *"]
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "codex-monitor-db",
       "database_id": "replace-with-your-d1-database-id"
+    }
+  ],
+  // The bucket remains private. Use a separate staging bucket and database;
+  // never point local development at production resources.
+  "r2_buckets": [
+    {
+      "binding": "GAMBIT_SNAPSHOTS",
+      "bucket_name": "replace-with-staging-gambit-snapshots",
+      "preview_bucket_name": "replace-with-local-gambit-snapshots"
+    }
+  ],
+  // Future Cloudflare Workflow binding shape. The class is implemented in
+  // src/open-gambit/workflow-entrypoint.ts; creating the production Workflow is a
+  // deliberate post-review action and is not performed by this repository.
+  "workflows": [
+    {
+      "binding": "GAMBIT_ANALYSIS_WORKFLOW",
+      "name": "gambit-analysis",
+      "class_name": "OpenGambitAnalysisWorkflow"
     }
   ],
   "vars": {
@@ -39,6 +58,44 @@
     "MAX_WEB_SEARCH_REQUESTS_PER_DAY": "6",
     "NORMAL_SEARCH_INTERVAL_HOURS": "4",
     "BRAVE_SEARCH_PRICE_PER_1000_USD": "5",
-    "BRAVE_MONTHLY_CREDIT_USD": "5"
+    "BRAVE_MONTHLY_CREDIT_USD": "5",
+    "COMMUNITY_POSTING_ENABLED": "false",
+    "COMMUNITY_MAX_CONTENT_LENGTH": "2000",
+    "COMMUNITY_MAX_NICKNAME_LENGTH": "32",
+    "COMMUNITY_RATE_MINUTE": "1",
+    "COMMUNITY_RATE_HOUR": "5",
+    "COMMUNITY_RATE_DAY": "15",
+    "GITHUB_CARD_ENABLED": "true",
+    "COMMUNITY_GITHUB_CACHE_TTL_HOURS": "24",
+    "TRANSLATION_ENABLED": "true",
+    "COMMUNITY_TRANSLATION_LOCALES": "en,zh,ja,es,fr",
+    "TRANSLATION_TIMEOUT_MS": "15000",
+    "TURNSTILE_SITE_KEY": "",
+    "COMMUNITY_AGENT_ENABLED": "false",
+    "COMMUNITY_AGENT_MAX_PER_RUN": "3",
+    "COMMUNITY_AGENT_MAX_PER_DAY": "8",
+    "GAMBIT_SOURCE_REGISTRY_JSON": "",
+    "GAMBIT_MODEL_ROLES_JSON": "",
+    "GAMBIT_LLM_PROVIDER": "",
+    "GAMBIT_LLM_BASE_URL": "",
+    "GAMBIT_LLM_MODEL": "",
+    "GAMBIT_CRON_WINDOWS": "30 2 * * *,30 14 * * *",
+    "GAMBIT_SCHEDULE_ENABLED": "false",
+    "GAMBIT_CONFIG_VERSION": "0021_open_gambit",
+    "GAMBIT_LOCAL_MEMORY_SNAPSHOTS": "true",
+    "GAMBIT_MAX_SOURCES_PER_RUN": "20",
+    "GAMBIT_MAX_LLM_CALLS_PER_RUN": "12",
+    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "24000",
+    "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_HTTP_REQUESTS_PER_RUN": "20",
+    "GAMBIT_MAX_SOURCE_BYTES": "512000",
+    "GAMBIT_HTTP_TIMEOUT_MS": "8000"
+    // COMMUNITY_AGENT_SECRET is a server-side secret. Set it with
+    // `wrangler secret put COMMUNITY_AGENT_SECRET` (or in .dev.vars for local).
+    // It must never be committed or shipped to the browser bundle.
+    // GAMBIT_LLM_API_KEY and GAMBIT_ADMIN_TOKEN are also server-side secrets;
+    // set them through local secret storage or Wrangler secrets, never here.
   }
 }

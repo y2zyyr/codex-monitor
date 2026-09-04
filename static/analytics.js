@@ -27,6 +27,9 @@
     RESET_COMPLETED: true,
     RESET_TIME_CHANGED: true,
     POLICY_CHANGE: true,
+    CODEX_UPDATE: true,
+    ROADMAP_HINT: true,
+    FEATURE_DISCUSSION: true,
   };
 
   var EVIDENCE_SOURCES = {
@@ -43,6 +46,7 @@
     rate_limit_updates: true,
     faq: true,
     methodology: true,
+    community: true,
     event_detail: true,
     not_found: true,
     page: true,
@@ -71,7 +75,9 @@
   }
 
   function pageLanguage() {
-    return document.documentElement.lang === 'zh-CN' ? 'zh' : 'en';
+    var language = document.documentElement.lang || '';
+    if (language === 'zh-CN') return 'zh';
+    return /^(ja|es|fr)$/.test(language) ? language : 'en';
   }
 
   function pageType() {
@@ -87,6 +93,7 @@
     if (path.indexOf('/rate-limit-updates/') !== -1) return 'rate_limit_updates';
     if (path.indexOf('/faq/') !== -1) return 'faq';
     if (path.indexOf('/methodology/') !== -1) return 'methodology';
+    if (path.indexOf('/community/') !== -1) return 'community';
     return document.querySelector('meta[name="robots"][content^="noindex"]') ? 'not_found' : 'page';
   }
 
@@ -94,6 +101,7 @@
     return {
       page_language: pageLanguage(),
       page_type: pageType(),
+      page_path: cleanString(window.location.pathname || '/', 200),
     };
   }
 
@@ -181,11 +189,14 @@
   function eventContextFromElement(element) {
     var id = element && element.getAttribute('data-analytics-event-id');
     if (!id) id = eventIdFromPath(element && element.getAttribute('href'));
-    return {
+    var context = {
       event_id: id || '',
       event_category: categoryFromElement(element),
       evidence_source: evidenceSourceFromElement(element),
     };
+    var placement = element && element.getAttribute('data-analytics-placement');
+    if (placement) context.placement = placement;
+    return context;
   }
 
   function linkUrl(link) {
@@ -212,6 +223,7 @@
     if (path.indexOf('/rate-limit-updates') === 0) return 'rate_limit_updates';
     if (path.indexOf('/faq') === 0) return 'faq';
     if (path.indexOf('/methodology') === 0) return 'methodology';
+    if (path.indexOf('/community') === 0) return 'community';
     if (path.indexOf('/events/') === 0) return 'event_detail';
     if (path.indexOf('/api/') === 0) return 'api';
     if (path === '/feed.xml') return 'rss';
@@ -228,7 +240,7 @@
         track('event_list_click', Object.assign(eventContextFromElement(link), { view_method: 'navigation' }));
       } else if (/^\/(?:zh\/)?(?:api\/|feed\.xml$|sitemap\.xml$|robots\.txt$)/.test(url.pathname)) {
         track('utility_click', { nav_item: navItem(url.pathname), link_type: 'internal' });
-      } else if (closest(link, '.site-nav, .footer-links, .breadcrumb, .event-navigation, .event-topic-link')) {
+      } else if (closest(link, '.header-community-link, .footer-links, .breadcrumb, .event-navigation, .event-topic-link, .status-answer, .status-card')) {
         track('nav_click', { nav_item: navItem(url.pathname), link_type: 'internal' });
       }
       return;
@@ -287,11 +299,13 @@
   function bindControls() {
     document.addEventListener('click', function (event) {
       var target = event.target;
-      var languageButton = closest(target, '#langSwitch');
-      if (languageButton) {
+      var languageLink = closest(target, '.language-menu-options a');
+      if (languageLink) {
+        var destination = new URL(languageLink.href, window.location.href);
+        var destinationLanguage = destination.pathname.match(/^\/(zh|ja|es|fr)(?:\/|$)/);
         track('language_switch', {
           from_language: pageLanguage(),
-          to_language: pageLanguage() === 'zh' ? 'en' : 'zh',
+          to_language: destinationLanguage ? (destinationLanguage[1] === 'zh' ? 'zh' : destinationLanguage[1]) : 'en',
         });
         return;
       }

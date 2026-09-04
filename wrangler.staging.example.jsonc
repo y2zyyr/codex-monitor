@@ -1,0 +1,47 @@
+{
+  "name": "codex-monitor-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./static",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  // Staging preflight intentionally has no automatic cron. This keeps the
+  // existing production monitor cadence and all Gambit windows inactive while
+  // read paths and bounded manual tests are verified.
+  "triggers": { "crons": [] },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "codex-monitor-staging-db",
+    "database_id": "replace-with-staging-d1-database-id"
+  }],
+  "r2_buckets": [{
+    "binding": "GAMBIT_SNAPSHOTS",
+    "bucket_name": "replace-with-staging-gambit-snapshots"
+  }],
+  "workflows": [{
+    "binding": "GAMBIT_ANALYSIS_WORKFLOW",
+    "name": "gambit-analysis-staging",
+    "class_name": "OpenGambitAnalysisWorkflow"
+  }],
+  "vars": {
+    "SITE_URL": "https://staging.example.invalid",
+    "GAMBIT_SCHEDULE_ENABLED": "false",
+    "GAMBIT_CONFIG_VERSION": "0021_open_gambit",
+    "GAMBIT_LOCAL_MEMORY_SNAPSHOTS": "false",
+    "GAMBIT_CRON_WINDOWS": "30 2 * * *,30 14 * * *",
+    "GAMBIT_SOURCE_REGISTRY_JSON": "",
+    "GAMBIT_MODEL_ROLES_JSON": "",
+    "GAMBIT_LLM_PROVIDER": "",
+    "GAMBIT_LLM_BASE_URL": "",
+    "GAMBIT_LLM_MODEL": "",
+    "GAMBIT_MAX_LLM_CALLS_PER_RUN": "12",
+    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "24000",
+    "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",
+    "GAMBIT_MAX_HTTP_REQUESTS_PER_RUN": "20"
+  }
+}

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   CHINESE_DISPLAY_TIME_ZONE,
+  DEFAULT_TIMEZONE_BY_LOCALE,
   ENGLISH_DISPLAY_TIME_ZONE,
   datePartsInTimeZone,
   displayTimeZoneForLanguage,
+  formatDateShortForLocale,
+  formatDateTimeForLocale,
   formatDateShort,
   parseStoredUtc,
   parseTimeFromText,
@@ -16,11 +19,66 @@ import {
 
 describe('Timezone Conversion', () => {
   describe('language display timezones', () => {
-    it('maps English to New York and Chinese to Beijing', () => {
+    it('maps every supported locale to its canonical default timezone', () => {
       expect(displayTimeZoneForLanguage('en')).toBe(ENGLISH_DISPLAY_TIME_ZONE);
       expect(displayTimeZoneForLanguage('en-US')).toBe(ENGLISH_DISPLAY_TIME_ZONE);
       expect(displayTimeZoneForLanguage('zh')).toBe(CHINESE_DISPLAY_TIME_ZONE);
       expect(displayTimeZoneForLanguage('zh-CN')).toBe(CHINESE_DISPLAY_TIME_ZONE);
+      expect(displayTimeZoneForLanguage('ja')).toBe('Asia/Tokyo');
+      expect(displayTimeZoneForLanguage('fr')).toBe('Europe/Paris');
+      expect(displayTimeZoneForLanguage('es')).toBe('Europe/Madrid');
+      expect(DEFAULT_TIMEZONE_BY_LOCALE).toEqual({
+        en: 'America/New_York',
+        zh: 'Asia/Shanghai',
+        ja: 'Asia/Tokyo',
+        fr: 'Europe/Paris',
+        es: 'Europe/Madrid',
+      });
+    });
+
+    it('formats one UTC instant in each locale timezone with an Intl timezone name', () => {
+      const instant = '2026-08-31T02:42:44.000Z';
+      const expectedLocalParts = {
+        en: { day: '30', hour: '22', minute: '42' },
+        zh: { day: '31', hour: '10', minute: '42' },
+        ja: { day: '31', hour: '11', minute: '42' },
+        fr: { day: '31', hour: '04', minute: '42' },
+        es: { day: '31', hour: '04', minute: '42' },
+      } as const;
+
+      for (const locale of ['en', 'zh', 'ja', 'fr', 'es'] as const) {
+        const timeZone = DEFAULT_TIMEZONE_BY_LOCALE[locale];
+        const parts = datePartsInTimeZone(instant, timeZone);
+        expect(parts).toMatchObject(expectedLocalParts[locale]);
+
+        const formatted = formatDateTimeForLocale(instant, locale);
+        const expectedTimeZoneName = new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : locale, {
+          timeZone,
+          timeZoneName: 'short',
+        }).formatToParts(new Date(instant)).find(part => part.type === 'timeZoneName')?.value;
+        expect(expectedTimeZoneName).toBeTruthy();
+        expect(formatted).toContain(expectedTimeZoneName!);
+        expect(formatDateShortForLocale(instant, locale)).toBeTruthy();
+      }
+    });
+
+    it('keeps DST behavior in Intl for New York, Paris, and Madrid', () => {
+      for (const locale of ['en', 'fr', 'es'] as const) {
+        const winter = formatDateTimeForLocale('2026-01-15T12:00:00.000Z', locale);
+        const summer = formatDateTimeForLocale('2026-07-15T12:00:00.000Z', locale);
+        const formatterLocale = locale === 'en' ? 'en-US' : locale;
+        const winterName = new Intl.DateTimeFormat(formatterLocale, {
+          timeZone: DEFAULT_TIMEZONE_BY_LOCALE[locale],
+          timeZoneName: 'short',
+        }).formatToParts(new Date('2026-01-15T12:00:00.000Z')).find(part => part.type === 'timeZoneName')?.value;
+        const summerName = new Intl.DateTimeFormat(formatterLocale, {
+          timeZone: DEFAULT_TIMEZONE_BY_LOCALE[locale],
+          timeZoneName: 'short',
+        }).formatToParts(new Date('2026-07-15T12:00:00.000Z')).find(part => part.type === 'timeZoneName')?.value;
+        expect(winter).toContain(winterName!);
+        expect(summer).toContain(summerName!);
+        expect(winterName).not.toBe(summerName);
+      }
     });
 
     it('uses the selected timezone for calendar parts and local-midnight bounds', () => {

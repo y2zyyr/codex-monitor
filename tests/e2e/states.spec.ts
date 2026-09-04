@@ -15,7 +15,8 @@ test.describe('Tibo Monitor frontend states', () => {
     await expect(page.locator('#eventHighlight')).not.toContainText('Unable to load monitoring data.');
     await page.getByRole('button', { name: 'Policy' }).click();
     await expect(page.locator('#filterPolicyChange')).toHaveClass(/active/);
-    await page.getByRole('button', { name: 'Switch language to Simplified Chinese' }).click();
+    await page.locator('#langSwitch').click();
+    await page.getByRole('link', { name: '中文' }).click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await expect(page.locator('.timeline-item').first()).toBeVisible();
   });

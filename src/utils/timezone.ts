@@ -1,19 +1,26 @@
 // ============================================================
 // Codex Usage Monitor - Timezone Conversion Utilities
 // ============================================================
-import type { DisplayTimeZone } from '../types';
+import { DISPLAY_TIME_ZONES, type DisplayTimeZone } from '../types';
+import { SITE_HTML_LANG, type SiteLocale } from '../i18n';
 
 export const ENGLISH_DISPLAY_TIME_ZONE: DisplayTimeZone = 'America/New_York';
 export const CHINESE_DISPLAY_TIME_ZONE: DisplayTimeZone = 'Asia/Shanghai';
+export const DEFAULT_TIMEZONE_BY_LOCALE: Record<SiteLocale, DisplayTimeZone> = {
+  en: ENGLISH_DISPLAY_TIME_ZONE,
+  zh: CHINESE_DISPLAY_TIME_ZONE,
+  ja: 'Asia/Tokyo',
+  fr: 'Europe/Paris',
+  es: 'Europe/Madrid',
+};
 
-export function displayTimeZoneForLanguage(lang: 'en' | 'zh' | 'en-US' | 'zh-CN'): DisplayTimeZone {
-  return lang === 'zh' || lang === 'zh-CN'
-    ? CHINESE_DISPLAY_TIME_ZONE
-    : ENGLISH_DISPLAY_TIME_ZONE;
+export function displayTimeZoneForLanguage(lang: SiteLocale | 'en-US' | 'zh-CN'): DisplayTimeZone {
+  const locale = lang === 'en-US' ? 'en' : lang === 'zh-CN' ? 'zh' : lang;
+  return DEFAULT_TIMEZONE_BY_LOCALE[locale as SiteLocale] ?? DEFAULT_TIMEZONE_BY_LOCALE.en;
 }
 
 export function isDisplayTimeZone(value: string | null | undefined): value is DisplayTimeZone {
-  return value === ENGLISH_DISPLAY_TIME_ZONE || value === CHINESE_DISPLAY_TIME_ZONE;
+  return DISPLAY_TIME_ZONES.includes(value as DisplayTimeZone);
 }
 
 const SQLITE_UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
@@ -27,6 +34,42 @@ export function parseStoredUtc(value: string | Date | null | undefined): Date | 
     : value;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Format a canonical instant for the interface locale's default timezone. */
+export function formatDateTimeForLocale(
+  value: string | Date | null | undefined,
+  lang: SiteLocale,
+): string {
+  if (!value) return '';
+  const date = parseStoredUtc(value);
+  if (!date) return typeof value === 'string' ? value : '';
+  return new Intl.DateTimeFormat(SITE_HTML_LANG[lang], {
+    timeZone: displayTimeZoneForLanguage(lang),
+    year: 'numeric',
+    month: lang === 'zh' ? 'numeric' : 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: lang === 'en',
+    timeZoneName: 'short',
+  }).format(date);
+}
+
+/** Format a calendar date for grouping/list labels in the interface locale. */
+export function formatDateShortForLocale(
+  value: string | Date | null | undefined,
+  lang: SiteLocale,
+): string {
+  if (!value) return '';
+  const date = parseStoredUtc(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat(SITE_HTML_LANG[lang], {
+    timeZone: displayTimeZoneForLanguage(lang),
+    ...(lang === 'zh' ? { year: 'numeric' as const } : {}),
+    month: lang === 'zh' ? 'numeric' : 'short',
+    day: 'numeric',
+  }).format(date);
 }
 
 export interface DisplayDateParts {

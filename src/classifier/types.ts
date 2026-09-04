@@ -24,6 +24,7 @@ const MILESTONE_PATTERN = /\b(?:milestone|celebrat(?:e|ed|ing|ion)|achievement|b
 const DASHBOARD_PATTERN = /\b(?:dashboard|metrics?|active\s+users?|users?)\b|(?:仪表盘|指标|活跃用户|用户数)/i;
 const CONSERVATION_PATTERN = /\b(?:hold\s+on\s+to|hang\s+on\s+to|save|keep)\s+(?:your\s+)?(?:codex|usage|credits?|quota|limits?)\b|\bhold\s+on\s+to\s+your\s+codex\b|(?:保留|节省|先别用|不要消耗)[^.!?\n]{0,24}(?:codex|用量|额度|配额|限额)/i;
 const RESET_BUTTON_PATTERN = /\breset[\s-]+button\b|重置按钮/i;
+const EXPLICIT_CODEX_PATTERN = /\bcodex\b/i;
 
 /**
  * Extract the small set of semantic signals Tibo uses when he hints at an
@@ -75,39 +76,75 @@ export function getSoftResetHintSignals(text: string): SoftResetHintSignals {
   };
 }
 
-// keywordPrefilter is deliberately permissive for ordinary Codex posts, but
-// also admits a cryptic milestone hint when the semantic combination is
-// present. This keeps such a post from being discarded before classification.
-export function keywordPrefilter(text: string): boolean {
-  const lower = text.toLowerCase();
-  const keywords = [
-    'codex',
-    'usage',
-    'reset',
-    'full reset',
-    'usage reset',
-    'rate limit',
-    'rate limits',
-    'limit',
-    'limits',
-    'weekly',
-    'weekly limit',
-    '5h',
-    '5 hour',
-    '5-hour',
-    'paid subscription',
-    'paid subscriptions',
-    'plus',
-    'pro',
-    'usage bug',
-    'usage issue',
-    'compaction',
-    'computer history',
-    'credits',
-    'quota',
-  ];
+// keywordPrefilter is a priority hint only. It must not decide whether a
+// source post is relevant: every newly persisted original post still enters
+// the pending/classifier path in cron.ts. Word boundaries avoid false priority
+// matches such as "pro" inside "products" or "improvements".
+const CLASSIFIER_PRIORITY_PATTERNS: RegExp[] = [
+  /\bcodex\b/,
+  /\b(?:chatgpt\s+work|usage|quota|quotas|credits?|rate\s+limits?|limits?|reset)\b/,
+  /\b(?:weekly|5h|5[-\s]?hour|paid\s+subscriptions?|plus|pro)\b/,
+  /\b(?:compaction|computer\s+history|usage\s+(?:bug|issue))\b/,
+  /\b(?:ship(?:s|ping|ped)?|launch(?:es|ed|ing)?|release(?:s|d|ing)?|roll(?:s|ed|ing)?\s+out|available|added|announced|upcoming|coming|soon|next\s+week|working\s+on|planning|planned|roadmap|feature|feedback|what\s+should\s+we|considering|exploring|idea|workflow|cli|ide|desktop|agent|model|tool|developers?)\b/,
+  /(?:发布|上线|推出|更新|即将|很快|下周|路线图|功能|反馈|正在开发|计划|考虑|探索|工作流|工具|桌面|模型|代理)/i,
+];
 
-  return keywords.some(kw => lower.includes(kw)) || getSoftResetHintSignals(lower).kind !== null;
+const CODEX_SCOPE_GATED_CATEGORIES = new Set<ClassificationResult['category']>([
+  'RESET_PLANNED',
+  'RESET_COMPLETED',
+  'RESET_TIME_CHANGED',
+  'POLICY_CHANGE',
+  'CODEX_UPDATE',
+  'ROADMAP_HINT',
+  'FEATURE_DISCUSSION',
+]);
+
+/**
+ * Every public Codex Timeline event must be explicitly Codex-scoped. This is
+ * a defense-in-depth guard: the classifier prompt asks for the same result,
+ * but admission must still reject non-Codex reset, policy, and product
+ * categories if a provider returns them as relevant. Descriptive observations
+ * are never public events merely because they mention Codex.
+ */
+export function isCodexProductSignalAdmissible(
+  result: Pick<ClassificationResult, 'category' | 'product_scope' | 'statement_nature'>,
+): boolean {
+  if (result.statement_nature === 'OBSERVATION') return false;
+  return !CODEX_SCOPE_GATED_CATEGORIES.has(result.category)
+    || result.product_scope === 'CODEX';
+}
+
+export function keywordPrefilter(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/[’]/g, "'");
+  return CLASSIFIER_PRIORITY_PATTERNS.some(pattern => pattern.test(normalized))
+    || getSoftResetHintSignals(normalized).kind !== null;
+}
+
+// Keep the rule-based IRRELEVANT gate deliberately tiny. Anything that is not
+// an unmistakable empty/greeting-only post remains eligible for the LLM; in
+// particular, absence of a keyword is never enough to discard a post.
+const OBVIOUS_IRRELEVANT_PATTERN = /^(?:gm|good\s+morning|good\s+night|happy\s+(?:birthday|new\s+year)|congratulations)[!.…\s]*$/i;
+
+export function isObviousIrrelevant(post: SourcePost): boolean {
+  const text = post.text.trim();
+  return text.length === 0 || OBVIOUS_IRRELEVANT_PATTERN.test(text);
+}
+
+export function buildObviousIrrelevantResult(post: SourcePost): ClassificationResult {
+  return {
+    relevant: false,
+    category: 'IRRELEVANT',
+    product_scope: 'OTHER',
+    statement_nature: 'FACT',
+    confidence: 0.99,
+    title_en: '',
+    title_zh: '',
+    summary_en: '',
+    summary_zh: '',
+    effective_time: null,
+    reset_time: null,
+    reason: `The post contains no monitorable product or usage signal: ${post.text.trim() || 'empty text'}.`,
+  };
 }
 
 function isDirectXPost(post: SourcePost): boolean {
@@ -134,6 +171,7 @@ export function isCompletedResetHint(post: SourcePost): boolean {
   if (!isDirectXPost(post)) return false;
 
   const text = normalizedPostText(post);
+  if (!EXPLICIT_CODEX_PATTERN.test(text)) return false;
   const hasFutureIntent = /\b(?:tomorrow|soon|later|next\s+(?:day|week|time)|in\s+the\s+future|will|going\s+to|plan(?:ned)?)\b/.test(text)
     || /\b(?:find|look\s+for)\s+(?:it|the\s+reset\s+button)\b/.test(text)
     || /\bdust\s+(?:it|that)\s+up\b/.test(text);
@@ -163,6 +201,8 @@ export function buildCompletedResetHintResult(post: SourcePost): ClassificationR
   return {
     relevant: true,
     category: 'RESET_COMPLETED',
+    product_scope: 'CODEX',
+    statement_nature: 'FACT',
     confidence: 0.82,
     title_en: `${author} indicates Codex usage has reset`,
     title_zh: `${author}表示Codex用户用量已重置`,
@@ -182,7 +222,9 @@ export function buildCompletedResetHintResult(post: SourcePost): ClassificationR
  */
 export function isSoftResetHint(post: SourcePost): boolean {
   if (!isDirectXPost(post)) return false;
-  return getSoftResetHintSignals(normalizedPostText(post)).kind !== null;
+  const text = normalizedPostText(post);
+  return EXPLICIT_CODEX_PATTERN.test(text)
+    && getSoftResetHintSignals(text).kind !== null;
 }
 
 /**
@@ -201,6 +243,8 @@ export function buildSoftResetHintResult(post: SourcePost): ClassificationResult
     return {
       relevant: true,
       category: 'RESET_PLANNED',
+      product_scope: 'CODEX',
+      statement_nature: 'HINT',
       confidence: 0.58,
       title_en: `${author} hints at a possible Codex reset milestone`,
       title_zh: `${author}暗示可能有 Codex 重置里程碑`,
@@ -215,6 +259,8 @@ export function buildSoftResetHintResult(post: SourcePost): ClassificationResult
   return {
     relevant: true,
     category: 'RESET_PLANNED',
+    product_scope: 'CODEX',
+    statement_nature: 'HINT',
     confidence: 0.55,
     title_en: `${author} hints at a possible reset`,
     title_zh: `${author}暗示可能进行额度重置`,

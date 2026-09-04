@@ -35,7 +35,13 @@ describe('Keyword Prefilter', () => {
   it('rejects completely unrelated posts', () => {
     expect(keywordPrefilter('Great weather we are having')).toBe(false);
     expect(keywordPrefilter('Hello world')).toBe(false);
-    expect(keywordPrefilter('Just shipped a new feature without any keywords')).toBe(false);
+    expect(keywordPrefilter('A new milestone to celebrate tomorrow')).toBe(false);
+  });
+
+  it('prioritizes product direction without making the keyword result authoritative', () => {
+    expect(keywordPrefilter('Just shipped a new feature without any old usage keywords')).toBe(true);
+    expect(keywordPrefilter('What should we ship next week?')).toBe(true);
+    expect(keywordPrefilter('A new product is here')).toBe(false);
   });
 
   it('is case-insensitive', () => {

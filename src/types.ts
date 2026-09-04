@@ -8,14 +8,53 @@ export const EVENT_CATEGORIES = [
   'RESET_COMPLETED', 
   'RESET_TIME_CHANGED',
   'POLICY_CHANGE',
+  'CODEX_UPDATE',
+  'ROADMAP_HINT',
+  'FEATURE_DISCUSSION',
   'IRRELEVANT',
 ] as const;
 
 export type EventCategory = typeof EVENT_CATEGORIES[number];
 
+/** Internal classifier scope used to prevent non-Codex product chatter from
+ * entering the public Codex timeline. It is intentionally not persisted. */
+export const PRODUCT_SCOPES = [
+  'CODEX',
+  'CHATGPT_WORK',
+  'CHATGPT',
+  'OPENAI_GENERAL',
+  'OTHER',
+  'AMBIGUOUS',
+] as const;
+
+export type ProductScope = typeof PRODUCT_SCOPES[number];
+
+/**
+ * Statement nature is intentionally separate from event category. A roadmap
+ * question can be relevant without being a product fact, a feature discussion
+ * must never be rendered as a confirmed release, and an adoption observation
+ * does not by itself establish a product change.
+ */
+export const STATEMENT_NATURES = [
+  'FACT',
+  'OBSERVATION',
+  'INTENTION',
+  'HINT',
+  'QUESTION',
+  'SPECULATION',
+] as const;
+
+export type StatementNature = typeof STATEMENT_NATURES[number];
+
 // The interface uses a stable editorial timezone per language so the same
 // page does not change meaning based on the visitor's device timezone.
-export const DISPLAY_TIME_ZONES = ['America/New_York', 'Asia/Shanghai'] as const;
+export const DISPLAY_TIME_ZONES = [
+  'America/New_York',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Europe/Paris',
+  'Europe/Madrid',
+] as const;
 export type DisplayTimeZone = typeof DISPLAY_TIME_ZONES[number];
 
 // --- Evidence and verification ---
@@ -57,6 +96,19 @@ export interface SourcePost {
   created_at?: string;
 }
 
+export const EVENT_TRANSLATION_LOCALES = ['ja', 'es', 'fr'] as const;
+export type EventTranslationLocale = typeof EVENT_TRANSLATION_LOCALES[number];
+export type EventTranslationStatus = 'translated' | 'failed' | 'pending';
+
+export interface MonitorEventTranslation {
+  language: EventTranslationLocale;
+  title: string | null;
+  summary: string | null;
+  status: EventTranslationStatus;
+  provider: string | null;
+  translated_at: string | null;
+}
+
 // --- Monitor Event ---
 export interface MonitorEvent {
   id?: number;
@@ -67,6 +119,8 @@ export interface MonitorEvent {
   title_zh: string;
   summary_en: string;
   summary_zh: string;
+  /** Cached derived translations; original source and en/zh fields remain authoritative. */
+  translations?: Partial<Record<EventTranslationLocale, MonitorEventTranslation>>;
   confidence: number;
   published_at: string | null;   // ISO 8601 UTC, or null when the source did not expose it
   effective_at: string | null;
@@ -147,6 +201,8 @@ export interface SocialSourceProvider {
 export interface ClassificationResult {
   relevant: boolean;
   category: EventCategory;
+  product_scope: ProductScope;
+  statement_nature: StatementNature;
   confidence: number;
   title_en: string;
   title_zh: string;
@@ -311,6 +367,20 @@ export interface D1MonitorEventRow {
   updated_at: string;
 }
 
+export interface D1MonitorEventTranslationRow {
+  id: number;
+  event_id: number;
+  language: string;
+  title: string | null;
+  summary: string | null;
+  status: string;
+  provider: string | null;
+  translated_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface D1ManualResetReportRow {
   id: number;
   telegram_update_id: number;
@@ -397,4 +467,65 @@ export interface Env {
   TELEGRAM_ADMIN_CHAT_ID?: string;
   CRON_SECRET?: string;
   SITE_NAME?: string;
+  COMMUNITY_POSTING_ENABLED?: string;
+  COMMUNITY_MAX_CONTENT_LENGTH?: string;
+  COMMUNITY_MAX_NICKNAME_LENGTH?: string;
+  COMMUNITY_RATE_MINUTE?: string;
+  COMMUNITY_RATE_HOUR?: string;
+  COMMUNITY_RATE_DAY?: string;
+  /** Comma-separated cached community translation locales, e.g. en,zh,ja,es,fr. */
+  COMMUNITY_TRANSLATION_LOCALES?: string;
+  GITHUB_CARD_ENABLED?: string;
+  GITHUB_TOKEN?: string;
+  COMMUNITY_GITHUB_CACHE_TTL_HOURS?: string;
+  TRANSLATION_ENABLED?: string;
+  TRANSLATION_API_KEY?: string;
+  TRANSLATION_BASE_URL?: string;
+  TRANSLATION_MODEL?: string;
+  TRANSLATION_MAX_TOKENS?: string;
+  TRANSLATION_TIMEOUT_MS?: string;
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  ABUSE_HASH_SECRET?: string;
+  COMMUNITY_ADMIN_TOKEN?: string;
+  /**
+   * Server-side secret for first-party Community agents. Never exposed to
+   * the browser bundle and never returned by any API response.
+   */
+  COMMUNITY_AGENT_SECRET?: string;
+  COMMUNITY_AGENT_ENABLED?: string;
+  COMMUNITY_AGENT_MAX_PER_RUN?: string;
+  COMMUNITY_AGENT_MAX_PER_DAY?: string;
+  // Open Gambit V1 bindings/configuration. These are optional so the existing
+  // Tibo monitor remains runnable before the additive Gambit migration and
+  // Cloudflare resources are deliberately provisioned.
+  GAMBIT_SNAPSHOTS?: R2Bucket;
+  GAMBIT_ANALYSIS_WORKFLOW?: {
+    create(options: { id: string; params: Record<string, unknown> }): Promise<unknown>;
+  };
+  GAMBIT_SOURCE_REGISTRY_JSON?: string;
+  GAMBIT_MODEL_ROLES_JSON?: string;
+  GAMBIT_LLM_API_KEY?: string;
+  GAMBIT_LLM_BASE_URL?: string;
+  /** Non-secret actual provider label for runtime provenance; never a public AI identity. */
+  GAMBIT_LLM_PROVIDER?: string;
+  GAMBIT_LLM_MODEL?: string;
+  GAMBIT_CRON_WINDOWS?: string;
+  GAMBIT_SCHEDULE_ENABLED?: string;
+  GAMBIT_LOCAL_MEMORY_SNAPSHOTS?: string;
+  GAMBIT_MAX_SOURCES_PER_RUN?: string;
+  GAMBIT_MAX_LLM_CALLS_PER_RUN?: string;
+  GAMBIT_MAX_LLM_TOKENS_PER_RUN?: string;
+  GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN?: string;
+  GAMBIT_MAX_X_REQUESTS_PER_RUN?: string;
+  GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN?: string;
+  GAMBIT_MAX_HTTP_REQUESTS_PER_RUN?: string;
+  GAMBIT_MAX_SOURCE_BYTES?: string;
+  GAMBIT_HTTP_TIMEOUT_MS?: string;
+  GAMBIT_ADMIN_TOKEN?: string;
+  BUILD_ENVIRONMENT?: string;
+  BUILD_VERSION?: string;
+  BUILD_SHA?: string;
+  BUILD_TIMESTAMP?: string;
+  GAMBIT_CONFIG_VERSION?: string;
 }

@@ -11,9 +11,52 @@ LLM_API_KEY=your_llm_api_key_here
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 
+# Open Gambit runtime configuration is separate from the visitor-facing AI
+# identities. These values describe the actual configured provider/model and
+# are not the public names shown on the site.
+# GAMBIT_LLM_API_KEY=your_gambit_llm_api_key_here
+# GAMBIT_LLM_PROVIDER=your_actual_provider_label
+# GAMBIT_LLM_BASE_URL=https://api.openai.com/v1
+# GAMBIT_LLM_MODEL=your_actual_model_id
+# GAMBIT_ADMIN_TOKEN=replace_with_a_long_random_gambit_admin_token
+
 # Telegram operator webhook
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 TELEGRAM_WEBHOOK_SECRET=replace_with_a_long_random_secret
 TELEGRAM_ADMIN_USER_ID=your_telegram_admin_user_id_here
 # Optional: restrict the bot to one Telegram chat as well.
 # TELEGRAM_ADMIN_CHAT_ID=
+
+# ModelYard Community (posting stays disabled until all server-side prerequisites
+# and the public Turnstile site key are configured).
+COMMUNITY_POSTING_ENABLED=false
+COMMUNITY_MAX_CONTENT_LENGTH=2000
+COMMUNITY_MAX_NICKNAME_LENGTH=32
+COMMUNITY_RATE_MINUTE=1
+COMMUNITY_RATE_HOUR=5
+COMMUNITY_RATE_DAY=15
+GITHUB_CARD_ENABLED=true
+COMMUNITY_GITHUB_CACHE_TTL_HOURS=24
+TRANSLATION_ENABLED=true
+COMMUNITY_TRANSLATION_LOCALES=en,zh,ja,es,fr
+TRANSLATION_TIMEOUT_MS=15000
+TURNSTILE_SITE_KEY=your_turnstile_site_key_here
+TURNSTILE_SECRET_KEY=your_turnstile_secret_key_here
+ABUSE_HASH_SECRET=replace_with_a_long_random_secret
+COMMUNITY_ADMIN_TOKEN=replace_with_a_long_random_admin_token
+# First-party Community agent publishing. The agent secret is a server-side
+# secret (never committed, never shipped to the browser). Agent identities are
+# fixed in code (Tibo Scout, Skill Hunter, Repo Hunter, Codex Watch, Lab Notes)
+# and cannot be chosen by a client. Set the secret locally in .dev.vars and in
+# production with `wrangler secret put COMMUNITY_AGENT_SECRET`. Agent posting is a
+# separate trust domain from human posting: gated on this secret, not Turnstile.
+COMMUNITY_AGENT_ENABLED=false
+COMMUNITY_AGENT_MAX_PER_RUN=3
+COMMUNITY_AGENT_MAX_PER_DAY=8
+# COMMUNITY_AGENT_SECRET=replace_with_a_long_random_secret
+# Optional: a separate OpenAI-compatible translation credential. If omitted,
+# the existing server-side LLM_API_KEY is reused.
+# TRANSLATION_API_KEY=
+# TRANSLATION_BASE_URL=https://api.openai.com/v1
+# TRANSLATION_MODEL=gpt-4o-mini
+# GITHUB_TOKEN=your_server_side_github_token_here

@@ -2,7 +2,8 @@
 // Codex Usage Monitor - LLM Classification Provider
 // ============================================================
 import type { ClassificationProvider, ClassificationOutcome, SourcePost, Env } from '../types';
-import { EVENT_CATEGORIES } from '../types';
+import { EVENT_CATEGORIES, PRODUCT_SCOPES, STATEMENT_NATURES } from '../types';
+import type { ProductScope, StatementNature } from '../types';
 
 interface LLMRequestMessage {
   role: 'system' | 'user';
@@ -29,6 +30,12 @@ interface LLMResponse {
   };
 }
 
+// Only accept an LLM-produced timestamp when the source text contains an
+// absolute calendar date. Relative phrases such as "tomorrow", "next week",
+// and "soon" are useful classification signals but are not interpretable
+// effective times for a durable event record.
+const EXPLICIT_CALENDAR_DATE_PATTERN = /\b(?:20\d{2}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2}|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,|\s+)\s*20\d{2})\b/i;
+
 /**
  * LLMClassifier - Uses an OpenAI-compatible API to classify posts.
  * Falls back gracefully on errors.
@@ -51,64 +58,54 @@ export class LLMClassifier implements ClassificationProvider {
   }
 
   async classify(post: SourcePost): Promise<ClassificationOutcome> {
-    const systemPrompt = `You are a specialized classifier for Codex (an AI coding agent by OpenAI) usage policy updates.
+    const systemPrompt = `You are a high-recall classifier for meaningful public signals from Tibo (@thsottiaux) about OpenAI Codex and its related coding-agent workflow.
 
-Analyze the tweet/post below and determine if it announces a meaningful change to Codex usage policies, reset schedules, rate limits, or subscription terms.
+Classify the post for this monitoring scope: Codex usage/reset behavior, limits, policies, subscription terms, Codex product changes, roadmap direction, or feature/workflow discussion. A post can be relevant before anything ships. Do not turn this monitor into a mirror of every post.
 
-You must return a JSON object with these exact fields:
+Return one JSON object with exactly these fields:
 {
   "relevant": true/false,
-  "category": "RESET_PLANNED" | "RESET_COMPLETED" | "RESET_TIME_CHANGED" | "POLICY_CHANGE" | "IRRELEVANT",
+  "category": "RESET_PLANNED" | "RESET_COMPLETED" | "RESET_TIME_CHANGED" | "POLICY_CHANGE" | "CODEX_UPDATE" | "ROADMAP_HINT" | "FEATURE_DISCUSSION" | "IRRELEVANT",
+  "product_scope": "CODEX" | "CHATGPT_WORK" | "CHATGPT" | "OPENAI_GENERAL" | "OTHER" | "AMBIGUOUS",
+  "statement_nature": "FACT" | "OBSERVATION" | "INTENTION" | "HINT" | "QUESTION" | "SPECULATION",
   "confidence": 0.0-1.0,
-  "title_en": "Short English title (max 10 words)",
-  "title_zh": "简短中文标题",
-  "summary_en": "1-2 sentence English summary",
-  "summary_zh": "1-2 句中文摘要",
-  "effective_time": null or ISO 8601 UTC string (ONLY if explicitly stated in the post),
-  "reset_time": null or ISO 8601 UTC string (ONLY if explicitly stated),
+  "title_en": "Short factual English title (max 12 words)",
+  "title_zh": "简短、事实性的中文标题",
+  "summary_en": "1-2 sentence summary that preserves uncertainty",
+  "summary_zh": "1-2 句保留不确定性的中文摘要",
+  "effective_time": null or ISO 8601 UTC string (ONLY for an explicitly stated absolute date/time),
+  "reset_time": null or ISO 8601 UTC string (ONLY for an explicitly stated absolute reset date/time),
   "reason": "Why this classification was chosen"
 }
 
-IMPORTANT RULES:
-1. Only set relevant=true if the post is about Codex usage reset, rate limits, subscription policy, or usage policy changes.
-2. Do NOT classify generic Codex performance discussions, caching, model speed, or unrelated product updates as events.
-3. You must NEVER invent or guess times. If the post says "tomorrow", set effective_time/reset_time to null - do not convert relative dates.
-4. If the post is not relevant, set category to "IRRELEVANT" and relevant to false.
-5. Confidence should reflect how certain you are about the classification. This is model classification confidence, not proof that the source is authoritative.
-6. Titles must be concise and factual. Do not add information not present in the post.
-7. Always distinguish between:
-   - RESET_PLANNED: A reset is announced but not yet happened
-   - RESET_COMPLETED: A reset has been completed/propagated
-   - RESET_TIME_CHANGED: The time of an upcoming reset has changed
-   - POLICY_CHANGE: A usage policy, limit, or subscription term has changed
-8. When a direct Tibo post uses a future-looking "reset button" phrase (for
-   example, "find it tomorrow and dust it up") but gives no precise product
-   or time, treat it as a low-confidence RESET_PLANNED soft hint. Use
-   approximate/disclaimer wording and keep effective_time/reset_time null.
-   Never classify that wording as RESET_COMPLETED.
-9. When a direct Tibo post uses completed-state language such as "feeling
-   reseted/resetted", "brand new usage", "usage has been reset", or "the
-   reset propagated", classify it as RESET_COMPLETED unless the same post
-   clearly negates or postpones that statement. Do not turn completed-state
-   wording into RESET_PLANNED merely because it also uses a reset-button
-   metaphor. Keep effective_time/reset_time null unless an exact time is
-   explicitly stated.
-10. Tibo often uses indirect milestone language. When a direct Tibo post
-    combines Codex/ChatGPT Work/usage context with future timing such as
-    "tomorrow" or "soon" and milestone/celebration language such as
-    "milestone", "celebrate", "dashboard", or "hold on to your Codex",
-    classify it as a low-confidence RESET_PLANNED soft hint. Explain that it
-    is an indirect signal, keep effective_time/reset_time null, and never
-    classify it as RESET_COMPLETED. A generic milestone without Codex/usage
-    context is not relevant.
+RELEVANCE AND TAXONOMY:
+1. Set relevant=true for meaningful Codex product/usage/policy/roadmap/feature signals, including requests for feedback and exploratory questions. Generic personal chatter, unrelated announcements, and posts with no meaningful connection to Codex are IRRELEVANT.
+2. Set product_scope independently. Use CODEX only when the post explicitly names Codex, Codex CLI/App/SDK/agent, or clearly binds an IDE, desktop, tool, model, or coding workflow to Codex. Use CHATGPT_WORK for ChatGPT Work or Work-specific workflows unless the text explicitly binds it to Codex. Use CHATGPT for ordinary ChatGPT products such as ChatGPT desktop, Sites, image generation, or general integrations. Use OPENAI_GENERAL for company-wide, generic model, DevDay, culture, or broad AI content. Use OTHER for clearly unrelated content. Use AMBIGUOUS when the text does not reliably distinguish Codex from ChatGPT or another OpenAI product. Never infer CODEX only because the author is Tibo.
+3. CODEX_UPDATE means a Codex product change is explicitly announced, confirmed, shipped, released, launched, available, rolling out, or already happened. It is a FACT category and requires product_scope=CODEX. Do not use it for a plan, idea, question, or speculation.
+4. ROADMAP_HINT means future direction or intent such as upcoming, soon, next week, coming, working on, planning, considering, or what the team wants to build. It is a future signal, requires product_scope=CODEX, and is not a release confirmation. Never invent a launch date.
+5. FEATURE_DISCUSSION means a Codex feature, CLI, IDE, desktop, agent, model, tool, context, or workflow is being explored, proposed, debated, or used to ask for user feedback. It requires product_scope=CODEX for public Codex admission. A question such as "What should we ship next week?" is normally FEATURE_DISCUSSION with statement_nature QUESTION, or ROADMAP_HINT with QUESTION only when the surrounding context is clearly roadmap-oriented. It must never become a confirmed release.
+6. Keep category and statement_nature separate:
+   - FACT: stated as already true, shipped, changed, or confirmed
+   - OBSERVATION: a descriptive observation about usage, adoption, behaviour, trends, or circumstances; it does not by itself establish a release, policy change, roadmap commitment, or confirmed product change
+   - INTENTION: the author/team says they plan or want to do it
+   - HINT: indirect future signal
+   - QUESTION: asks what to build, ship, or investigate
+   - SPECULATION: possibility or uncertainty without confirmation
+7. OBSERVATION does not by itself imply relevant=true or public admission. A Codex adoption/usage observation may be 'IRRELEVANT' with 'statement_nature=OBSERVATION' and must not become a public event merely because product_scope=CODEX. Do not use OBSERVATION for CODEX_UPDATE or RESET_COMPLETED; those categories require FACT.
+8. If the post is not relevant, set relevant=false and category=IRRELEVANT. IRRELEVANT must not be treated as a monitor event.
 
-IMPORTANT AUTHOR CONTEXT:
-The post was written by the account whose username is provided in the "Source" field.
-- If the source is "https://x.com/thsottiaux/status/...", the author is Tibo (@thsottiaux).
-- Do NOT describe the author generically as "a user" or "the user" when the source identity is known.
-- Use the author's name in summaries and titles where appropriate.
-- Examples of correct wording: "Tibo announced...", "Tibo confirmed...", "@thsottiaux stated..."
-- Examples of INCORRECT wording: "A user announced...", "The user stated...", "Someone said..."`;
+RESET AND POLICY RULES:
+9. RESET_PLANNED is a Codex reset announced/intended but not yet completed. RESET_COMPLETED is Codex completed/propagated/reset-now language. RESET_TIME_CHANGED means a Codex upcoming reset time changed. POLICY_CHANGE means a Codex current or explicitly announced usage limit, rate-limit, subscription, or policy change. For all RESET_* categories and POLICY_CHANGE, product_scope must be CODEX for public admission. If the post explicitly concerns ChatGPT Work, ordinary ChatGPT, or another non-Codex product, do not create a Codex event merely because it contains the word "reset" or describes a policy change.
+10. Prefer reset categories over generic product categories when reset language is explicit. Use this precedence: RESET_COMPLETED > RESET_TIME_CHANGED > RESET_PLANNED > POLICY_CHANGE > CODEX_UPDATE > ROADMAP_HINT > FEATURE_DISCUSSION > IRRELEVANT.
+11. Direct Tibo wording such as "feeling reseted", "brand new usage", or "the reset propagated" is RESET_COMPLETED unless clearly negated or postponed. Future reset-button or milestone/conservation wording without confirmation is a low-confidence RESET_PLANNED hint.
+
+SAFETY:
+12. Never infer a fact from a question, discussion, intention, hint, observation, or speculation. In particular, do not write "will launch next week" merely because the post asks what should ship next week.
+13. Never invent or convert relative dates. For "tomorrow", "next week", "soon", or similar wording, keep effective_time and reset_time null. Only return a time when the post itself contains an interpretable absolute calendar date/time.
+14. Titles and summaries must state what the post says, not what it might imply. Preserve words such as possible, considering, asking, observing, or upcoming when they matter.
+
+AUTHOR CONTEXT:
+The source account is provided below. When it is @thsottiaux, call the author Tibo or @thsottiaux, not "a user".`;
 
     const userMessage = `Post text: "${post.text}"
 Published at: ${post.published_at}
@@ -171,12 +168,23 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
       // Validate required fields
       if (typeof parsed.relevant !== 'boolean') throw new Error('relevant must be boolean');
       if (!EVENT_CATEGORIES.includes(parsed.category)) throw new Error(`Invalid category: ${parsed.category}`);
+      if (!PRODUCT_SCOPES.includes(parsed.product_scope)) {
+        throw new Error(`Invalid product_scope: ${parsed.product_scope}`);
+      }
+      if (!STATEMENT_NATURES.includes(parsed.statement_nature)) {
+        throw new Error(`Invalid statement_nature: ${parsed.statement_nature}`);
+      }
 
       if (parsed.relevant && parsed.category === 'IRRELEVANT') {
         parsed.relevant = false;
       }
       if (!parsed.relevant && parsed.category !== 'IRRELEVANT') {
         parsed.category = 'IRRELEVANT';
+      }
+
+      if ((parsed.category === 'CODEX_UPDATE' || parsed.category === 'RESET_COMPLETED')
+        && parsed.statement_nature !== 'FACT') {
+        throw new Error(`${parsed.category} requires statement_nature=FACT`);
       }
 
       if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence)) {
@@ -195,6 +203,8 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
         result: {
           relevant: parsed.relevant,
           category: parsed.category,
+          product_scope: parsed.product_scope as ProductScope,
+          statement_nature: parsed.statement_nature as StatementNature,
           confidence: post.source_quality === 'INDEXED'
             ? Math.min(0.85, Math.max(0, parsed.confidence))
             : Math.min(1, Math.max(0, parsed.confidence)),
@@ -202,8 +212,8 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
           title_zh: String(parsed.title_zh ?? ''),
           summary_en: String(parsed.summary_en ?? ''),
           summary_zh: String(parsed.summary_zh ?? ''),
-          effective_time: this.validateTime(parsed.effective_time),
-          reset_time: this.validateTime(parsed.reset_time),
+          effective_time: this.validateSourceTime(parsed.effective_time, post.text),
+          reset_time: this.validateSourceTime(parsed.reset_time, post.text),
           reason: String(parsed.reason ?? ''),
         }
       };
@@ -219,5 +229,10 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
     const d = new Date(value);
     if (isNaN(d.getTime())) return null;
     return d.toISOString();
+  }
+
+  private validateSourceTime(value: string | null | undefined, sourceText: string): string | null {
+    if (!EXPLICIT_CALENDAR_DATE_PATTERN.test(sourceText)) return null;
+    return this.validateTime(value);
   }
 }

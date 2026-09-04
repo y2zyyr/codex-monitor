@@ -16,7 +16,7 @@ function post(overrides: Partial<SourcePost> = {}): SourcePost {
     source_account: 'thsottiaux',
     source_post_id: '2092862554632826968',
     source_url: 'https://x.com/thsottiaux/status/2092862554632826968',
-    text: "A good thing about having aged is that I feel that it's been 20 years since I've pressed the reset button. Intrigued to see if I can find it tomorrow and dust it up",
+    text: "A good thing about having aged is that I feel that it's been 20 years since I've pressed the reset button. Intrigued to see if I can find it tomorrow and dust it up for Codex",
     published_at: '2026-08-27T06:31:31.000Z',
     fetched_at: '2026-08-27T09:45:52.752Z',
     raw_json: '{}',
@@ -74,6 +74,7 @@ describe('Direct reset hint classification', () => {
     expect(result).toMatchObject({
       relevant: true,
       category: 'RESET_PLANNED',
+      statement_nature: 'HINT',
       confidence: 0.58,
       effective_time: null,
       reset_time: null,
@@ -86,6 +87,7 @@ describe('Direct reset hint classification', () => {
     expect(result).toMatchObject({
       relevant: true,
       category: 'RESET_PLANNED',
+      statement_nature: 'HINT',
       confidence: 0.55,
       effective_time: null,
       reset_time: null,
@@ -105,6 +107,7 @@ describe('Direct reset hint classification', () => {
     expect(buildCompletedResetHintResult(completed)).toMatchObject({
       relevant: true,
       category: 'RESET_COMPLETED',
+      statement_nature: 'FACT',
       confidence: 0.82,
       effective_time: null,
       reset_time: null,
@@ -126,6 +129,15 @@ describe('Direct reset hint classification', () => {
     }))).toBe(false);
   });
 
+  it('does not treat a ChatGPT Work reset as a Codex reset', () => {
+    const chatgptWorkReset = post({
+      text: 'ChatGPT Work usage will reset tomorrow for Work users.',
+    });
+
+    expect(isCompletedResetHint(chatgptWorkReset)).toBe(false);
+    expect(isSoftResetHint(chatgptWorkReset)).toBe(false);
+  });
+
   it('creates an event when the LLM would otherwise discard the direct hint', async () => {
     const repo = {
       recordProviderStatus: vi.fn(async () => undefined),
@@ -141,6 +153,8 @@ describe('Direct reset hint classification', () => {
         result: {
           relevant: false,
           category: 'IRRELEVANT' as const,
+          product_scope: 'OTHER' as const,
+          statement_nature: 'QUESTION' as const,
           confidence: 0.2,
           title_en: '',
           title_zh: '',
@@ -190,6 +204,8 @@ describe('Direct reset hint classification', () => {
         result: {
           relevant: true,
           category: 'RESET_PLANNED' as const,
+          product_scope: 'CODEX' as const,
+          statement_nature: 'INTENTION' as const,
           confidence: 0.7,
           title_en: 'The reset may happen soon',
           title_zh: '重置可能即将发生',
@@ -282,5 +298,44 @@ describe('Direct reset hint classification', () => {
       reset_at: null,
     }));
     expect(repo.updateClassificationRetry).not.toHaveBeenCalled();
+  });
+
+  it('does not route product updates into the reset lifecycle', async () => {
+    const repo = {
+      recordProviderStatus: vi.fn(async () => undefined),
+      updateClassificationRetry: vi.fn(async () => undefined),
+      markClassified: vi.fn(async () => undefined),
+      insertEvent: vi.fn(async () => 46),
+      getEventById: vi.fn(async () => ({ id: 46, source_post_id: 155, category: 'CODEX_UPDATE' })),
+      handleResetEvent: vi.fn(async () => undefined),
+    };
+    const classifier = {
+      classify: vi.fn(async () => ({
+        status: 'SUCCESS' as const,
+        result: {
+          relevant: true,
+          category: 'CODEX_UPDATE' as const,
+          product_scope: 'CODEX' as const,
+          statement_nature: 'FACT' as const,
+          confidence: 0.9,
+          title_en: 'Codex update',
+          title_zh: 'Codex 更新',
+          summary_en: 'A Codex product change is available.',
+          summary_zh: 'Codex 产品变化已可用。',
+          effective_time: null,
+          reset_time: null,
+          reason: 'Confirmed product change.',
+        },
+      })),
+    };
+
+    const outcome = await classifyAndCreateEvent(
+      repo as any,
+      classifier as any,
+      post({ id: 155, source_post_id: '2093207246977318928', text: 'Codex update is available.' }),
+    );
+
+    expect(outcome.created).toBe(true);
+    expect(repo.handleResetEvent).not.toHaveBeenCalled();
   });
 });

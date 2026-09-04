@@ -2,13 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { persistXAccountBatches } from '../src/cron';
 import type { SourcePost } from '../src/types';
 
-function post(id = '101'): SourcePost {
+function post(id = '101', text = 'Codex usage reset is back'): SourcePost {
   return {
     source: 'x_api',
     source_account: 'thsottiaux',
     source_post_id: id,
     source_url: `https://x.com/thsottiaux/status/${id}`,
-    text: 'Codex usage reset is back',
+    text,
     published_at: '2026-08-27T00:00:00.000Z',
     fetched_at: '2026-08-27T00:01:00.000Z',
     raw_json: '{}',
@@ -69,6 +69,25 @@ describe('Direct X ingestion ordering', () => {
 
     expect(repo.advanceXApiCursor).not.toHaveBeenCalled();
     expect(result.errors[0]).toContain('raw D1 ingestion failed');
+  });
+
+  it('keeps a newly persisted post without priority terms in the classifier candidates', async () => {
+    const repo = {
+      upsertSourcePost: vi.fn(async () => ({ id: 7, isNew: true, upgraded: false })),
+      advanceXApiCursor: vi.fn(async () => true),
+    };
+
+    const result = await persistXAccountBatches(repo as any, [{
+      account: 'thsottiaux',
+      posts: [post('102', 'Could we make this better?')],
+      newestId: '102',
+      complete: true,
+      rateLimit,
+    }], new Date('2026-08-27T00:01:00.000Z'));
+
+    expect(result.candidatesFound).toBe(1);
+    expect(result.newCandidates).toHaveLength(1);
+    expect(result.newCandidates[0].text).toBe('Could we make this better?');
   });
 
   it('isolates account cursors when one account batch is incomplete', async () => {

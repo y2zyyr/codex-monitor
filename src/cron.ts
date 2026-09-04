@@ -5,8 +5,11 @@ import type { Env, SourcePost, ClassificationOutcome, ClassificationProvider } f
 import { Repository } from './db/repository';
 import {
   buildCompletedResetHintResult,
+  buildObviousIrrelevantResult,
   buildSoftResetHintResult,
   isCompletedResetHint,
+  isCodexProductSignalAdmissible,
+  isObviousIrrelevant,
   isSoftResetHint,
   keywordPrefilter,
 } from './classifier/types';
@@ -58,6 +61,7 @@ export interface CronResult {
   xApiCalls: number;
   webSearchCalls: number;
   llmClassifications: number;
+  classificationByCategory: Record<string, number>;
   xSync: {
     attempted: boolean;
     skipped: boolean;
@@ -106,6 +110,7 @@ export async function executeCron(
   let xApiCalls = 0;
   let webSearchCalls = 0;
   let llmClassifications = 0;
+  const classificationByCategory: Record<string, number> = {};
   let classificationBudget = MAX_CLASSIFICATIONS_PER_RUN;
   let searchStatus: 'ok' | 'degraded' | 'not_configured' = options.searchProvider ? 'ok' : 'not_configured';
   let searchError: string | null = null;
@@ -140,7 +145,7 @@ export async function executeCron(
     // Persist the due transition before choosing cadence. This keeps the
     // confirmation mode stable across worker restarts and Cron boundaries.
     await repo.advanceResetCycleState(now.toISOString());
-    const activeCycle = await repo.getActiveResetCycle();
+    const activeCycle = await repo.getActiveResetCycle({ advance: false });
     searchMode = getWebSearchMode(activeCycle, now);
     const accounts = monitoredAccounts(env);
     const discoveryResults: SearchResult[] = [];
@@ -180,6 +185,7 @@ export async function executeCron(
                 });
                 const persisted = await persistXAccountBatches(repo, batch.accounts, now);
                 postsChecked += persisted.postsChecked;
+                candidatesFound += persisted.candidatesFound;
                 newCandidates.push(...persisted.newCandidates);
                 errors.push(...persisted.errors);
                 await persistXRateLimit(repo, batch.accounts);
@@ -204,6 +210,7 @@ export async function executeCron(
                   // advance their cursor and will be retried on the next slot.
                   const persisted = await persistXAccountBatches(repo, error.accounts, now);
                   postsChecked += persisted.postsChecked;
+                  candidatesFound += persisted.candidatesFound;
                   newCandidates.push(...persisted.newCandidates);
                   errors.push(...persisted.errors);
                   await persistXRateLimit(repo, error.accounts);
@@ -320,13 +327,14 @@ export async function executeCron(
       : discoveryResults.map(resultToLegacyPost).filter((post): post is SourcePost => !!post);
     postsChecked += discoveredPosts.length;
 
+    const newlyDiscoveredPosts: SourcePost[] = [];
     for (const post of discoveredPosts) {
       const upserted = await repo.upsertSourcePost(post, fetchedAt);
-      if (upserted.isNew && keywordPrefilter(post.text)) {
-        newCandidates.push({ ...post, id: upserted.id });
-      }
+      if (upserted.isNew) newlyDiscoveredPosts.push({ ...post, id: upserted.id });
     }
-    candidatesFound += newCandidates.length;
+    const orderedDiscoveredPosts = prioritizeCandidates(newlyDiscoveredPosts);
+    newCandidates.push(...orderedDiscoveredPosts);
+    candidatesFound += orderedDiscoveredPosts.length;
 
     // 3. Candidate classification and pending retries. All direct/search raw
     // rows have been persisted before this phase starts. Keep a local set so
@@ -336,8 +344,9 @@ export async function executeCron(
     for (const candidate of newCandidates) {
       if (classificationBudget <= 0) break;
       if (candidate.id !== undefined) classifiedPostIds.add(candidate.id);
-      llmClassifications++;
+      if (!isObviousIrrelevant(candidate)) llmClassifications++;
       const outcome = await classifyAndCreateEvent(repo, classifier, candidate, now);
+      recordClassificationCategory(classificationByCategory, outcome.outcome);
       if (outcome.created) eventsCreated++;
       if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${candidate.id}: ${outcome.outcome.error}`);
       classificationBudget--;
@@ -346,12 +355,14 @@ export async function executeCron(
       const pending = await repo.getUnclassifiedPosts(20);
       for (const post of pending) {
         if (classificationBudget <= 0) break;
+        if (post.id !== undefined && classifiedPostIds.has(post.id)) continue;
         const attempts = (post as SourcePost & { classification_attempts?: number }).classification_attempts ?? 0;
         const lastAttempt = (post as SourcePost & { last_classification_attempt_at?: string }).last_classification_attempt_at;
         if (attempts >= 5 || (lastAttempt && new Date(lastAttempt).getTime() > now.getTime() - 3600000)) continue;
         if (post.id !== undefined) classifiedPostIds.add(post.id);
-        llmClassifications++;
+        if (!isObviousIrrelevant(post)) llmClassifications++;
         const outcome = await classifyAndCreateEvent(repo, classifier, post, now);
+        recordClassificationCategory(classificationByCategory, outcome.outcome);
         if (outcome.created) eventsCreated++;
         if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${post.id}: ${outcome.outcome.error}`);
         classificationBudget--;
@@ -370,8 +381,9 @@ export async function executeCron(
         if (!isCompletedResetHint(post) && !isSoftResetHint(post)) continue;
         if (post.id !== undefined) classifiedPostIds.add(post.id);
         candidatesFound++;
-        llmClassifications++;
+        if (!isObviousIrrelevant(post)) llmClassifications++;
         const outcome = await classifyAndCreateEvent(repo, classifier, post, now);
+        recordClassificationCategory(classificationByCategory, outcome.outcome);
         if (outcome.created) eventsCreated++;
         if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for recovered source ${post.id}: ${outcome.outcome.error}`);
         classificationBudget--;
@@ -387,6 +399,7 @@ export async function executeCron(
     const finishedAt = new Date().toISOString();
     const nextSearchAt = nextWebSearchAt(now, searchMode, searchLastAttemptAt, searchUsage, env);
     const errorMessage = errors.length > 0 ? errors.join(' | ') : null;
+    console.info('[Cron] classification_by_category', classificationByCategory);
     if (runId !== null) {
       await repo.updateRun(runId, {
         finished_at: finishedAt,
@@ -408,6 +421,7 @@ export async function executeCron(
       xApiCalls,
       webSearchCalls,
       llmClassifications,
+      classificationByCategory,
       xSync: {
         attempted: xSyncAttempted,
         skipped: xSyncSkipped,
@@ -453,6 +467,7 @@ export async function executeCron(
       xApiCalls,
       webSearchCalls,
       llmClassifications,
+      classificationByCategory,
       xSync: {
         attempted: xSyncAttempted,
         skipped: xSyncSkipped,
@@ -492,8 +507,13 @@ export async function classifyAndCreateEvent(
     const softResetResult = isSoftResetHint(post)
       ? buildSoftResetHintResult(post)
       : null;
-    const classifierOutcome = await classifier.classify(post);
-    await recordClassifierStatus(repo, classifierOutcome, now);
+    const obviousIrrelevantResult = isObviousIrrelevant(post)
+      ? buildObviousIrrelevantResult(post)
+      : null;
+    const classifierOutcome: ClassificationOutcome = obviousIrrelevantResult
+      ? { status: 'SUCCESS', result: obviousIrrelevantResult }
+      : await classifier.classify(post);
+    if (!obviousIrrelevantResult) await recordClassifierStatus(repo, classifierOutcome, now);
     // Explicit direct completion language is deterministic enough to keep
     // even when the LLM is unavailable. This protects the source-of-truth
     // signal from both transient classifier failures and model drift.
@@ -516,7 +536,7 @@ export async function classifyAndCreateEvent(
       return { created: false, outcome };
     }
     const result = outcome.result;
-    if (!result.relevant || result.category === 'IRRELEVANT') {
+    if (!result.relevant || result.category === 'IRRELEVANT' || !isCodexProductSignalAdmissible(result)) {
       await repo.markClassified(post.id!);
       return { created: false, outcome };
     }
@@ -545,7 +565,7 @@ export async function classifyAndCreateEvent(
     await repo.markClassified(post.id!);
     if (eventId !== null) {
       const event = await repo.getEventById(eventId);
-      if (event) await repo.handleResetEvent(event);
+      if (event && isResetLifecycleCategory(result.category)) await repo.handleResetEvent(event);
     }
     return { created: eventId !== null, outcome };
   } catch (error) {
@@ -571,6 +591,7 @@ export async function persistXAccountBatches(
   let newPosts = 0;
   let candidatesFound = 0;
   const newCandidates: SourcePost[] = [];
+  const newlyPersistedPosts: SourcePost[] = [];
   const errors: string[] = [];
 
   for (const batch of batches) {
@@ -580,10 +601,7 @@ export async function persistXAccountBatches(
         const upserted = await repo.upsertSourcePost(post, fetchedAt);
         if (upserted.isNew) {
           newPosts++;
-          if (keywordPrefilter(post.text)) {
-            candidatesFound++;
-            newCandidates.push({ ...post, id: upserted.id });
-          }
+          newlyPersistedPosts.push({ ...post, id: upserted.id });
         }
       }
 
@@ -601,7 +619,19 @@ export async function persistXAccountBatches(
     }
   }
 
+  newCandidates.push(...prioritizeCandidates(newlyPersistedPosts));
+  candidatesFound = newlyPersistedPosts.length;
   return { postsChecked, newPosts, candidatesFound, newCandidates, errors };
+}
+
+/** Put likely product/usage signals first, while retaining every new post. */
+function prioritizeCandidates(posts: SourcePost[]): SourcePost[] {
+  const priority: SourcePost[] = [];
+  const ordinary: SourcePost[] = [];
+  for (const post of posts) {
+    (keywordPrefilter(post.text) ? priority : ordinary).push(post);
+  }
+  return [...priority, ...ordinary];
 }
 
 async function getXUsageSnapshot(repo: Repository, usageDate: string): Promise<XUsageSnapshot | null> {
@@ -657,11 +687,25 @@ async function recordClassifierStatus(repo: Repository, outcome: ClassificationO
   }
 }
 
+function recordClassificationCategory(
+  counts: Record<string, number>,
+  outcome: ClassificationOutcome,
+): void {
+  const category = outcome.status === 'SUCCESS' ? outcome.result.category : 'ERROR';
+  counts[category] = (counts[category] ?? 0) + 1;
+}
+
+function isResetLifecycleCategory(category: string): boolean {
+  return category === 'RESET_PLANNED'
+    || category === 'RESET_TIME_CHANGED'
+    || category === 'RESET_COMPLETED';
+}
+
 async function processConfirmationSearch(repo: Repository, cycle: any, results: SearchResult[], now: Date): Promise<void> {
   // Classification above may have ingested a direct RESET_COMPLETED event
   // and closed this cycle. Re-read the state before writing community
   // evidence so a stale snapshot cannot overwrite a direct confirmation.
-  const currentCycle = await repo.getActiveResetCycle();
+  const currentCycle = await repo.getActiveResetCycle({ advance: false });
   if (!currentCycle || Number(currentCycle.id) !== Number(cycle.id)
     || !['DUE', 'CONFIRMING'].includes(String(currentCycle.status))
     || currentCycle.completed_event_id) return;
