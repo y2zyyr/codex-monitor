@@ -437,6 +437,24 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     await expect(failing.complete({ role: 'triage', system: 'x', user: 'y', schemaName: 'Test', tokenBudget: 100, timeoutMs: 500, retryLimit: 0 })).rejects.toMatchObject({ code: 'http_401' });
   });
 
+  it('parses OpenAI-compatible streaming responses and usage metadata', async () => {
+    const events = [
+      { choices: [{ delta: { role: 'assistant', content: '{"ok":' } }] },
+      { choices: [{ delta: { content: 'true}' } }] },
+      { choices: [], usage: { prompt_tokens: 11, completion_tokens: 3 } },
+    ].map(event => `data: ${JSON.stringify(event)}`).join('\n') + '\ndata: [DONE]\n';
+    const provider = new OpenAICompatibleGambitProvider({
+      apiKey: 'TEST_ONLY_KEY',
+      baseUrl: 'https://llm.example/v1',
+      modelId: 'TEST_ONLY_MODEL',
+      fetchImpl: async () => new Response(events, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    });
+    const result = await provider.complete<{ ok: boolean }>({ role: 'triage', system: 'TEST_ONLY', user: 'TEST_ONLY', schemaName: 'Test', tokenBudget: 100, timeoutMs: 500, retryLimit: 0 });
+    expect(result.value).toEqual({ ok: true });
+    expect(result.inputTokens).toBe(11);
+    expect(result.outputTokens).toBe(3);
+  });
+
   it('fails closed when an isolated provider namespace reaches its run budget', () => {
     const budget = new GambitRunBudget({
       maxLlmCalls: 1,

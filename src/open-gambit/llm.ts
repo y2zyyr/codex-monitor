@@ -67,6 +67,20 @@ export interface GambitProviderOptions {
   fetchImpl?: typeof fetch;
 }
 
+interface CompletionPayload {
+  choices?: Array<{
+    message?: { content?: unknown };
+    delta?: { content?: unknown };
+  }>;
+  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+}
+
+interface ParsedCompletion {
+  content: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
   readonly name: string;
   private readonly fetchImpl: typeof fetch;
@@ -103,6 +117,11 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
             response_format: { type: 'json_object' },
             temperature: 0.1,
             max_tokens: request.tokenBudget,
+            // The configured OpenAI-compatible gateway reliably returns SSE
+            // responses; parseCompletionResponse also accepts normal JSON so
+            // other compatible providers remain supported.
+            stream: true,
+            stream_options: { include_usage: true },
           }),
         });
         if (!response.ok) {
@@ -112,11 +131,8 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
           await boundedBackoff(attempt);
           continue;
         }
-        const data = await response.json() as {
-          choices?: Array<{ message?: { content?: unknown } }>;
-          usage?: { prompt_tokens?: number; completion_tokens?: number };
-        };
-        const content = data.choices?.[0]?.message?.content;
+        const data = await parseCompletionResponse(response);
+        const content = data.content;
         if (typeof content !== 'string' || !content.trim()) {
           lastError = 'empty_response';
           await boundedBackoff(attempt);
@@ -136,8 +152,8 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
           value,
           provider: this.name,
           modelId: this.options.modelId,
-          inputTokens: finiteOptional(data.usage?.prompt_tokens),
-          outputTokens: finiteOptional(data.usage?.completion_tokens),
+          inputTokens: data.inputTokens,
+          outputTokens: data.outputTokens,
           latencyMs: Date.now() - started,
         };
       } catch (error) {
@@ -149,6 +165,43 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
     }
     throw new GambitProviderError(lastError);
   }
+}
+
+async function parseCompletionResponse(response: Response): Promise<ParsedCompletion> {
+  const body = await response.text();
+  try {
+    return completionFromPayload(JSON.parse(body) as CompletionPayload);
+  } catch {
+    // OpenAI-compatible streaming responses are newline-delimited SSE events.
+    let content = '';
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    for (const line of body.split(/\r?\n/u)) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const parsed = completionFromPayload(JSON.parse(payload) as CompletionPayload);
+        content += parsed.content;
+        inputTokens ??= parsed.inputTokens;
+        outputTokens ??= parsed.outputTokens;
+      } catch {
+        // Ignore non-JSON SSE metadata and let the empty/invalid response
+        // handling below fail closed if no usable content was delivered.
+      }
+    }
+    return { content, inputTokens, outputTokens };
+  }
+}
+
+function completionFromPayload(payload: CompletionPayload): ParsedCompletion {
+  const choice = payload.choices?.[0];
+  const content = choice?.message?.content ?? choice?.delta?.content;
+  return {
+    content: typeof content === 'string' ? content : '',
+    inputTokens: finiteOptional(payload.usage?.prompt_tokens),
+    outputTokens: finiteOptional(payload.usage?.completion_tokens),
+  };
 }
 
 export class GambitProviderError extends Error {
