@@ -82,7 +82,11 @@ openGambitApi.get('/_staging/provider-diagnostic', async (c) => {
   const baseUrl = c.env.GAMBIT_LLM_BASE_URL?.trim().replace(/\/+$/u, '') || '';
   const apiKey = c.env.GAMBIT_LLM_API_KEY?.trim() || '';
   if (!baseUrl || !apiKey) return c.json({ error: 'CONFIGURATION_UNAVAILABLE' }, 503);
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+    'X-Tibo-Gambit-Request': 'staging-diagnostic',
+  };
   const started = Date.now();
   try {
     const fullFixture = c.req.query('fixture') === 'full';
@@ -101,7 +105,7 @@ openGambitApi.get('/_staging/provider-diagnostic', async (c) => {
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
-        max_tokens: 40,
+        max_tokens: fullFixture ? 900 : 40,
         stream: true,
         stream_options: { include_usage: true },
       }),
