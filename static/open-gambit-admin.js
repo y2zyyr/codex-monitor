@@ -41,7 +41,11 @@
     }).join('');
     var provenance = Object.keys(draft.modelRoleProvenance || {}).map(function (role) {
       var value = draft.modelRoleProvenance[role] || {};
-      return '<li>' + escapeText(role) + ': ' + escapeText(value.displayName || 'configured model') + ' · ' + escapeText(value.provider || 'unknown') + '</li>';
+      var publicIdentity = value.publicAiIdentity || value.displayName || 'configured identity';
+      var actualProvider = value.actualProvider || value.provider || 'unknown provider';
+      var actualModelId = value.actualModelId || value.modelId || '';
+      var runtime = actualProvider + (actualModelId ? ' / ' + actualModelId : '');
+      return '<li>' + escapeText(role) + ': ' + escapeText(publicIdentity) + ' · runtime ' + escapeText(runtime) + '</li>';
     }).join('');
     var critic = draft.critic || {};
     var card = document.createElement('article');
