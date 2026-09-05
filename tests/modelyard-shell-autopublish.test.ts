@@ -188,6 +188,7 @@ describe('ModelYard shell and Open Gambit automatic publication', () => {
 
     const renderedPages = [
       renderHomepage({ events: [], latestEvent: null, lastReset: null, lastPolicy: null, lastCheckedAt: null, totalEvents: 0 }, 'en'),
+      renderHomepage({ events: [], latestEvent: null, lastReset: null, lastPolicy: null, lastCheckedAt: null, totalEvents: 0, gambitArticles: [article] }, 'zh'),
       renderCommunityPage({ posts: [], nextCursor: null, total: 0, postingEnabled: false, turnstileSiteKey: null, maxNicknameLength: 32, maxContentLength: 2_000 }, 'en'),
       renderOpenGambitLanding([], 'en'),
       renderOpenGambitArticle(article, 'en'),
@@ -207,6 +208,10 @@ describe('ModelYard shell and Open Gambit automatic publication', () => {
     expect(chineseLanding).toContain('<h1 id="gambitTitle">阳谋</h1>');
     expect(chineseLanding).not.toContain('Open Gambit：AI 战略分析');
     expect(chineseLanding).not.toContain('AI 运营说明');
+    const chineseHomepage = renderHomepage({ events: [], latestEvent: null, lastReset: null, lastPolicy: null, lastCheckedAt: null, totalEvents: 0, gambitArticles: [article] }, 'zh');
+    expect(chineseHomepage).toContain('<h2 id="homepageGambitTitle">阳谋</h2>');
+    expect(chineseHomepage).toContain('ANALYSIS · 阳谋');
+    expect(chineseHomepage).not.toContain('<h2 id="homepageGambitTitle">Open Gambit</h2>');
   });
 
   it('renders singular and plural trajectory labels without the trajectorys typo', () => {

@@ -1901,7 +1901,7 @@ function renderHomepageGambitModule(articles: GambitPublicArticle[], lang: SiteL
     const firstTrajectory = content.trajectories[0];
     return [
       '      <article class="homepage-gambit-card">',
-      '        <p class="homepage-gambit-label">' + (isZh ? 'ANALYSIS · Open Gambit' : 'ANALYSIS · Open Gambit') + '</p>',
+      '        <p class="homepage-gambit-label">' + (isZh ? 'ANALYSIS · 阳谋' : 'ANALYSIS · Open Gambit') + '</p>',
       '        <h3><a href="' + escapeHtml(path) + '">' + escapeHtml(content.headline) + '</a></h3>',
       '        <p class="homepage-gambit-summary">' + escapeHtml(summary) + '</p>',
       '        <p class="homepage-gambit-meta">' + localTimeElement(publicationDate, formatDateShort(publicationDate, lang), 'homepage-gambit-date', 'date')
@@ -1912,7 +1912,7 @@ function renderHomepageGambitModule(articles: GambitPublicArticle[], lang: SiteL
   }).join('\n');
   return [
     '    <section class="homepage-gambit-module" aria-labelledby="homepageGambitTitle">',
-    '      <div class="section-header"><h2 id="homepageGambitTitle">Open Gambit</h2><a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en']) + '">' + (isZh ? '查看全部' : 'View all') + ' →</a></div>',
+    '      <div class="section-header"><h2 id="homepageGambitTitle">' + (isZh ? '阳谋' : 'Open Gambit') + '</h2><a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en']) + '">' + (isZh ? '查看全部' : 'View all') + ' →</a></div>',
     '      <p class="homepage-gambit-intro">' + escapeHtml(isZh ? 'AI、产品与生态的战略分析；事实、分析与 AI 走势分开标注。' : 'Strategic analysis of AI, products and ecosystems, with facts, analysis and AI forecasts kept distinct.') + '</p>',
     '      <div class="homepage-gambit-list">',
     cards,
