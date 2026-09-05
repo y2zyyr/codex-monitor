@@ -1256,6 +1256,10 @@ body {
   text-decoration: none;
 }
 
+.primary-source a {
+  overflow-wrap: anywhere;
+}
+
 .primary-source a:hover,
 .status-note a:hover,
 .cross-link a:hover,
