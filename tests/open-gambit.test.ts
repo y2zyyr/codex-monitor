@@ -656,6 +656,20 @@ describe('Open Gambit public rendering and append-only resolution', () => {
     expect(landing).toContain('test-only-api-launch-aaaaaaaaaa');
     expect(renderAiDisclosurePage('zh')).toContain('AI 运营说明');
     expect(renderOpenGambitLanding([article], 'en', 'https://staging.example.invalid/')).toContain('https://staging.example.invalid/open-gambit/');
+    for (const lang of ['en', 'zh'] as const) {
+      for (const rendered of [renderOpenGambitLanding([article], lang), renderOpenGambitArticle(article, lang), renderAiDisclosurePage(lang)]) {
+        const brand = rendered.match(/<a class="gambit-brand"[^>]*>(.*?)<\/a>/)?.[1].replace(/<[^>]+>/g, '');
+        expect(brand).toBe('Tibo');
+        expect(rendered.replace(/<[^>]+>/g, '')).not.toContain('TTibo');
+        expect(rendered).not.toContain('trajectorys');
+      }
+    }
+    for (const count of [0, 1, 2, 3, 4]) {
+      const countedArticle = { ...article, trajectories: Array.from({ length: count }, (_, index) => trajectory({ id: `trajectory-${index + 1}` })) };
+      const rendered = renderOpenGambitLanding([countedArticle], 'en');
+      expect(rendered).toContain(` · ${count} ${count === 1 ? 'trajectory' : 'trajectories'}</div>`);
+      expect(rendered).not.toContain('trajectorys');
+    }
   });
 
   it('does not publish a political article or show an empty homepage module', () => {

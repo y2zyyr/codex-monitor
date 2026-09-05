@@ -36,7 +36,7 @@ export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: '
       `  <div class="gambit-card-kicker">${isZh ? '分析' : 'ANALYSIS'}</div>`,
       `  <h2><a href="${escapeHtml(articleUrl(article.slug, lang))}">${escapeHtml(content.headline)}</a></h2>`,
       `  <p>${escapeHtml(content.surfaceEvent)}</p>`,
-      `  <div class="gambit-card-meta">${escapeHtml(formatDate(article.publishedAt || article.modifiedAt, lang))} · ${article.trajectories.length} ${isZh ? '条走势' : 'trajectory' + (article.trajectories.length === 1 ? '' : 's')}</div>`,
+      `  <div class="gambit-card-meta">${escapeHtml(formatDate(article.publishedAt || article.modifiedAt, lang))} · ${article.trajectories.length} ${isZh ? '条走势' : article.trajectories.length === 1 ? 'trajectory' : 'trajectories'}</div>`,
       '</article>',
     ].join('\n');
   }).join('\n');
@@ -194,7 +194,7 @@ function renderOpenGambitHeader(lang: 'en' | 'zh'): string {
   const isZh = lang === 'zh';
   return [
     '    <header class="gambit-header">',
-    `      <a class="gambit-brand" href="${isZh ? '/zh/' : '/'}"><span class="gambit-brand-mark">T</span><span>Tibo</span></a>`,
+    `      <a class="gambit-brand" href="${isZh ? '/zh/' : '/'}"><span>Tibo</span></a>`,
     '      <nav aria-label="Primary navigation">',
     `        <a class="gambit-nav-current" href="${isZh ? '/zh/open-gambit/' : '/open-gambit/'}">Open Gambit</a>`,
     `        <a href="${isZh ? '/zh/' : '/'}">${isZh ? '监控' : 'Monitor'}</a>`,
