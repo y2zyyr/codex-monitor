@@ -2,7 +2,8 @@ import { canonicalJson, sha256Hex } from './canonical';
 import { GambitRunBudget } from './budget';
 import { evidenceForModel } from './evidence';
 import { getGambitModelRoleConfig, GAMBIT_PROMPT_VERSION } from './llm';
-import { qualificationGate, triageAllowsDeepAnalysis, validateAnalysisForPublication } from './policy';
+import { deterministicPublicationGate, publicationDecisionForReason, qualificationGate, triageAllowsDeepAnalysis } from './policy';
+import { publishQualifiedGambit } from './publication';
 import { GambitRepository } from './repository';
 import type {
   GambitAnalysis,
@@ -16,6 +17,7 @@ import type {
   GambitLLMResponse,
   GambitModelRoleConfig,
   GambitModelRoleProvenance,
+  GambitPublicationDecision,
   GambitSourceSnapshot,
   GambitTriageResult,
   GambitTrajectory,
@@ -34,8 +36,9 @@ export interface GambitPipelineDependencies {
 }
 
 export interface GambitStageResult {
-  status: 'NO_GAMBIT' | 'WAITING_FOR_REVIEW' | 'NEEDS_HUMAN_REVIEW' | 'FAILED';
+  status: 'NO_GAMBIT' | 'AUTO_PUBLISH_ELIGIBLE' | 'WAITING_FOR_REVIEW' | 'NEEDS_HUMAN_REVIEW' | 'FAILED';
   candidateId: number;
+  publicationDecision?: GambitPublicationDecision;
   reason?: string;
   triage: GambitTriageResult;
   analysis?: GambitAnalysis;
@@ -74,6 +77,7 @@ export async function runGambitStages(
       status: 'NO_GAMBIT',
       candidateId,
       reason: qualification.reason ?? 'NO_GAMBIT_WORTH_PUBLISHING',
+      publicationDecision: publicationDecisionForReason(qualification.reason),
       triage: {
         ...DEFAULT_TRIAGE,
         politicsExcluded: qualification.politicalTopic,
@@ -122,11 +126,12 @@ export async function runGambitStages(
       status: 'NO_GAMBIT',
       candidateId,
       reason: usableTriage.politicsExcluded ? 'POLITICAL_TOPIC_EXCLUDED' : 'NO_GAMBIT_WORTH_PUBLISHING',
+      publicationDecision: usableTriage.politicsExcluded ? 'POLITICAL_TOPIC_EXCLUDED' : 'NO_GAMBIT_WORTH_PUBLISHING',
       triage: usableTriage,
     };
   }
   if (triage.error) {
-    return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: triage.error, triage: usableTriage };
+    return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: triage.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
   }
 
   const analysisRole = roleConfig('gambit_analysis', roles);
@@ -160,11 +165,11 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (analysisResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: analysisResult.error, triage: usableTriage };
+  if (analysisResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: analysisResult.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
   const analysis = normalizeAnalysis(analysisResult.value);
-  if (!analysis) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: 'ANALYSIS_SCHEMA_INVALID', triage: usableTriage };
+  if (!analysis) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: 'ANALYSIS_SCHEMA_INVALID', publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
   if (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING') {
-    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, triage: usableTriage };
+    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage };
   }
 
   const criticRole = roleConfig('critic', roles);
@@ -198,23 +203,26 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (criticResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: criticResult.error, triage: usableTriage, analysis };
+  if (criticResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: criticResult.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage, analysis };
   const critic = normalizeCritic(criticResult.value ?? deterministicCritic(analysis));
-  const errors = validateAnalysisForPublication(candidate, analysis, critic);
-  if (errors.length > 0) {
-    const reviewRequired = errors.some(error => error.startsWith('CRITIC_')) || errors.includes('POLITICAL_TOPIC_EXCLUDED');
+  const publicationGate = deterministicPublicationGate(candidate, analysis, critic);
+  if (publicationGate.errors.length > 0) {
+    const reviewRequired = publicationGate.decision === 'NEEDS_HUMAN_REVIEW';
+    const draft = reviewRequired ? composeDraft(candidate, evidence, analysis, critic, dependencies, now) : undefined;
     return {
       status: reviewRequired ? 'NEEDS_HUMAN_REVIEW' : 'NO_GAMBIT',
       candidateId,
-      reason: errors.join(','),
+      reason: publicationGate.errors.join(','),
+      publicationDecision: publicationGate.decision,
       triage: usableTriage,
       analysis,
       critic,
+      draft,
     };
   }
 
   const draft = composeDraft(candidate, evidence, analysis, critic, dependencies, now);
-  return { status: 'WAITING_FOR_REVIEW', candidateId, triage: usableTriage, analysis, critic, draft };
+  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft };
 }
 
 export async function runQualifiedGambitWorkflow(
@@ -227,17 +235,21 @@ export async function runQualifiedGambitWorkflow(
   if (previous && ['WAITING_FOR_REVIEW', 'NO_GAMBIT', 'NEEDS_HUMAN_REVIEW', 'COMPLETED'].includes(previous.status)) {
     return {
       workflowId: input.workflowId,
-      status: previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT' : previous.status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : 'WAITING_FOR_REVIEW',
+      status: previous.status === 'COMPLETED' ? 'COMPLETED' : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT' : previous.status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : 'WAITING_FOR_REVIEW',
       candidateId: input.candidateId,
       articleId: previous.articleId ?? undefined,
       revisionId: previous.revisionId ?? undefined,
+      publicationDecision: previous.status === 'COMPLETED'
+        ? 'AUTO_PUBLISH_ELIGIBLE'
+        : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT_WORTH_PUBLISHING' : 'NEEDS_HUMAN_REVIEW',
       reason: 'DUPLICATE_WORKFLOW_RESULT',
     };
   }
   const candidate = await repository.getCandidate(input.candidateId);
   if (!candidate) throw new Error('CANDIDATE_NOT_FOUND');
   if (candidate.status !== 'QUALIFIED') {
-    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason: candidate.rejectionReason ?? 'CANDIDATE_NOT_QUALIFIED' };
+    const reason = candidate.rejectionReason ?? 'CANDIDATE_NOT_QUALIFIED';
+    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason, publicationDecision: publicationDecisionForReason(reason) };
     await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
     return result;
   }
@@ -247,12 +259,44 @@ export async function runQualifiedGambitWorkflow(
   const stageResult = await runGambitStages(candidate, evidence, dependencies);
   if (stageResult.status === 'NO_GAMBIT') {
     await repository.setCandidateStatus(input.candidateId, 'REJECTED', stageResult.reason || 'NO_GAMBIT_WORTH_PUBLISHING');
-    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason: stageResult.reason };
+    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason: stageResult.reason, publicationDecision: stageResult.publicationDecision ?? publicationDecisionForReason(stageResult.reason) };
     await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
     return result;
   }
-  if (stageResult.status !== 'WAITING_FOR_REVIEW' || !stageResult.draft) {
-    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NEEDS_HUMAN_REVIEW', candidateId: input.candidateId, reason: stageResult.reason };
+  if (stageResult.status === 'AUTO_PUBLISH_ELIGIBLE' && stageResult.draft) {
+    const published = await publishQualifiedGambit(repository, stageResult.draft, {
+      translationProvider: dependencies.providers?.translation,
+      translationRole: roleConfig('translation', dependencies.roles ?? []),
+      now: dependencies.now,
+    });
+    if (published.published && published.articleId && published.revisionId) {
+      await repository.setCandidateStatus(input.candidateId, 'PUBLISHED');
+      const result: GambitWorkflowResult = {
+        workflowId: input.workflowId,
+        status: 'COMPLETED',
+        candidateId: input.candidateId,
+        articleId: published.articleId,
+        revisionId: published.revisionId,
+        publicationDecision: 'AUTO_PUBLISH_ELIGIBLE',
+        reason: 'AUTO_PUBLISH_ELIGIBLE',
+        draft: { ...stageResult.draft, articleId: published.articleId },
+      };
+      await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
+      return result;
+    }
+    const result: GambitWorkflowResult = {
+      workflowId: input.workflowId,
+      status: 'NEEDS_HUMAN_REVIEW',
+      candidateId: input.candidateId,
+      reason: 'AUTO_PUBLISH_PERSISTENCE_FAILED',
+      publicationDecision: 'NEEDS_HUMAN_REVIEW',
+    };
+    await repository.setCandidateStatus(input.candidateId, 'REJECTED', 'NEEDS_HUMAN_REVIEW');
+    await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
+    return result;
+  }
+  if ((stageResult.status !== 'WAITING_FOR_REVIEW' && stageResult.status !== 'NEEDS_HUMAN_REVIEW') || !stageResult.draft) {
+    const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NEEDS_HUMAN_REVIEW', candidateId: input.candidateId, reason: stageResult.reason, publicationDecision: 'NEEDS_HUMAN_REVIEW' };
     await repository.setCandidateStatus(input.candidateId, 'REJECTED', 'NEEDS_HUMAN_REVIEW');
     await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
     return result;
@@ -265,6 +309,7 @@ export async function runQualifiedGambitWorkflow(
     candidateId: input.candidateId,
     articleId: saved.articleId,
     revisionId: saved.revisionId,
+    publicationDecision: 'NEEDS_HUMAN_REVIEW',
     draft: { ...stageResult.draft, articleId: saved.articleId },
   };
   await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });

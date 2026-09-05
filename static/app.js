@@ -13,9 +13,9 @@ const messages = {
     // Fallbacks mirror the SSR metadata. On the homepage the injected
     // window.__SSR_META__ object is authoritative, so hydration cannot
     // silently replace the server title or description.
-    siteTitle: 'Tibo Codex Reset Tracker | Usage Limits & Policy Updates',
-    siteDescription: 'Track Tibo’s public OpenAI Codex usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and policy updates with source and verification status.',
-    intro: 'Track Tibo’s public Codex reset signals, usage limits, and policy updates; every event includes its source and verification status.',
+    siteTitle: 'ModelYard · Tibo Codex Reset Tracker | Usage Limits & Policy Updates',
+    siteDescription: 'ModelYard’s Tibo Codex Monitor tracks public OpenAI Codex usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and policy updates with source and verification status.',
+    intro: 'ModelYard’s Tibo Codex Monitor tracks public Codex reset signals, usage limits, and policy updates; every event includes its source and verification status.',
     monitoring: 'Monitoring',
     toggleLanguage: 'Choose language',
 
@@ -172,9 +172,9 @@ const messages = {
   },
   'zh-CN': {
     // Site
-    siteTitle: 'Tibo Codex 重置追踪｜额度与政策更新',
-    siteDescription: '追踪 Tibo 公开发布的 Codex 额度重置、ChatGPT Work 限额、GPT/Codex 限速与政策更新；每条记录附来源和验证状态。',
-    intro: '追踪 Tibo 公开发布的 Codex 重置信号、额度和政策更新；每条事件都附来源和验证状态。',
+    siteTitle: 'ModelYard · Tibo Codex 重置追踪｜额度与政策更新',
+    siteDescription: 'ModelYard 的 Tibo Codex 监控记录公开的 Codex 额度重置、ChatGPT Work 限额、GPT/Codex 限速与政策更新；每条记录附来源和验证状态。',
+    intro: 'ModelYard 的 Tibo Codex 监控记录公开的 Codex 重置信号、额度和政策更新；每条事件都附来源和验证状态。',
     monitoring: '正在监控',
     toggleLanguage: '选择语言',
 
@@ -335,9 +335,9 @@ const messages = {
 // dictionaries intentionally inherit the complete English key set so a newly
 // added dashboard string cannot become blank while its translation is added.
 messages.ja = Object.assign({}, messages.en, {
-  siteTitle: 'Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
-  siteDescription: 'Tibo（@thsottiaux）が公開した Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
-  intro: 'Tibo（@thsottiaux）が公開した Codex のリセット、使用量制限、ポリシー更新を追跡します。各イベントに出典と確認状態を表示します。',
+  siteTitle: 'ModelYard · Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
+  siteDescription: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
+  intro: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、使用量制限、ポリシー更新を追跡します。各イベントに出典と確認状態を表示します。',
   monitoring: '監視中', toggleLanguage: '言語を選択', live: '稼働中',
   lastReset: '最近のリセット', currentPolicy: '最新ポリシー変更', latestChange: '最新の更新', lastChecked: '最終確認', sourceStatus: '情報源',
   statusAnswerTitle: '現在のリセット状態', statusAnswerLead: 'まず既知の最新リセット状態を確認し、イベントを開いて出典と確認の詳細をご覧ください。', lastConfirmedReset: '最後に確認されたリセット', lastRecordedReset: '最後に記録されたリセット', nextKnownReset: '次に予定されているリセット', checkingLiveStatus: 'リセットの状態を確認中…', viewResetHistory: 'リセット履歴を見る', viewLatestEvent: '最新イベントを見る',
@@ -352,9 +352,9 @@ messages.ja = Object.assign({}, messages.en, {
   categoryPlanned: 'リセット予定', categoryCompleted: 'リセット完了', categoryTimeChanged: '時刻変更', categoryPolicy: 'ポリシー変更', resetExpected: 'リセット予定', notAnnounced: '未発表', resetDue: 'リセット時刻', checking: '確認中', ago: '前', secondsAgo: '秒前', minutesAgoShort: '分前', hoursAgoShort: '時間前', daysAgoShort: '日前',
 });
 messages.es = Object.assign({}, messages.en, {
-  siteTitle: 'Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
-  siteDescription: 'Consulta los restablecimientos públicos de Tibo Codex, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
-  intro: 'Consulta los restablecimientos, límites y políticas públicas de Tibo Codex; cada evento incluye su fuente y estado de verificación.',
+  siteTitle: 'ModelYard · Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
+  siteDescription: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos públicos, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
+  intro: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos, límites y políticas públicas; cada evento incluye su fuente y estado de verificación.',
   monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'EN DIRECTO',
   lastReset: 'Último restablecimiento', currentPolicy: 'Último cambio de política', latestChange: 'Última actualización', lastChecked: 'Última comprobación', sourceStatus: 'Fuente de información',
   statusAnswerTitle: 'Estado actual del restablecimiento', statusAnswerLead: 'Consulta primero el estado conocido más reciente y abre un evento para ver su fuente y verificación.', lastConfirmedReset: 'Último restablecimiento confirmado', lastRecordedReset: 'Último restablecimiento registrado', nextKnownReset: 'Próximo restablecimiento conocido', checkingLiveStatus: 'Comprobando el estado del restablecimiento…', viewResetHistory: 'Ver historial de restablecimientos', viewLatestEvent: 'Ver el último evento',
@@ -369,9 +369,9 @@ messages.es = Object.assign({}, messages.en, {
   categoryPlanned: 'Restablecimiento previsto', categoryCompleted: 'Restablecimiento completado', categoryTimeChanged: 'Hora modificada', categoryPolicy: 'Cambio de política', resetExpected: 'Restablecimiento previsto', notAnnounced: 'no anunciado', resetDue: 'restablecimiento pendiente', checking: 'Comprobando', ago: 'hace', secondsAgo: 's', minutesAgoShort: 'min', hoursAgoShort: 'h', daysAgoShort: 'd',
 });
 messages.fr = Object.assign({}, messages.en, {
-  siteTitle: 'Suivi des réinitialisations Tibo Codex | Limites et politiques',
-  siteDescription: 'Suivez les réinitialisations publiques de Tibo Codex, les limites de ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
-  intro: 'Suivez les réinitialisations, limites et politiques publiques de Tibo Codex ; chaque événement inclut sa source et son état de vérification.',
+  siteTitle: 'ModelYard · Suivi des réinitialisations Tibo Codex | Limites et politiques',
+  siteDescription: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations publiques, les limites ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
+  intro: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations, limites et politiques publiques ; chaque événement inclut sa source et son état de vérification.',
   monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'EN DIRECT',
   lastReset: 'Dernière réinitialisation', currentPolicy: 'Dernier changement de politique', latestChange: 'Dernière mise à jour', lastChecked: 'Dernière vérification', sourceStatus: 'Source d’information',
   statusAnswerTitle: 'État actuel de la réinitialisation', statusAnswerLead: 'Consultez d’abord le dernier état connu, puis ouvrez un événement pour voir sa source et sa vérification.', lastConfirmedReset: 'Dernière réinitialisation confirmée', lastRecordedReset: 'Dernière réinitialisation enregistrée', nextKnownReset: 'Prochaine réinitialisation connue', checkingLiveStatus: 'Vérification de l’état de la réinitialisation…', viewResetHistory: 'Voir l’historique des réinitialisations', viewLatestEvent: 'Voir le dernier événement',

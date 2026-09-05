@@ -297,11 +297,11 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
 
   it('records exact public model names and never requires every model per task', () => {
     expect(GAMBIT_PUBLIC_MODEL_NAMES).toEqual(['Claude Fable 5', 'GPT-5.6 Sol', 'DeepSeek V4 Pro']);
-    expect(AI_OPERATION_DISCLOSURE_EN).toContain('three AI identities');
+    expect(AI_OPERATION_DISCLOSURE_EN).toContain('visitor-facing AI identities');
     expect(AI_OPERATION_DISCLOSURE_EN).toContain('underlying models and providers');
-    expect(AI_OPERATION_DISCLOSURE_EN).toContain('Not every task invokes every model');
-    expect(AI_OPERATION_SHORT_EN).toContain('human approval');
-    expect(AI_OPERATION_DISCLOSURE_ZH).toContain('三个 AI 身份');
+    expect(AI_OPERATION_DISCLOSURE_EN).toContain('configurable');
+    expect(AI_OPERATION_SHORT_EN).not.toContain('human approval');
+    expect(AI_OPERATION_DISCLOSURE_ZH).toContain('网站向访客呈现的 AI 身份');
     expect(AI_OPERATION_DISCLOSURE_ZH).toContain('底层模型与服务商');
     expect(GAMBIT_PROMPT_VERSION).toBe('gambit-prompts-v1');
   });
@@ -370,7 +370,8 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
         providers: { triage: triageProvider, gambit_analysis: analysisProvider },
         now: new Date('2026-09-04T00:00:00.000Z'),
       });
-      expect(result.status).toBe('WAITING_FOR_REVIEW');
+      expect(result.status).toBe('AUTO_PUBLISH_ELIGIBLE');
+      expect(result.publicationDecision).toBe('AUTO_PUBLISH_ELIGIBLE');
       expect(result.draft?.trajectories).toHaveLength(count);
     }
     expect(triageProvider.requests).toHaveLength(3);
@@ -658,13 +659,17 @@ describe('Open Gambit public rendering and append-only resolution', () => {
     expect(landing).toContain('test-only-api-launch-aaaaaaaaaa');
     expect(landing).not.toContain('AI operation');
     expect(landing).not.toContain('human approval');
-    expect(renderAiDisclosurePage('zh')).toContain('AI 运营说明');
-    expect(renderAiDisclosurePage('en')).toContain('human approval');
+    expect(renderAiDisclosurePage('zh')).toContain('ModelYard AI 说明');
+    expect(renderAiDisclosurePage('en')).toContain('ModelYard AI');
+    expect(renderAiDisclosurePage('en')).not.toContain('human approval');
+    expect(renderAiDisclosurePage('en')).not.toContain('experimental system');
     expect(renderOpenGambitLanding([article], 'en', 'https://staging.example.invalid/')).toContain('https://staging.example.invalid/open-gambit/');
     for (const lang of ['en', 'zh'] as const) {
       for (const rendered of [renderOpenGambitLanding([article], lang), renderOpenGambitArticle(article, lang), renderAiDisclosurePage(lang)]) {
-        const brand = rendered.match(/<a class="gambit-brand"[^>]*>(.*?)<\/a>/)?.[1].replace(/<[^>]+>/g, '');
-        expect(brand).toBe('Tibo');
+        const brand = rendered.match(/<div class="logo-title"[^>]*>(.*?)<\/div>/)?.[1];
+        expect(brand).toBe('ModelYard');
+        expect(rendered).toContain('logo-module-name');
+        expect(rendered).toContain(lang === 'zh' ? 'Tibo Codex 监控' : 'Tibo Codex Monitor');
         expect(rendered.replace(/<[^>]+>/g, '')).not.toContain('TTibo');
         expect(rendered).not.toContain('trajectorys');
       }
@@ -699,7 +704,7 @@ describe('Open Gambit public rendering and append-only resolution', () => {
 
   it('does not publish a political article or show an empty homepage module', () => {
     const political = { ...({ articleId: 2, status: 'PUBLISHED', politicalTopic: true } as unknown as GambitPublicArticle) };
-    expect(renderOpenGambitLanding([political], 'en')).toContain('No approved Gambits');
+    expect(renderOpenGambitLanding([political], 'en')).toContain('No published Open Gambit analyses');
   });
 
   it('writes resolution events without updating immutable prediction originals', async () => {

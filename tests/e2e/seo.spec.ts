@@ -9,7 +9,7 @@ test.describe('SEO: Production smoke tests', () => {
     const html = await response.text();
 
     // Must have correct title
-    expect(html).toContain('<title>Tibo Codex Reset Tracker');
+    expect(html).toContain('<title>ModelYard · Tibo Codex Reset Tracker');
     expect(html).toContain('Usage Limits &amp; Policy Updates');
 
     // Must have meta description
@@ -240,7 +240,7 @@ test.describe('SEO: Production smoke tests', () => {
     expect(metadata.title).toBe(metadata.ogTitle);
     expect(metadata.title).toBe(metadata.twitterTitle);
     expect(metadata.description).toBe(metadata.twitterDescription);
-    expect(metadata.title).toContain('Tibo Codex Reset Tracker');
+    expect(metadata.title).toContain('ModelYard · Tibo Codex Reset Tracker');
   });
 
   test('hydrated homepage keeps visible list and ItemList synchronized', async ({ page }) => {

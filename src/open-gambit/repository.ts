@@ -312,8 +312,13 @@ export class GambitRepository {
     return numberValue(result.meta?.last_row_id);
   }
 
-  async createArticleDraft(draft: GambitDraft): Promise<{ articleId: number; revisionId: number }> {
+  async createArticleDraft(
+    draft: GambitDraft,
+    options: { publication?: 'REVIEW' | 'AUTO_PUBLISH'; now?: string } = {},
+  ): Promise<{ articleId: number; revisionId: number }> {
     const now = draft.createdAt;
+    const articleStatus = options.publication === 'AUTO_PUBLISH' ? 'PUBLISHED' : 'WAITING_FOR_REVIEW';
+    const publishedAt = articleStatus === 'PUBLISHED' ? (options.now ?? now) : null;
     const existing = await this.db.prepare('SELECT id, current_revision_id FROM gambit_articles WHERE candidate_id = ?').bind(draft.candidateId).first<Row>();
     if (existing?.id) {
       const articleId = numberValue(existing.id);
@@ -325,14 +330,16 @@ export class GambitRepository {
       INSERT OR IGNORE INTO gambit_articles (
         candidate_id, slug, headline, surface_event, status, political_topic,
         no_trajectory_issued, published_at, created_at, updated_at, ai_disclosure_version
-      ) VALUES (?, ?, ?, ?, 'WAITING_FOR_REVIEW', ?, ?, NULL, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       draft.candidateId,
       draft.slug,
       draft.headline,
       draft.surfaceEvent,
+      articleStatus,
       draft.politicalTopic ? 1 : 0,
       draft.trajectories.length === 0 ? 1 : 0,
+      publishedAt,
       now,
       now,
       draft.aiDisclosureVersion,
@@ -348,14 +355,14 @@ export class GambitRepository {
       INSERT OR IGNORE INTO gambit_article_revisions (
         article_id, revision_number, draft_json, canonical_json, content_hash,
         model_prompt_version, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'WAITING_FOR_REVIEW', ?)
-    `).bind(articleId, revisionNumber, JSON.stringify(draft), canonical, contentHash, draft.modelPromptVersion, now).run();
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(articleId, revisionNumber, JSON.stringify(draft), canonical, contentHash, draft.modelPromptVersion, articleStatus, now).run();
     const revision = await this.db.prepare('SELECT id FROM gambit_article_revisions WHERE article_id = ? AND content_hash = ?').bind(articleId, contentHash).first<Row>();
     if (!revision) throw new Error('gambit article revision could not be created');
     const revisionId = numberValue(revision.id);
     await this.db.prepare(`
-      UPDATE gambit_articles SET current_revision_id = ?, status = 'WAITING_FOR_REVIEW', updated_at = ? WHERE id = ?
-    `).bind(revisionId, now, articleId).run();
+      UPDATE gambit_articles SET current_revision_id = ?, status = ?, published_at = ?, updated_at = ? WHERE id = ?
+    `).bind(revisionId, articleStatus, publishedAt, now, articleId).run();
     const evidenceIds = await this.insertThesisAndEvidence(articleId, revisionId, draft);
     await this.insertPredictions(articleId, revisionId, draft, evidenceIds);
     void articleResult;
@@ -782,7 +789,7 @@ export class GambitRepository {
       input.result.articleId ?? null,
       input.result.revisionId ?? null,
       input.resultHash,
-      input.result.reason ?? null,
+      input.result.reason ?? input.result.publicationDecision ?? null,
       now,
       now,
     ).run();

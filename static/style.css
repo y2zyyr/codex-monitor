@@ -3002,55 +3002,6 @@ body {
   background: var(--bg-primary);
 }
 
-.gambit-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 2rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-}
-
-.gambit-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--text-primary);
-  font-size: 1.05rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.gambit-brand-mark {
-  display: inline-grid;
-  width: 1.8rem;
-  height: 1.8rem;
-  place-items: center;
-  border: 1px solid rgba(168, 85, 247, 0.65);
-  border-radius: 50%;
-  color: #d8c3ff;
-  font-family: var(--font-mono);
-}
-
-.gambit-header nav {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  font-size: 0.78rem;
-}
-
-.gambit-header nav a {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.gambit-header nav a:hover,
-.gambit-header nav a:focus-visible,
-.gambit-header nav .gambit-nav-current {
-  color: #d8c3ff;
-}
-
 .gambit-main {
   width: min(980px, calc(100% - 2rem));
   margin: 0 auto;
@@ -3103,8 +3054,7 @@ body {
 }
 
 .gambit-disclosure a,
-.gambit-section a,
-.gambit-footer a {
+.gambit-section a {
   color: #b995f3;
 }
 
@@ -3254,16 +3204,6 @@ body {
   font-size: 0.68rem;
 }
 
-.gambit-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.2rem 2rem 2rem;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-}
-
 .gambit-empty {
   padding: 1rem;
   border: 1px dashed var(--border-color);
@@ -3340,17 +3280,6 @@ body {
     gap: 0.5rem;
   }
 
-  .gambit-header {
-    align-items: flex-start;
-    padding: 0.8rem 1rem;
-  }
-
-  .gambit-header nav {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.45rem 0.7rem;
-  }
-
   .gambit-main {
     width: min(100% - 1.2rem, 980px);
     padding-top: 2.2rem;
@@ -3361,9 +3290,4 @@ body {
     gap: 0.1rem;
   }
 
-  .gambit-footer {
-    flex-direction: column;
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
 }

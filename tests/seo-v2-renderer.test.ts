@@ -279,7 +279,7 @@ describe('SEO V2 renderer and index policy', () => {
     const japanese = renderEventPage({ event: localized, prevEvent: null, nextEvent: null, relatedEvents: [] }, 'ja');
     const article = jsonLdBlocks(japanese).find(schema => schema['@type'] === 'Article');
 
-    expect(japanese).toContain('<title>Codex ポリシー更新 · 2026年8月26日 — Tibo Codex Monitor</title>');
+    expect(japanese).toContain('<title>Codex ポリシー更新 · 2026年8月26日 — ModelYard · Tibo Codex Monitor</title>');
     expect(japanese).toContain('日本語で確認できる十分なイベント概要です。');
     expect(japanese).toContain('<meta name="robots" content="index, follow">');
     expect(japanese).toContain('hreflang="ja" href="https://tibo.modelyard.dev/ja/events/25"');

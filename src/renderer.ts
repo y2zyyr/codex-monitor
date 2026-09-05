@@ -10,9 +10,10 @@ import type { CommunityEmbed, CommunityPageData, CommunityPostFilters, PublicCom
 import { EMPTY_COMMUNITY_FILTERS, communityFiltersQuery } from './community/filters';
 import { COMMUNITY_TOPICS, COMMUNITY_TOPIC_LABELS, type CommunityTopic } from './community/topics';
 import { languageLabel } from './community/translation';
-import { SITE_HTML_LANG, SITE_LOCALES, SITE_LOCALE_LABELS, localePath, type SiteLocale } from './i18n';
+import { SITE_HTML_LANG, SITE_LOCALES, localePath, type SiteLocale } from './i18n';
 import { staticAssetUrl } from './assets';
 import { isEventIndexEligible } from './utils/index-policy';
+import { MODELYARD_BRAND, renderSharedFooter, renderSharedHeader, SITE_BRAND_COPY as SHARED_SITE_BRAND_COPY, PRIMARY_NAV_LABELS as SHARED_PRIMARY_NAV_LABELS } from './site-shell';
 import {
   datePartsInTimeZone,
   displayTimeZoneForLanguage,
@@ -25,7 +26,7 @@ import {
 // ── Constants ──
 
 const SITE_URL = 'https://tibo.modelyard.dev';
-const SITE_NAME = 'Tibo Codex Monitor';
+const SITE_NAME = MODELYARD_BRAND;
 
 export type LandingPageKey = 'latest' | 'reset-history' | 'rate-limit-updates' | 'faq' | 'methodology';
 
@@ -57,112 +58,28 @@ const AI_DISCLOSURE_PATHS: Record<'en' | 'zh', string> = {
 
 const HOMEPAGE_COPY: Record<SiteLocale, { title: string; description: string }> = {
   en: {
-    title: 'Tibo Codex Reset Tracker | Usage Limits & Policy Updates',
-    description: 'Track Tibo’s public OpenAI Codex usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and policy updates with source and verification status.',
+    title: 'ModelYard · Tibo Codex Reset Tracker | Usage Limits & Policy Updates',
+    description: 'ModelYard’s Tibo Codex Monitor tracks public OpenAI Codex usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and policy updates with source and verification status.',
   },
   zh: {
-    title: 'Tibo Codex 重置追踪｜额度与政策更新',
-    description: '追踪 Tibo 公开发布的 Codex 额度重置、ChatGPT Work 限额、GPT/Codex 限速与政策更新；每条记录附来源和验证状态。',
+    title: 'ModelYard · Tibo Codex 重置追踪｜额度与政策更新',
+    description: 'ModelYard 的 Tibo Codex 监控记录公开的 Codex 额度重置、ChatGPT Work 限额、GPT/Codex 限速与政策更新；每条记录附来源和验证状态。',
   },
   ja: {
-    title: 'Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
-    description: 'Tibo（@thsottiaux）が公開した Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
+    title: 'ModelYard · Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
+    description: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
   },
   es: {
-    title: 'Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
-    description: 'Consulta los restablecimientos públicos de Tibo Codex, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
+    title: 'ModelYard · Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
+    description: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos públicos, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
   },
   fr: {
-    title: 'Suivi des réinitialisations Tibo Codex | Limites et politiques',
-    description: 'Suivez les réinitialisations publiques de Tibo Codex, les limites de ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
+    title: 'ModelYard · Suivi des réinitialisations Tibo Codex | Limites et politiques',
+    description: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations publiques, les limites ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
   },
 };
 
-const SITE_BRAND_COPY: Record<SiteLocale, {
-  monitor: string;
-  home: string;
-  homeAria: string;
-  monitoring: string;
-  awaitingFirstRun: string;
-  footer: string;
-  footerNavigation: string;
-  rssTitle: string;
-  helpfulNavigation: string;
-  pageNotFoundTitle: string;
-  pageNotFound: string;
-  pageDoesNotExist: string;
-}> = {
-  en: {
-    monitor: 'Tibo Codex Monitor',
-    home: 'Home',
-    homeAria: 'Go to homepage',
-    monitoring: 'Monitoring',
-    awaitingFirstRun: 'Awaiting first run',
-    footer: 'Independent monitor · Not affiliated with OpenAI.',
-    footerNavigation: 'Footer navigation',
-    rssTitle: 'Tibo Monitor RSS',
-    helpfulNavigation: 'Helpful navigation',
-    pageNotFoundTitle: 'Page Not Found',
-    pageNotFound: 'Page not found',
-    pageDoesNotExist: 'The requested page does not exist.',
-  },
-  zh: {
-    monitor: 'Tibo Codex 监控',
-    home: '首页',
-    homeAria: '返回首页',
-    monitoring: '正在监控',
-    awaitingFirstRun: '等待首次运行',
-    footer: '非官方监控站 · 与 OpenAI 无隶属关系。',
-    footerNavigation: '页脚导航',
-    rssTitle: 'Tibo 监控 RSS',
-    helpfulNavigation: '帮助导航',
-    pageNotFoundTitle: '页面未找到',
-    pageNotFound: '页面未找到',
-    pageDoesNotExist: '请求的页面不存在。',
-  },
-  ja: {
-    monitor: 'Tibo Codex Monitor',
-    home: 'ホーム',
-    homeAria: 'ホームページへ移動',
-    monitoring: '監視中',
-    awaitingFirstRun: '初回実行を待っています',
-    footer: '非公式モニター · OpenAI とは提携していません。',
-    footerNavigation: 'フッターナビゲーション',
-    rssTitle: 'Tibo Monitor RSS',
-    helpfulNavigation: '便利なナビゲーション',
-    pageNotFoundTitle: 'ページが見つかりません',
-    pageNotFound: 'ページが見つかりません',
-    pageDoesNotExist: '指定されたページは存在しません。',
-  },
-  es: {
-    monitor: 'Monitor Tibo Codex',
-    home: 'Inicio',
-    homeAria: 'Ir a la página de inicio',
-    monitoring: 'Supervisando',
-    awaitingFirstRun: 'Esperando la primera ejecución',
-    footer: 'Monitor independiente · No afiliado a OpenAI.',
-    footerNavigation: 'Navegación del pie de página',
-    rssTitle: 'RSS de Tibo Monitor',
-    helpfulNavigation: 'Navegación útil',
-    pageNotFoundTitle: 'Página no encontrada',
-    pageNotFound: 'Página no encontrada',
-    pageDoesNotExist: 'La página solicitada no existe.',
-  },
-  fr: {
-    monitor: 'Tibo Codex Monitor',
-    home: 'Accueil',
-    homeAria: 'Aller à la page d’accueil',
-    monitoring: 'Surveillance en cours',
-    awaitingFirstRun: 'En attente de la première exécution',
-    footer: 'Moniteur indépendant · Non affilié à OpenAI.',
-    footerNavigation: 'Navigation du pied de page',
-    rssTitle: 'RSS de Tibo Monitor',
-    helpfulNavigation: 'Navigation utile',
-    pageNotFoundTitle: 'Page introuvable',
-    pageNotFound: 'Page introuvable',
-    pageDoesNotExist: 'La page demandée n’existe pas.',
-  },
-};
+const SITE_BRAND_COPY = SHARED_SITE_BRAND_COPY;
 
 const HOMEPAGE_UI_COPY: Record<SiteLocale, {
   account: string;
@@ -214,10 +131,10 @@ const HOMEPAGE_UI_COPY: Record<SiteLocale, {
   loading: string;
 }> = {
   en: {
-    account: 'Tibo (@thsottiaux)', accountDescription: 'Tibo (@thsottiaux)', unknownChecked: 'Unknown (no successful monitor run)', statusAnswerTitle: 'Current reset status', statusAnswerLead: 'See the latest known reset state first, then open an event for its source and verification details.', lastConfirmedReset: 'Last confirmed reset', lastRecordedReset: 'Last recorded reset', nextKnownReset: 'Next known reset', checkingLiveStatus: 'Checking live reset status…', statusUnknown: 'Unknown', viewResetHistory: 'View reset history', viewLatestEvent: 'View latest event', lastReset: 'Last Reset', currentPolicy: 'Latest Policy Change', latestChange: 'Latest Change', lastChecked: 'Last Checked', sourceStatus: 'Information Source', xDirect: 'X Direct', webIndexed: 'Web Indexed', noEvents: 'No events to display.', noRecentEvents: 'No recent events.', intro: 'Track public OpenAI Codex AI coding-agent usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and subscription updates from Tibo (@thsottiaux); every event includes its source and status.', source: 'View source', resetReportTitle: 'Server reset report', resetReportBody: 'Server reported a usage reset. ', note: 'Note: ', automatedReport: 'Automated report.', resetCountdown: 'Reset Countdown', noResetScheduled: 'No reset currently scheduled.', historicalReference: 'Historical reference', latestEvent: 'Latest event', timeline: 'Timeline', all: 'All', resetPlanned: 'Reset Planned', resetCompleted: 'Reset Completed', timeChanged: 'Time Changed', policy: 'Policy', codexUpdate: 'Codex Update', roadmapHint: 'Roadmap Hint', featureDiscussion: 'Feature Discussion', searchEvents: 'Search events', searchPlaceholder: 'Search titles, summaries or source text', from: 'From', to: 'To', clear: 'Clear', export: 'Export', loading: 'Loading events...',
+    account: 'Tibo (@thsottiaux)', accountDescription: 'Tibo (@thsottiaux)', unknownChecked: 'Unknown (no successful monitor run)', statusAnswerTitle: 'Current reset status', statusAnswerLead: 'See the latest known reset state first, then open an event for its source and verification details.', lastConfirmedReset: 'Last confirmed reset', lastRecordedReset: 'Last recorded reset', nextKnownReset: 'Next known reset', checkingLiveStatus: 'Checking live reset status…', statusUnknown: 'Unknown', viewResetHistory: 'View reset history', viewLatestEvent: 'View latest event', lastReset: 'Last Reset', currentPolicy: 'Latest Policy Change', latestChange: 'Latest Change', lastChecked: 'Last Checked', sourceStatus: 'Information Source', xDirect: 'X Direct', webIndexed: 'Web Indexed', noEvents: 'No events to display.', noRecentEvents: 'No recent events.', intro: 'ModelYard’s Tibo Codex Monitor tracks public OpenAI Codex AI coding-agent usage-limit resets, ChatGPT Work limits, GPT/Codex rate-limit changes, and subscription updates from Tibo (@thsottiaux); every event includes its source and status.', source: 'View source', resetReportTitle: 'Server reset report', resetReportBody: 'Server reported a usage reset. ', note: 'Note: ', automatedReport: 'Automated report.', resetCountdown: 'Reset Countdown', noResetScheduled: 'No reset currently scheduled.', historicalReference: 'Historical reference', latestEvent: 'Latest event', timeline: 'Timeline', all: 'All', resetPlanned: 'Reset Planned', resetCompleted: 'Reset Completed', timeChanged: 'Time Changed', policy: 'Policy', codexUpdate: 'Codex Update', roadmapHint: 'Roadmap Hint', featureDiscussion: 'Feature Discussion', searchEvents: 'Search events', searchPlaceholder: 'Search titles, summaries or source text', from: 'From', to: 'To', clear: 'Clear', export: 'Export', loading: 'Loading events...',
   },
   zh: {
-    account: 'Tibo（@thsottiaux）', accountDescription: 'Tibo（@thsottiaux）', unknownChecked: '未知（尚无成功监控运行）', statusAnswerTitle: '当前重置状态', statusAnswerLead: '先查看已知的最新重置状态，再打开事件查看来源和验证详情。', lastConfirmedReset: '最近一次已确认重置', lastRecordedReset: '最近记录的重置', nextKnownReset: '下一次已知重置', checkingLiveStatus: '正在检查实时重置状态……', statusUnknown: '未知', viewResetHistory: '查看重置历史', viewLatestEvent: '查看最新事件', lastReset: '最近重置', currentPolicy: '最新政策变更', latestChange: '最新动态', lastChecked: '最近检查', sourceStatus: '信息源', xDirect: 'X 直接源', webIndexed: '网页索引', noEvents: '暂无事件。', noRecentEvents: '暂无最新事件。', intro: '追踪 Tibo（@thsottiaux）公开发布的 OpenAI Codex AI 编程代理额度重置、ChatGPT Work 限额、GPT/Codex 速率限制和订阅动态；每条事件都附来源和状态。', source: '查看来源', resetReportTitle: '服务器重置报告', resetReportBody: '服务器报告额度已重置。 ', note: '备注：', automatedReport: '系统自动报告。', resetCountdown: '重置倒计时', noResetScheduled: '目前没有已知的重置计划。', historicalReference: '历史参考', latestEvent: '最新事件', timeline: '时间线', all: '全部', resetPlanned: '计划重置', resetCompleted: '重置完成', timeChanged: '时间变更', policy: '政策', codexUpdate: 'Codex 产品更新', roadmapHint: '路线图线索', featureDiscussion: '功能讨论', searchEvents: '搜索事件', searchPlaceholder: '搜索标题、摘要或来源文本', from: '从', to: '至', clear: '清除', export: '导出', loading: '正在加载事件...',
+    account: 'Tibo（@thsottiaux）', accountDescription: 'Tibo（@thsottiaux）', unknownChecked: '未知（尚无成功监控运行）', statusAnswerTitle: '当前重置状态', statusAnswerLead: '先查看已知的最新重置状态，再打开事件查看来源和验证详情。', lastConfirmedReset: '最近一次已确认重置', lastRecordedReset: '最近记录的重置', nextKnownReset: '下一次已知重置', checkingLiveStatus: '正在检查实时重置状态……', statusUnknown: '未知', viewResetHistory: '查看重置历史', viewLatestEvent: '查看最新事件', lastReset: '最近重置', currentPolicy: '最新政策变更', latestChange: '最新动态', lastChecked: '最近检查', sourceStatus: '信息源', xDirect: 'X 直接源', webIndexed: '网页索引', noEvents: '暂无事件。', noRecentEvents: '暂无最新事件。', intro: 'ModelYard 的 Tibo Codex 监控记录 Tibo（@thsottiaux）公开发布的 OpenAI Codex AI 编程代理额度重置、ChatGPT Work 限额、GPT/Codex 速率限制和订阅动态；每条事件都附来源和状态。', source: '查看来源', resetReportTitle: '服务器重置报告', resetReportBody: '服务器报告额度已重置。 ', note: '备注：', automatedReport: '系统自动报告。', resetCountdown: '重置倒计时', noResetScheduled: '目前没有已知的重置计划。', historicalReference: '历史参考', latestEvent: '最新事件', timeline: '时间线', all: '全部', resetPlanned: '计划重置', resetCompleted: '重置完成', timeChanged: '时间变更', policy: '政策', codexUpdate: 'Codex 产品更新', roadmapHint: '路线图线索', featureDiscussion: '功能讨论', searchEvents: '搜索事件', searchPlaceholder: '搜索标题、摘要或来源文本', from: '从', to: '至', clear: '清除', export: '导出', loading: '正在加载事件...',
   },
   ja: {
     account: 'Tibo（@thsottiaux）', accountDescription: 'Tibo（@thsottiaux）', unknownChecked: '不明（監視の成功した実行はまだありません）', statusAnswerTitle: '現在のリセット状態', statusAnswerLead: 'まず既知の最新リセット状態を確認し、イベントを開いて出典と確認の詳細をご覧ください。', lastConfirmedReset: '最後に確認されたリセット', lastRecordedReset: '最後に記録されたリセット', nextKnownReset: '次に予定されているリセット', checkingLiveStatus: 'リセットの状態を確認中…', statusUnknown: '不明', viewResetHistory: 'リセット履歴を見る', viewLatestEvent: '最新イベントを見る', lastReset: '最近のリセット', currentPolicy: '最新ポリシー変更', latestChange: '最新の更新', lastChecked: '最終確認', sourceStatus: '情報源', xDirect: 'X 直接ソース', webIndexed: 'ウェブ検索インデックス', noEvents: '表示できるイベントはありません。', noRecentEvents: '最近のイベントはありません。', intro: 'Tibo（@thsottiaux）が公開した OpenAI Codex の使用量リセット、ChatGPT Work の制限、GPT/Codex のレート制限、サブスクリプション更新を追跡します。各イベントに出典とステータスを表示します。', source: 'ソースを見る', resetReportTitle: 'サーバーのリセット報告', resetReportBody: 'サーバーが使用量のリセットを報告しました。', note: '注：', automatedReport: '自動報告です。', resetCountdown: 'リセットまでのカウントダウン', noResetScheduled: '現在予定されているリセットはありません。', historicalReference: '履歴の参考値', latestEvent: '最新イベント', timeline: 'タイムライン', all: 'すべて', resetPlanned: 'リセット予定', resetCompleted: 'リセット完了', timeChanged: '時刻変更', policy: 'ポリシー', codexUpdate: 'Codex 更新', roadmapHint: 'ロードマップのヒント', featureDiscussion: '機能ディスカッション', searchEvents: 'イベントを検索', searchPlaceholder: 'タイトル、概要、ソースを検索', from: '開始', to: '終了', clear: 'クリア', export: 'エクスポート', loading: 'イベントを読み込み中…',
@@ -235,28 +152,28 @@ type LandingCopy = { title: string; description: string; lede: string };
 const LANDING_COPY: Record<LandingPageKey, Record<SiteLocale, LandingCopy>> = {
   latest: {
     en: {
-      title: 'Latest Tibo Codex Reset & Usage Limit Updates',
-      description: 'See the latest public Codex reset signals, ChatGPT Work limit changes, and policy updates tracked by Tibo Monitor, with dates and sources.',
+      title: 'Latest ModelYard Tibo Codex Reset & Usage Limit Updates',
+      description: 'See the latest public Codex reset signals, ChatGPT Work limit changes, and policy updates tracked by ModelYard’s Tibo Codex Monitor, with dates and sources.',
       lede: 'Current reset status and recent Codex limit events, with dates, sources, and verification.',
     },
     zh: {
-      title: 'Tibo Codex 最新重置与额度动态',
-      description: '查看 Tibo 监控记录的最新 Codex 重置信号、ChatGPT Work 限额变化和政策更新，包含日期与来源。',
+      title: 'ModelYard · Tibo Codex 最新重置与额度动态',
+      description: '查看 ModelYard 的 Tibo Codex 监控记录的最新 Codex 重置信号、ChatGPT Work 限额变化和政策更新，包含日期与来源。',
       lede: '查看当前重置状态和最近的 Codex 额度事件，以及日期、来源和验证状态。',
     },
     ja: {
-      title: 'Tibo Codex の最新リセット・使用量制限情報',
-      description: 'Tibo Monitor が追跡する Codex のリセット、ChatGPT Work の制限、ポリシー更新を日付と出典付きで確認できます。',
+      title: 'ModelYard · Tibo Codex の最新リセット・使用量制限情報',
+      description: 'ModelYard の Tibo Codex Monitor が追跡する Codex のリセット、ChatGPT Work の制限、ポリシー更新を日付と出典付きで確認できます。',
       lede: '現在のリセット状態と最近の Codex 制限イベントを、出典と確認状態付きで表示します。',
     },
     es: {
-      title: 'Últimos restablecimientos y límites de Tibo Codex',
-      description: 'Consulta las últimas señales de restablecimiento de Codex, cambios de límites de ChatGPT Work y políticas seguidos por Tibo Monitor, con fechas y fuentes.',
+      title: 'ModelYard · Últimos restablecimientos y límites de Tibo Codex',
+      description: 'Consulta las últimas señales de restablecimiento de Codex, cambios de límites de ChatGPT Work y políticas seguidos por el Monitor Tibo Codex de ModelYard, con fechas y fuentes.',
       lede: 'Estado actual de los restablecimientos y eventos recientes de límites de Codex, con fuentes y verificación.',
     },
     fr: {
-      title: 'Dernières réinitialisations et limites Tibo Codex',
-      description: 'Consultez les derniers signaux de réinitialisation Codex, changements de limites ChatGPT Work et mises à jour de politique suivis par Tibo Monitor, avec dates et sources.',
+      title: 'ModelYard · Dernières réinitialisations et limites Tibo Codex',
+      description: 'Consultez les derniers signaux de réinitialisation Codex, changements de limites ChatGPT Work et mises à jour de politique suivis par le Tibo Codex Monitor de ModelYard, avec dates et sources.',
       lede: 'État actuel des réinitialisations et événements récents de limites Codex, avec sources et vérification.',
     },
   },
@@ -473,7 +390,7 @@ function renderGoogleAnalytics(
     seo_title: context.pageTitle,
   });
   return [
-    '  <!-- Google tag (gtag.js) — Tibo Codex Monitor property only -->',
+    '  <!-- Google tag (gtag.js) — ModelYard Tibo Codex Monitor property only -->',
     '  <script async src="https://www.googletagmanager.com/gtag/js?id=' + escapedId + '"></script>',
     '  <script>',
     '    window.dataLayer = window.dataLayer || [];',
@@ -653,7 +570,7 @@ function websiteSchema(lang: SiteLocale, description?: string): string {
   const schema: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    'name': lang === 'zh' ? 'Tibo Codex 监控' : lang === 'ja' ? 'Tibo Codex Monitor' : lang === 'es' ? 'Tibo Codex Monitor' : lang === 'fr' ? 'Tibo Codex Monitor' : 'Tibo Codex Monitor',
+    'name': MODELYARD_BRAND,
     'url': getCanonicalUrl(null, lang),
     'inLanguage': SITE_HTML_LANG[lang],
   };
@@ -1358,7 +1275,7 @@ function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
     '  <meta property="og:image" content="' + escapeHtml(ogImage) + '">',
     '  <meta property="og:image:width" content="1200">',
     '  <meta property="og:image:height" content="630">',
-    '  <meta property="og:site_name" content="' + escapeHtml(brandCopy.monitor) + '">',
+    '  <meta property="og:site_name" content="' + escapeHtml(MODELYARD_BRAND) + '">',
     '  <meta property="og:locale" content="' + (meta.lang === 'zh' ? 'zh_CN' : meta.lang === 'ja' ? 'ja_JP' : meta.lang === 'es' ? 'es_ES' : meta.lang === 'fr' ? 'fr_FR' : 'en_US') + '">',
     '',
     '  <!-- Twitter Card -->',
@@ -1410,135 +1327,17 @@ function renderSiteDocument(meta: SeoMeta, body: string, integrations?: SiteInte
   return siteUrl === SITE_URL ? html : html.replaceAll(SITE_URL, siteUrl);
 }
 
-const PRIMARY_NAV_LABELS: Record<SiteLocale, {
-  latest: string;
-  'reset-history': string;
-  'rate-limit-updates': string;
-  faq: string;
-  methodology: string;
-  community: string;
-  openGambit: string;
-  aiDisclosure: string;
-}> = {
-  en: {
-    latest: 'Latest',
-    'reset-history': 'Reset History',
-    'rate-limit-updates': 'Rate Limit Updates',
-    faq: 'FAQ',
-    methodology: 'Methodology',
-    community: 'ModelYard Community',
-    openGambit: 'Open Gambit',
-    aiDisclosure: 'AI operation',
-  },
-  zh: {
-    latest: '最新动态',
-    'reset-history': '重置历史',
-    'rate-limit-updates': '限额更新',
-    faq: '常见问题',
-    methodology: '方法论',
-    community: 'ModelYard 社区',
-    openGambit: 'Open Gambit',
-    aiDisclosure: 'AI 运营说明',
-  },
-  ja: {
-    latest: '最新情報',
-    'reset-history': 'リセット履歴',
-    'rate-limit-updates': 'レート制限の更新',
-    faq: 'FAQ',
-    methodology: '方法論',
-    community: 'ModelYard コミュニティ',
-    openGambit: 'Open Gambit',
-    aiDisclosure: 'AI 運用説明',
-  },
-  es: {
-    latest: 'Últimas novedades',
-    'reset-history': 'Historial de restablecimientos',
-    'rate-limit-updates': 'Actualizaciones de límites',
-    faq: 'Preguntas frecuentes',
-    methodology: 'Metodología',
-    community: 'Comunidad ModelYard',
-    openGambit: 'Open Gambit',
-    aiDisclosure: 'Operación de IA',
-  },
-  fr: {
-    latest: 'Dernières infos',
-    'reset-history': 'Historique des réinitialisations',
-    'rate-limit-updates': 'Mises à jour des limites',
-    faq: 'FAQ',
-    methodology: 'Méthodologie',
-    community: 'Communauté ModelYard',
-    openGambit: 'Open Gambit',
-    aiDisclosure: 'Fonctionnement IA',
-  },
-};
+const PRIMARY_NAV_LABELS = SHARED_PRIMARY_NAV_LABELS;
 
 function renderSiteHeader(
   lang: SiteLocale,
   options: { accounts?: string[]; interactive?: boolean; alternatePath?: string | null } = {},
 ): string {
-  const isZh = lang === 'zh';
-  const brandCopy = SITE_BRAND_COPY[lang];
-  const accounts = options.accounts && options.accounts.length > 0
-    ? options.accounts.map(account => '@' + account).join(', ')
-    : '';
-  const alternatePath = options.alternatePath === undefined
-    ? (isZh ? '/' : '/zh/')
-    : options.alternatePath;
-  const languageMenuLabel = lang === 'zh' ? '语言' : lang === 'ja' ? '言語' : lang === 'es' ? 'Idiomas' : lang === 'fr' ? 'Langues' : 'Languages';
-  const languageBasePath = alternatePath || getHomePath(lang);
-  const languageMenu = '<details class="language-menu"><summary class="lang-switch" id="langSwitch" aria-label="' + escapeHtml(languageMenuLabel) + '">' + escapeHtml(SITE_LOCALE_LABELS[lang]) + '</summary><div class="language-menu-options" aria-label="' + escapeHtml(languageMenuLabel) + '">'
-    + SITE_LOCALES.map(locale => '<a href="' + escapeHtml(localePath(languageBasePath, locale)) + '"' + (locale === lang ? ' aria-current="page"' : '') + '>' + escapeHtml(SITE_LOCALE_LABELS[locale]) + '</a>').join('')
-    + '</div></details>';
-  const communityLink = '<a class="header-community-link" href="' + getCommunityPath(lang) + '">' + PRIMARY_NAV_LABELS[lang].community + '</a>';
-  const openGambitLink = '<a class="header-gambit-link" href="' + OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en'] + '">' + PRIMARY_NAV_LABELS[lang].openGambit + '</a>';
-  return [
-    '    <header class="header">',
-    '      <div class="header-left">',
-        '        <a class="logo logo-home-link" href="' + getHomePath(lang) + '" aria-label="' + escapeHtml(brandCopy.homeAria) + '">',
-    '          <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">',
-    '            <path d="M12 2L2 7l10 5 10-5-10-5z"/>',
-    '            <path d="M2 17l10 5 10-5"/>',
-    '            <path d="M2 12l10 5 10-5"/>',
-    '          </svg>',
-    '          <div>',
-    '            <div class="logo-title"' + (options.interactive ? ' id="siteTitle"' : '') + '>' + escapeHtml(brandCopy.monitor) + '</div>',
-    accounts ? '            <p class="logo-subtitle"><span id="monitoringLabel">' + escapeHtml(brandCopy.monitoring) + '</span> <span id="monitoredAccounts">' + escapeHtml(accounts) + '</span></p>' : '',
-    '          </div>',
-    '        </a>',
-    '      </div>',
-    '      <div class="header-right">',
-    options.interactive ? '        <span class="live-badge" id="liveBadge"><span class="live-dot" style="background:#606070;animation:none"></span><span id="lastCheckedLabel">' + escapeHtml(brandCopy.awaitingFirstRun) + '</span></span>' : '',
-    '        ' + openGambitLink,
-    '        ' + communityLink,
-    '        ' + languageMenu,
-    '      </div>',
-    '    </header>',
-  ].filter(line => line !== '').join('\n');
+  return renderSharedHeader(lang, options);
 }
 
 function renderSiteFooter(lang: SiteLocale): string {
-  const labels = PRIMARY_NAV_LABELS[lang];
-  const brandCopy = SITE_BRAND_COPY[lang];
-  return [
-    '    <footer class="footer">',
-    '      <div class="footer-content">',
-    '        <p id="footerText">' + escapeHtml(brandCopy.footer) + '</p>',
-    '        <nav class="footer-links" aria-label="' + escapeHtml(brandCopy.footerNavigation) + '">',
-    '          <a href="' + getHomePath(lang) + '">' + escapeHtml(brandCopy.home) + '</a>',
-    '          <a href="' + getLandingPath('latest', lang) + '">' + labels.latest + '</a>',
-    '          <a href="' + getLandingPath('reset-history', lang) + '">' + labels['reset-history'] + '</a>',
-    '          <a href="' + getLandingPath('rate-limit-updates', lang) + '">' + labels['rate-limit-updates'] + '</a>',
-    '          <a href="' + getLandingPath('faq', lang) + '">' + labels.faq + '</a>',
-    '          <a href="' + getLandingPath('methodology', lang) + '">' + labels.methodology + '</a>',
-    '          <a href="' + getCommunityPath(lang) + '">' + labels.community + '</a>',
-    '          <a href="' + OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en'] + '">' + labels.openGambit + '</a>',
-    '          <a href="' + AI_DISCLOSURE_PATHS[lang === 'zh' ? 'zh' : 'en'] + '">' + labels.aiDisclosure + '</a>',
-    '          <a href="https://modelyard.dev" target="_blank" rel="noopener noreferrer">Model Yard</a>',
-    '          <a href="/feed.xml">RSS</a>',
-    '        </nav>',
-    '      </div>',
-    '    </footer>',
-  ].join('\n');
+  return renderSharedFooter(lang);
 }
 
 interface LandingPageData {
@@ -1920,7 +1719,7 @@ export function renderLandingPage(data: LandingPageData, lang: SiteLocale, integ
   const itemList = events.length > 0 ? itemListSchema(events, lang) : null;
   const meta: SeoMeta = {
     lang,
-    title: copy.title + ' | ' + (isZh ? 'Tibo 监控' : 'Tibo Monitor'),
+    title: copy.title + ' | ' + MODELYARD_BRAND,
     description: copy.description,
     canonical,
     isHomepage: false,
@@ -2135,7 +1934,7 @@ export function renderCommunityPage(data: CommunityPageData, lang: SiteLocale, i
   ]);
   const meta: SeoMeta = {
     lang,
-    title: copy.title + ' | ' + (isZh ? 'Tibo 监控' : 'Tibo Monitor'),
+    title: copy.title + ' | ' + MODELYARD_BRAND,
     description: copy.description,
     canonical,
     isHomepage: false,
@@ -2236,7 +2035,7 @@ export function renderCommunityPage(data: CommunityPageData, lang: SiteLocale, i
 export function renderAdminCommunityPage(integrations?: SiteIntegrations): string {
   const meta: SeoMeta = {
     lang: 'en',
-    title: 'ModelYard Community moderation | Tibo Monitor',
+    title: 'ModelYard Community moderation',
     description: 'Private ModelYard Community moderation console.',
     canonical: null,
     isHomepage: false,
@@ -2685,7 +2484,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
 
   const meta: SeoMeta = {
     lang,
-    title: title + ' — ' + (isZh ? 'Tibo Codex 监控' : 'Tibo Codex Monitor'),
+    title: title + ' — ' + MODELYARD_BRAND + ' · ' + SITE_BRAND_COPY[lang].monitor,
     description: metaDescription,
     canonical: getCanonicalUrl(event.id!, lang),
     isHomepage: false,
@@ -2975,7 +2774,7 @@ export function renderRssFeed(
 ): string {
   const baseUrl = normalizeSiteUrl(siteUrl);
   const visibleEvents = events.filter(event => event.id !== undefined).slice(0, 20);
-  const channelTitle = lang === 'zh' ? 'Tibo Codex 监控' : 'Tibo Codex Monitor';
+  const channelTitle = MODELYARD_BRAND + ' · ' + SITE_BRAND_COPY[lang].monitor;
   const channelDescription = lang === 'zh'
     ? '追踪 Tibo（@thsottiaux）公开发布的 Codex 额度重置、限额和订阅政策事件。'
     : 'Public Codex usage-limit reset, rate-limit and subscription policy events tracked by Tibo Monitor.';

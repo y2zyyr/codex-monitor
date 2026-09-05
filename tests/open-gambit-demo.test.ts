@@ -17,12 +17,13 @@ import type {
 /**
  * TEST_ONLY local demo: no network, API key, D1, R2, Workflow, or production
  * binding is used. The ledger mirrors the persisted state transitions closely
- * enough to exercise discovery -> draft -> approval -> publication -> review.
+ * enough to exercise discovery -> qualification -> automatic publication -> review.
  */
 class DemoLedger {
   private article: GambitPublicArticle | null = null;
   private originalPrediction: GambitPublicArticle['trajectories'][number] | null = null;
   private resolution: string | null = null;
+  approvalCount = 0;
 
   createDraft(draft: NonNullable<Awaited<ReturnType<typeof runGambitStages>>['draft']>): GambitPublicArticle {
     this.article = {
@@ -39,11 +40,12 @@ class DemoLedger {
 
   approve(): void {
     if (!this.article) throw new Error('demo draft missing');
+    this.approvalCount += 1;
     this.article = { ...this.article, status: 'APPROVED', modifiedAt: '2026-09-04T00:05:00.000Z' };
   }
 
   translate(): void {
-    if (!this.article) throw new Error('demo approval missing');
+    if (!this.article) throw new Error('demo draft missing');
     const article = this.article;
     const makeTranslation = (locale: 'en' | 'zh'): GambitTranslation => ({
       locale,
@@ -67,7 +69,7 @@ class DemoLedger {
   }
 
   publish(): GambitPublicArticle {
-    if (!this.article || this.article.status !== 'APPROVED') throw new Error('demo approval missing');
+    if (!this.article || !['WAITING_FOR_REVIEW', 'APPROVED'].includes(this.article.status)) throw new Error('demo publication gate missing');
     this.article = {
       ...this.article,
       status: 'PUBLISHED',
@@ -75,6 +77,11 @@ class DemoLedger {
       modifiedAt: '2026-09-04T00:06:00.000Z',
     };
     return this.article;
+  }
+
+  autoPublish(): GambitPublicArticle {
+    this.translate();
+    return this.publish();
   }
 
   appendResolution(state: string): void {
@@ -178,14 +185,13 @@ describe('Open Gambit V1 local end-to-end demo', () => {
       providers: { triage, gambit_analysis: analysis },
       now: new Date('2026-09-04T00:00:00.000Z'),
     });
-    expect(staged.status).toBe('WAITING_FOR_REVIEW');
+    expect(staged.status).toBe('AUTO_PUBLISH_ELIGIBLE');
+    expect(staged.publicationDecision).toBe('AUTO_PUBLISH_ELIGIBLE');
     expect(staged.draft).toBeDefined();
 
     const ledger = new DemoLedger();
     ledger.createDraft(staged.draft!);
-    ledger.approve();
-    ledger.translate();
-    const published = ledger.publish();
+    const published = ledger.autoPublish();
     const resolution = evaluatePredictionEvidence({
       originalPredictionStatement: published.trajectories[0].predictionStatement,
       originalObservableCondition: published.trajectories[0].evidenceCriteria,
@@ -195,6 +201,7 @@ describe('Open Gambit V1 local end-to-end demo', () => {
     ledger.appendResolution(resolution.state);
 
     expect(published.status).toBe('PUBLISHED');
+    expect(ledger.approvalCount).toBe(0);
     expect(ledger.getResolution()).toBe('HIT');
     expect(ledger.getOriginalPrediction()?.probability).toBe(70);
     expect(ledger.getOriginalPrediction()?.predictionStatement).toContain('generally available');

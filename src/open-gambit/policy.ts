@@ -4,6 +4,7 @@ import {
   type GambitCandidate,
   type GambitEvidence,
   type GambitProbability,
+  type GambitPublicationDecision,
   type GambitRejectionReason,
   type GambitTriageResult,
 } from './types';
@@ -202,6 +203,53 @@ export function validateAnalysisForPublication(
   for (const trajectory of analysis.trajectories) errors.push(...validatePublicForecast(trajectory));
   if (!critic.accepted) errors.push('CRITIC_REJECTED');
   return [...new Set(errors)];
+}
+
+/**
+ * Map deterministic gate failures to the persisted/publication decision. The
+ * only decision that may enter the automatic publication path is the explicit
+ * success value; every other value is a hold or a no-publish outcome.
+ */
+export function publicationDecisionForErrors(errors: readonly string[]): GambitPublicationDecision {
+  if (errors.includes('POLITICAL_TOPIC_EXCLUDED') || errors.includes('CRITIC_POLITICAL_FRAMING')) return 'POLITICAL_TOPIC_EXCLUDED';
+  if (errors.some(error => error.includes('EVIDENCE'))) return 'INSUFFICIENT_EVIDENCE';
+  if (errors.some(error => error.includes('MOTIVE'))) return 'UNSUPPORTED_MOTIVE';
+  if (errors.some(error => error.includes('FALSIF') || error.includes('DEADLINE') || error.includes('TRAJECTORY'))) return 'NON_FALSIFIABLE';
+  if (errors.some(error => error.startsWith('CRITIC_'))) return 'NEEDS_HUMAN_REVIEW';
+  if (errors.some(error => error.includes('STRATEGIC') || error.includes('CAUSAL'))) return 'LOW_STRATEGIC_VALUE';
+  return 'NEEDS_HUMAN_REVIEW';
+}
+
+export interface AutomaticPublicationGate {
+  decision: GambitPublicationDecision;
+  errors: string[];
+}
+
+export function publicationDecisionForReason(reason: string | null | undefined): GambitPublicationDecision {
+  switch (reason) {
+    case 'INSUFFICIENT_EVIDENCE': return 'INSUFFICIENT_EVIDENCE';
+    case 'POLITICAL_TOPIC_EXCLUDED': return 'POLITICAL_TOPIC_EXCLUDED';
+    case 'DUPLICATE':
+    case 'DUPLICATE_EVENT': return 'DUPLICATE';
+    case 'LOW_STRATEGIC_VALUE': return 'LOW_STRATEGIC_VALUE';
+    case 'NON_FALSIFIABLE': return 'NON_FALSIFIABLE';
+    case 'UNSUPPORTED_MOTIVE': return 'UNSUPPORTED_MOTIVE';
+    case 'NEEDS_HUMAN_REVIEW': return 'NEEDS_HUMAN_REVIEW';
+    case 'NO_GAMBIT_WORTH_PUBLISHING': return 'NO_GAMBIT_WORTH_PUBLISHING';
+    default: return 'NO_GAMBIT_WORTH_PUBLISHING';
+  }
+}
+
+export function deterministicPublicationGate(
+  candidate: Pick<GambitCandidate, 'politicalTopic'>,
+  analysis: { trajectories: Array<{ probability: unknown; deadline: string; predictionStatement?: string; targetEntity?: string; reasoning?: string; evidenceCriteria?: string; falsifier?: string }>; thesis: string; facts: string[] },
+  critic: { accepted: boolean; politicalFraming: boolean; motiveConcern?: boolean; causalConcern?: boolean; sensationalismConcern?: boolean; falsifiabilityConcern?: boolean },
+): AutomaticPublicationGate {
+  const errors = validateAnalysisForPublication(candidate, analysis, critic);
+  return {
+    errors,
+    decision: errors.length === 0 ? 'AUTO_PUBLISH_ELIGIBLE' : publicationDecisionForErrors(errors),
+  };
 }
 
 export function rejectionReasonIsKnown(value: string): value is GambitRejectionReason {

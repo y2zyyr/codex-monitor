@@ -20,8 +20,9 @@ export const OPEN_GAMBIT_WORKFLOW_STEPS = [
   'bounded-evidence-load',
   'qualified-analysis',
   'independent-critic',
-  'deterministic-draft',
-  'waiting-for-human-approval',
+  'forecast-validation',
+  'deterministic-publication-gate',
+  'auto-publish-or-exceptional-review',
 ] as const;
 
 export function workflowIdForCandidate(candidateId: number): string {
@@ -65,7 +66,7 @@ export async function runLocalGambitWorkflow(
     roles: getGambitModelRoleConfig(env),
     budget: gambitBudgetFromEnv(env),
   });
-  return step ? step.do('qualified-analysis-and-critic', execute) : execute();
+  return step ? step.do('qualified-analysis-critic-and-publication-gate', execute) : execute();
 }
 
 export function createConfiguredProviders(env: Env, fetchImpl?: typeof fetch): Partial<Record<string, GambitLLMProvider>> {

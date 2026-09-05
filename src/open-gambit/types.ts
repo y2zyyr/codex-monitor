@@ -57,6 +57,19 @@ export const GAMBIT_REJECTION_REASONS = [
 ] as const;
 export type GambitRejectionReason = typeof GAMBIT_REJECTION_REASONS[number];
 
+export const GAMBIT_PUBLICATION_DECISIONS = [
+  'AUTO_PUBLISH_ELIGIBLE',
+  'NO_GAMBIT_WORTH_PUBLISHING',
+  'INSUFFICIENT_EVIDENCE',
+  'POLITICAL_TOPIC_EXCLUDED',
+  'DUPLICATE',
+  'LOW_STRATEGIC_VALUE',
+  'NON_FALSIFIABLE',
+  'UNSUPPORTED_MOTIVE',
+  'NEEDS_HUMAN_REVIEW',
+] as const;
+export type GambitPublicationDecision = typeof GAMBIT_PUBLICATION_DECISIONS[number];
+
 export const GAMBIT_RESOLUTION_STATES = [
   'WATCHING',
   'DUE',
@@ -351,8 +364,9 @@ export interface GambitWorkflowInput {
 
 export interface GambitWorkflowResult {
   workflowId: string;
-  status: 'NO_GAMBIT' | 'WAITING_FOR_REVIEW' | 'NEEDS_HUMAN_REVIEW' | 'FAILED';
+  status: 'NO_GAMBIT' | 'WAITING_FOR_REVIEW' | 'NEEDS_HUMAN_REVIEW' | 'FAILED' | 'COMPLETED';
   candidateId: number;
+  publicationDecision?: GambitPublicationDecision;
   articleId?: number;
   revisionId?: number;
   reason?: string;
