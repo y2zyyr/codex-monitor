@@ -2,7 +2,14 @@
 // Codex Usage Monitor - Classification Provider Interface
 // ============================================================
 export type { ClassificationProvider } from '../types';
-import type { ClassificationResult, SourcePost } from '../types';
+import type {
+  ClassificationOutcome,
+  ClassificationResult,
+  ClassificationSourceContext,
+  SourcePost,
+} from '../types';
+
+export const CLASSIFIER_VERSION = 'tibo-classifier-v2';
 
 export type SoftResetHintKind = 'RESET_BUTTON' | 'MILESTONE';
 
@@ -159,6 +166,172 @@ function isDirectXPost(post: SourcePost): boolean {
 
 function normalizedPostText(post: SourcePost): string {
   return post.text.toLowerCase().replace(/[’]/g, "'");
+}
+
+const TRUSTED_TIBO_ACCOUNT = 'thsottiaux';
+const TRUSTED_X_URL_PATTERN = /^https:\/\/(?:www\.)?x\.com\/thsottiaux\/status\/(\d{5,30})\/?$/i;
+const STRONG_RESET_PHRASE_PATTERN = /\b(?:full\s+)?banked\s+reset\b|\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b[\s\S]{0,80}\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b|\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b[\s\S]{0,80}\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b/i;
+const BROAD_RESET_AUDIENCE_PATTERN = /\b(?:for|to)\s+(?:(?:all|every|each)\s+)?(?:users?|accounts?|subscribers?|customers?|members?)\b|\b(?:all|every|everyone)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b/i;
+const FUTURE_RESET_PATTERN = /\b(?:will|going\s+to|plan(?:ned)?|intend(?:ed)?|today|tomorrow|later|soon|end\s+of\s+day|upcoming|scheduled|coming)\b/i;
+const COMPLETED_RESET_PATTERN = /\b(?:has|have|had|was|were|is|are|just|already)\s+(?:been\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)|completed?|done|propagated)\b|\bfeeling\s+reset(?:ted|ed)?\b|\b(?:reset|usage|quotas?|limits?)\b[\s\S]{0,80}\b(?:propagated|completed?|done|restored|renewed|replenished|refreshed)\b/i;
+const NEGATED_RESET_PATTERN = /\b(?:not|never|didn't|did\s+not|hasn't|has\s+not|won't|will\s+not|cannot|can't)\s+(?:be\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
+const NON_CODEX_PRODUCT_PATTERN = /\b(?:chatgpt(?:\s+work)?|sora|dall[-\s]?e|playground|openai\s+api)\b/i;
+
+export function hasExplicitCodexReference(text: string): boolean {
+  return /\bcodex\b/i.test(text);
+}
+
+export interface TrustedSourceContextEvaluation {
+  trusted: boolean;
+  sourceContext: ClassificationSourceContext;
+}
+
+/**
+ * Trusted context is intentionally narrower than “the author is Tibo”. It
+ * requires the canonical, direct X representation already used by the
+ * monitor, the monitored account, and a URL/id match. This lets the context
+ * supplement a missing Codex noun without turning arbitrary resets into
+ * Codex events.
+ */
+export function getTrustedSourceContext(post: SourcePost): TrustedSourceContextEvaluation {
+  const sourceId = post.source_post_id.trim();
+  const urlMatch = TRUSTED_X_URL_PATTERN.exec(post.source_url.trim());
+  const trusted = isDirectXPost(post)
+    && post.source === 'x_api'
+    && post.source_account.trim().toLowerCase() === TRUSTED_TIBO_ACCOUNT
+    && post.canonical_platform === 'x'
+    && post.canonical_post_id?.trim() === sourceId
+    && urlMatch?.[1] === sourceId
+    && post.verification_status !== 'INDEXED_ONLY'
+    && post.verification_status !== 'REJECTED';
+  return {
+    trusted,
+    sourceContext: trusted ? 'TRUSTED_CODEX_SOURCE_AVAILABLE' : 'UNTRUSTED_SOURCE',
+  };
+}
+
+export interface StrongResetSignal {
+  strong: boolean;
+  hasStrongResetPhrase: boolean;
+  hasAudienceContext: boolean;
+  hasFutureIntent: boolean;
+  hasCompletionLanguage: boolean;
+  matchedSignals: string[];
+  category: 'RESET_PLANNED' | 'RESET_COMPLETED' | null;
+}
+
+/**
+ * A contextual reset must contain domain-specific reset language plus a
+ * broad plan/user scope. “Reset” by itself is intentionally insufficient.
+ */
+export function getStrongResetSignal(post: SourcePost): StrongResetSignal {
+  const text = normalizedPostText(post);
+  const planMatches = text.match(/\b(?:plus|pro|business|enterprise)\b/gi) ?? [];
+  const hasStrongResetPhrase = STRONG_RESET_PHRASE_PATTERN.test(text);
+  const hasAudienceContext = BROAD_RESET_AUDIENCE_PATTERN.test(text) || planMatches.length >= 2;
+  const hasFutureIntent = FUTURE_RESET_PATTERN.test(text);
+  const hasCompletionLanguage = COMPLETED_RESET_PATTERN.test(text);
+  const negated = NEGATED_RESET_PATTERN.test(text);
+  const strong = !negated && hasStrongResetPhrase && hasAudienceContext;
+  const matchedSignals: string[] = [];
+  if (hasStrongResetPhrase) matchedSignals.push('strong usage/reset phrase');
+  if (hasAudienceContext) matchedSignals.push('broad user or plan scope');
+  if (hasFutureIntent) matchedSignals.push('future timing');
+  if (hasCompletionLanguage) matchedSignals.push('completed-state language');
+  return {
+    strong,
+    hasStrongResetPhrase,
+    hasAudienceContext,
+    hasFutureIntent,
+    hasCompletionLanguage,
+    matchedSignals,
+    category: strong
+      ? hasFutureIntent ? 'RESET_PLANNED' : hasCompletionLanguage ? 'RESET_COMPLETED' : 'RESET_PLANNED'
+      : null,
+  };
+}
+
+export function isStrongResetSignal(post: SourcePost): boolean {
+  return getStrongResetSignal(post).strong;
+}
+
+export function isTrustedContextualReset(post: SourcePost): boolean {
+  const context = getTrustedSourceContext(post);
+  const text = normalizedPostText(post);
+  const hasExplicitCodex = hasExplicitCodexReference(text);
+  const hasNonCodexConflict = NON_CODEX_PRODUCT_PATTERN.test(text) && !hasExplicitCodex;
+  return context.trusted && getStrongResetSignal(post).strong && !hasNonCodexConflict;
+}
+
+function isResetLifecycleCategory(category: ClassificationResult['category']): boolean {
+  return category === 'RESET_PLANNED'
+    || category === 'RESET_COMPLETED'
+    || category === 'RESET_TIME_CHANGED';
+}
+
+function buildTrustedContextResetResult(post: SourcePost, signal: StrongResetSignal): ClassificationResult {
+  const author = post.source_account.toLowerCase() === TRUSTED_TIBO_ACCOUNT
+    ? 'Tibo'
+    : `@${post.source_account}`;
+  const completed = signal.category === 'RESET_COMPLETED';
+  return {
+    relevant: true,
+    category: completed ? 'RESET_COMPLETED' : 'RESET_PLANNED',
+    product_scope: 'CODEX',
+    statement_nature: completed ? 'FACT' : 'INTENTION',
+    confidence: completed ? 0.8 : 0.74,
+    title_en: completed ? `${author} indicates a Codex usage reset` : `${author} announces a Codex usage reset`,
+    title_zh: completed ? `${author}表示 Codex 用量已重置` : `${author}宣布 Codex 用量重置`,
+    summary_en: completed
+      ? `${author} reports a strong usage-reset signal covering multiple user plans. The direct source does not provide an absolute reset timestamp.`
+      : `${author} announces a strong usage-reset signal covering multiple user plans. The reset timing is relative or not stated and remains unconfirmed.`,
+    summary_zh: completed
+      ? `${author}报告了覆盖多个用户方案的强用量重置信号。直接来源没有提供绝对重置时间。`
+      : `${author}宣布了覆盖多个用户方案的强用量重置信号。重置时间为相对时间或未说明，仍待确认。`,
+    effective_time: null,
+    reset_time: null,
+    reason: 'Trusted canonical Tibo X context was used only because strong usage/reset semantics and a broad user or plan scope were present.',
+  };
+}
+
+export interface TrustedResetContextResult {
+  outcome: ClassificationOutcome;
+  sourceContext: ClassificationSourceContext;
+  applied: boolean;
+  strongReset: StrongResetSignal;
+}
+
+/**
+ * Repair the specific missed-reset failure mode after the provider result is
+ * available. Explicit Codex classifications remain authoritative; the
+ * supplemental context only repairs a strong, trusted reset that the model
+ * discarded or assigned to a non-Codex scope. Explicit non-Codex text wins.
+ */
+export function applyTrustedResetContext(post: SourcePost, outcome: ClassificationOutcome): TrustedResetContextResult {
+  const context = getTrustedSourceContext(post);
+  const signal = getStrongResetSignal(post);
+  const text = normalizedPostText(post);
+  const hasExplicitCodex = hasExplicitCodexReference(text);
+  const hasNonCodexConflict = NON_CODEX_PRODUCT_PATTERN.test(text) && !hasExplicitCodex;
+  if (!context.trusted || !signal.strong || hasNonCodexConflict) {
+    return { outcome, sourceContext: context.sourceContext, applied: false, strongReset: signal };
+  }
+
+  if (outcome.status === 'SUCCESS'
+    && outcome.result.relevant
+    && isResetLifecycleCategory(outcome.result.category)
+    && outcome.result.category === signal.category
+    && outcome.result.product_scope === 'CODEX'
+    && isCodexProductSignalAdmissible(outcome.result)) {
+    return { outcome, sourceContext: context.sourceContext, applied: false, strongReset: signal };
+  }
+
+  return {
+    outcome: { status: 'SUCCESS', result: buildTrustedContextResetResult(post, signal) },
+    sourceContext: 'TRUSTED_CODEX_SOURCE_APPLIED',
+    applied: true,
+    strongReset: signal,
+  };
 }
 
 /**

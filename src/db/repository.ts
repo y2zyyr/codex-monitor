@@ -26,6 +26,7 @@ import type {
   EventTranslationLocale,
   EventTranslationStatus,
   MonitorEventTranslation,
+  ClassificationDecisionTrace,
 } from '../types';
 import { isStaleApproximateReset } from '../utils/search-schedule';
 import {
@@ -94,6 +95,12 @@ function mapSourcePost(row: D1SourcePostRow): SourcePost {
     classification_attempts: row.classification_attempts ?? 0,
     last_classification_attempt_at: row.last_classification_attempt_at,
     classification_error: row.classification_error,
+    classification_label: row.classification_label,
+    classification_decision: row.classification_decision as SourcePost['classification_decision'],
+    classification_reason_code: row.classification_reason_code as SourcePost['classification_reason_code'],
+    classification_source_context: row.classification_source_context as SourcePost['classification_source_context'],
+    classification_event_created: row.classification_event_created === 1,
+    classifier_version: row.classifier_version,
     canonical_platform: row.canonical_platform ?? undefined,
     canonical_post_id: row.canonical_post_id ?? undefined,
     source_quality: (row.source_quality as SourceQuality | null) ?? 'DIRECT',
@@ -563,6 +570,32 @@ export class Repository {
       .prepare('UPDATE source_posts SET classification_pending = 1, classification_attempts = ?, last_classification_attempt_at = ?, classification_error = ? WHERE id = ?')
       .bind(attempts, lastAttemptAt, error, id)
       .run();
+  }
+
+  /**
+   * Persist only bounded classification provenance. Model explanations and
+   * source text stay out of this trace so it remains suitable for operator
+   * inspection without becoming a hidden chain-of-thought store.
+   */
+  async recordClassificationDecision(id: number, trace: ClassificationDecisionTrace): Promise<void> {
+    await this.db.prepare(`
+      UPDATE source_posts SET
+        classification_label = ?,
+        classification_decision = ?,
+        classification_reason_code = ?,
+        classification_source_context = ?,
+        classification_event_created = ?,
+        classifier_version = ?
+      WHERE id = ?
+    `).bind(
+      trace.classification_label,
+      trace.classification_decision,
+      trace.classification_reason_code,
+      trace.classification_source_context,
+      trace.classification_event_created ? 1 : 0,
+      trace.classifier_version,
+      id,
+    ).run();
   }
 
   async getLatestPostsByAccount(account: string, limit = 20): Promise<SourcePost[]> {

@@ -6,6 +6,7 @@ import {
   AI_OPERATION_SHORT_EN,
 } from '../src/open-gambit/disclosure';
 import { renderAiDisclosurePage, renderOpenGambitArticle, renderOpenGambitLanding } from '../src/open-gambit/renderer';
+import { renderHomepage } from '../src/renderer';
 import {
   extractEvidenceDocument,
   evidenceForModel,
@@ -649,12 +650,16 @@ describe('Open Gambit public rendering and append-only resolution', () => {
     expect(html).toContain('~70%');
     expect(html).toContain('datePublished');
     expect(html).toContain('isBasedOn');
-    expect(html).toContain('human approval');
+    expect(html).not.toContain('human approval');
+    expect(html).not.toContain('AI operation');
     expect(html).not.toContain('Gambit Score');
 
     const landing = renderOpenGambitLanding([article], 'en');
     expect(landing).toContain('test-only-api-launch-aaaaaaaaaa');
+    expect(landing).not.toContain('AI operation');
+    expect(landing).not.toContain('human approval');
     expect(renderAiDisclosurePage('zh')).toContain('AI 运营说明');
+    expect(renderAiDisclosurePage('en')).toContain('human approval');
     expect(renderOpenGambitLanding([article], 'en', 'https://staging.example.invalid/')).toContain('https://staging.example.invalid/open-gambit/');
     for (const lang of ['en', 'zh'] as const) {
       for (const rendered of [renderOpenGambitLanding([article], lang), renderOpenGambitArticle(article, lang), renderAiDisclosurePage(lang)]) {
@@ -670,6 +675,26 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       expect(rendered).toContain(` · ${count} ${count === 1 ? 'trajectory' : 'trajectories'}</div>`);
       expect(rendered).not.toContain('trajectorys');
     }
+
+    const homepage = renderHomepage({
+      events: [],
+      latestEvent: null,
+      lastReset: null,
+      lastPolicy: null,
+      lastCheckedAt: null,
+      totalEvents: 0,
+      gambitArticles: [
+        article,
+        { ...article, articleId: 3, slug: 'test-only-api-launch-bbbbbbbbbb', publishedAt: '2026-09-01T00:00:00.000Z' },
+        { ...article, articleId: 4, slug: 'test-only-api-launch-cccccccccc', publishedAt: '2026-08-31T00:00:00.000Z' },
+        { ...article, articleId: 5, slug: 'test-only-api-launch-dddddddddd', publishedAt: '2026-08-30T00:00:00.000Z' },
+        { ...article, articleId: 6, slug: 'test-only-api-launch-political', politicalTopic: true, publishedAt: '2026-09-03T00:00:00.000Z' },
+      ],
+    }, 'en');
+    expect(homepage.match(/class="homepage-gambit-card"/g)).toHaveLength(3);
+    expect(homepage).toContain('AI estimate · ~70%');
+    expect(homepage).not.toContain('test-only-api-launch-dddddddddd');
+    expect(homepage).not.toContain('trajectorys');
   });
 
   it('does not publish a political article or show an empty homepage module', () => {

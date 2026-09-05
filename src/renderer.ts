@@ -2082,17 +2082,32 @@ function renderHomepageStatusAnswer(
   ].filter(line => line !== '').join('\n');
 }
 
+function truncateHomepageGambitSummary(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (normalized.length <= 190) return normalized;
+  return normalized.slice(0, 187).trimEnd() + '...';
+}
+
 function renderHomepageGambitModule(articles: GambitPublicArticle[], lang: SiteLocale): string {
-  const visible = articles.filter(article => article.status === 'PUBLISHED' && !article.politicalTopic).slice(0, 2);
+  const visible = articles
+    .filter(article => article.status === 'PUBLISHED' && !article.politicalTopic && Boolean(article.publishedAt))
+    .slice(0, 3);
   if (visible.length === 0) return '';
   const isZh = lang === 'zh';
   const cards = visible.map(article => {
     const path = (lang === 'zh' ? '/zh' : '') + '/open-gambit/' + encodeURIComponent(article.slug) + '/';
+    const content = isZh && article.translations?.zh?.status === 'TRANSLATED' ? article.translations.zh : article;
+    const summary = truncateHomepageGambitSummary(content.thesis || content.surfaceEvent);
+    const publicationDate = article.publishedAt || article.modifiedAt;
+    const firstTrajectory = content.trajectories[0];
     return [
       '      <article class="homepage-gambit-card">',
       '        <p class="homepage-gambit-label">' + (isZh ? 'ANALYSIS · Open Gambit' : 'ANALYSIS · Open Gambit') + '</p>',
-      '        <h3><a href="' + escapeHtml(path) + '">' + escapeHtml(article.headline) + '</a></h3>',
-      '        <p>' + escapeHtml(article.surfaceEvent) + '</p>',
+      '        <h3><a href="' + escapeHtml(path) + '">' + escapeHtml(content.headline) + '</a></h3>',
+      '        <p class="homepage-gambit-summary">' + escapeHtml(summary) + '</p>',
+      '        <p class="homepage-gambit-meta">' + localTimeElement(publicationDate, formatDateShort(publicationDate, lang), 'homepage-gambit-date', 'date')
+        + (firstTrajectory ? ' · ' + escapeHtml(isZh ? `AI 走势 · 约${firstTrajectory.probability}%` : `AI estimate · ~${firstTrajectory.probability}%`) : '')
+        + '</p>',
       '      </article>',
     ].join('\n');
   }).join('\n');

@@ -93,6 +93,12 @@ export interface SourcePost {
   classification_attempts?: number;
   last_classification_attempt_at?: string | null;
   classification_error?: string | null;
+  classification_label?: string | null;
+  classification_decision?: ClassificationDecision | null;
+  classification_reason_code?: ClassificationReasonCode | null;
+  classification_source_context?: ClassificationSourceContext | null;
+  classification_event_created?: boolean;
+  classifier_version?: string | null;
   created_at?: string;
 }
 
@@ -213,6 +219,47 @@ export interface ClassificationResult {
   reason: string;
 }
 
+/**
+ * Bounded, operator-facing classification audit fields. These values are
+ * deliberately enums/codes rather than model reasoning or source text.
+ */
+export const CLASSIFICATION_DECISIONS = ['EVENT_CREATED', 'NO_EVENT', 'RETRY'] as const;
+export type ClassificationDecision = typeof CLASSIFICATION_DECISIONS[number];
+
+export const CLASSIFICATION_REASON_CODES = [
+  'EVENT_CREATED',
+  'DETERMINISTIC_COMPLETED_RESET',
+  'DETERMINISTIC_SOFT_RESET_HINT',
+  'TRUSTED_SOURCE_CONTEXT_APPLIED',
+  'DUPLICATE_EVENT',
+  'NO_PUBLIC_EVENT',
+  'NON_CODEX_PRODUCT_SCOPE',
+  'AMBIGUOUS_PRODUCT_SCOPE',
+  'MISSING_PRODUCT_CONTEXT',
+  'OBSERVATION_NOT_ADMITTED',
+  'UNTRUSTED_SOURCE_CONTEXT',
+  'WEAK_RESET_SIGNAL',
+  'CLASSIFIER_ERROR',
+] as const;
+export type ClassificationReasonCode = typeof CLASSIFICATION_REASON_CODES[number];
+
+export const CLASSIFICATION_SOURCE_CONTEXTS = [
+  'NONE',
+  'TRUSTED_CODEX_SOURCE_AVAILABLE',
+  'TRUSTED_CODEX_SOURCE_APPLIED',
+  'UNTRUSTED_SOURCE',
+] as const;
+export type ClassificationSourceContext = typeof CLASSIFICATION_SOURCE_CONTEXTS[number];
+
+export interface ClassificationDecisionTrace {
+  classification_label: string;
+  classification_decision: ClassificationDecision;
+  classification_reason_code: ClassificationReasonCode;
+  classification_source_context: ClassificationSourceContext;
+  classification_event_created: boolean;
+  classifier_version: string;
+}
+
 // --- Classification Outcome (distinguishes SUCCESS vs ERROR) ---
 export type ClassificationOutcome =
   | { status: "SUCCESS"; result: ClassificationResult }
@@ -330,6 +377,12 @@ export interface D1SourcePostRow {
   classification_attempts?: number;
   last_classification_attempt_at?: string | null;
   classification_error?: string | null;
+  classification_label?: string | null;
+  classification_decision?: string | null;
+  classification_reason_code?: string | null;
+  classification_source_context?: string | null;
+  classification_event_created?: number | null;
+  classifier_version?: string | null;
   canonical_platform: string | null;
   canonical_post_id: string | null;
   source_quality: string | null;

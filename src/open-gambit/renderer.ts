@@ -2,12 +2,11 @@ import { SITE_HTML_LANG, SITE_LOCALE_LABELS, type SiteLocale } from '../i18n';
 import {
   AI_OPERATION_DISCLOSURE_EN,
   AI_OPERATION_DISCLOSURE_ZH,
-  AI_OPERATION_SHORT_EN,
-  AI_OPERATION_SHORT_ZH,
 } from './disclosure';
 import type { GambitPublicArticle, GambitTranslation, GambitTrajectory } from './types';
 
 export const OPEN_GAMBIT_SITE_URL = 'https://tibo.modelyard.dev';
+const OPEN_GAMBIT_BRAND = 'Tibo';
 
 interface OpenGambitHeadOptions {
   lang: SiteLocale;
@@ -49,7 +48,6 @@ export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: '
     `      <p class="gambit-eyebrow">${isZh ? 'TIBO 的战略分析专栏' : 'A strategic-analysis column inside Tibo'}</p>`,
     `      <h1 id="gambitTitle">${escapeHtml(title)}</h1>`,
     `      <p class="gambit-lede">${escapeHtml(isZh ? '事实 → 阳谋 → 走势 → 验证。Open Gambit 聚焦 AI 公司、模型、API、协议、开发者生态与产品竞争，不做政治评论。' : 'Evidence → Gambit → Trajectory → Resolution. Open Gambit focuses on AI companies, models, APIs, protocols, developer ecosystems and product competition—not politics.')}</p>`,
-    `      <aside class="gambit-disclosure gambit-disclosure-small"><strong>${isZh ? 'AI 运营说明' : 'AI operation'}</strong><span>${escapeHtml(isZh ? AI_OPERATION_SHORT_ZH : AI_OPERATION_SHORT_EN)}</span> <a href="${escapeHtml(aiDisclosureUrl(lang))}">${isZh ? '了解更多' : 'Read more'}</a></aside>`,
     '      <section class="gambit-list" aria-labelledby="latestGambitTitle">',
     `        <h2 id="latestGambitTitle">${isZh ? '最新分析' : 'Latest analysis'}</h2>`,
     cards || empty,
@@ -87,8 +85,7 @@ export function renderOpenGambitArticle(article: GambitPublicArticle, lang: 'en'
     '    <main class="gambit-main gambit-article-main" aria-labelledby="articleTitle">',
     `      <nav class="gambit-breadcrumb"><a href="${escapeHtml(lang === 'zh' ? '/zh/' : '/')}">${isZh ? '首页' : 'Home'}</a> / <a href="${escapeHtml(lang === 'zh' ? '/zh/open-gambit/' : '/open-gambit/')}">Open Gambit</a></nav>`,
     `      <h1 id="articleTitle">${escapeHtml(content.headline)}</h1>`,
-    `      <div class="gambit-article-meta">${escapeHtml(formatDate(article.publishedAt || article.modifiedAt, lang))} · ${isZh ? '已批准发布' : 'Human-approved publication'}</div>`,
-    `      <aside class="gambit-disclosure gambit-disclosure-small"><strong>${isZh ? 'AI 运营说明' : 'AI operation'}</strong><span>${escapeHtml(isZh ? AI_OPERATION_SHORT_ZH : AI_OPERATION_SHORT_EN)}</span> <a href="${escapeHtml(aiDisclosureUrl(lang))}">${isZh ? '了解更多' : 'Read more'}</a></aside>`,
+    `      <div class="gambit-article-meta">${escapeHtml(formatDate(article.publishedAt || article.modifiedAt, lang))}</div>`,
     section('FACT', isZh ? '发生了什么' : 'What happened', content.facts.map(fact => `<p>${escapeHtml(fact)}</p>`).join('\n')),
     section('ANALYSIS', isZh ? '明显逻辑' : 'The obvious logic', `<p>${escapeHtml(content.obviousLogic)}</p>`),
     section('ANALYSIS', isZh ? 'Open Gambit' : 'The Gambit', `<p>${escapeHtml(content.thesis)}</p><p>${escapeHtml(content.mechanism)}</p>`),
@@ -194,7 +191,7 @@ function renderOpenGambitHeader(lang: 'en' | 'zh'): string {
   const isZh = lang === 'zh';
   return [
     '    <header class="gambit-header">',
-    `      <a class="gambit-brand" href="${isZh ? '/zh/' : '/'}"><span>Tibo</span></a>`,
+    `      <a class="gambit-brand" href="${isZh ? '/zh/' : '/'}"><span>${OPEN_GAMBIT_BRAND}</span></a>`,
     '      <nav aria-label="Primary navigation">',
     `        <a class="gambit-nav-current" href="${isZh ? '/zh/open-gambit/' : '/open-gambit/'}">Open Gambit</a>`,
     `        <a href="${isZh ? '/zh/' : '/'}">${isZh ? '监控' : 'Monitor'}</a>`,
@@ -206,7 +203,7 @@ function renderOpenGambitHeader(lang: 'en' | 'zh'): string {
 }
 
 function renderOpenGambitFooter(lang: 'en' | 'zh'): string {
-  return `    <footer class="gambit-footer"><p>${escapeHtml(lang === 'zh' ? 'Tibo 是一个由 AI 运营、由人类批准发布的实验性系统。' : 'Tibo is an AI-operated experimental system with human approval for V1 publication.')}</p><a href="${escapeHtml(lang === 'zh' ? '/zh/about/ai/' : '/about/ai/')}">${lang === 'zh' ? 'AI 运营说明' : 'AI operation disclosure'}</a></footer>`;
+  return `    <footer class="gambit-footer"><p>${escapeHtml(lang === 'zh' ? 'Tibo · Open Gambit。分析与 AI 走势分别标注。' : 'Tibo · Open Gambit. Analysis and AI estimates are labelled separately.')}</p><a href="${escapeHtml(lang === 'zh' ? '/zh/about/ai/' : '/about/ai/')}">${lang === 'zh' ? '关于 Tibo AI' : 'About Tibo AI'}</a></footer>`;
 }
 
 function renderOpenGambitHead(options: OpenGambitHeadOptions): string {

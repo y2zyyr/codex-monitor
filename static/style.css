@@ -2916,8 +2916,8 @@ body {
 }
 
 .homepage-gambit-module {
-  margin: 1rem 2rem 0;
-  padding: 1.15rem 1.25rem;
+  margin: 0.9rem 2rem 0;
+  padding: 0.95rem 1rem;
   border: 1px solid rgba(168, 85, 247, 0.32);
   border-radius: var(--radius);
   background: rgba(168, 85, 247, 0.055);
@@ -2942,21 +2942,21 @@ body {
 
 .homepage-gambit-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.65rem;
 }
 
 .homepage-gambit-card {
-  padding: 0.85rem;
+  padding: 0.7rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: rgba(10, 10, 15, 0.35);
 }
 
 .homepage-gambit-card h3 {
-  margin: 0.25rem 0 0.45rem;
-  font-size: 0.96rem;
+  margin: 0.2rem 0 0.35rem;
+  font-size: 0.9rem;
   line-height: 1.35;
 }
 
@@ -2970,9 +2970,21 @@ body {
   color: #d8c3ff;
 }
 
-.homepage-gambit-card > p:last-child {
+.homepage-gambit-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   color: var(--text-secondary);
   font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.homepage-gambit-meta {
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
 }
 
 .homepage-gambit-label,
@@ -3318,8 +3330,14 @@ body {
     display: none;
   }
 
+  .homepage-gambit-module {
+    margin: 0.75rem 0.7rem 0;
+    padding: 0.85rem;
+  }
+
   .homepage-gambit-list {
     grid-template-columns: 1fr;
+    gap: 0.5rem;
   }
 
   .gambit-header {

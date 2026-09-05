@@ -1,16 +1,29 @@
 // ============================================================
 // Tibo Monitor - Direct-first source orchestration
 // ============================================================
-import type { Env, SourcePost, ClassificationOutcome, ClassificationProvider } from './types';
+import type {
+  ClassificationDecisionTrace,
+  ClassificationOutcome,
+  ClassificationProvider,
+  ClassificationReasonCode,
+  Env,
+  SourcePost,
+} from './types';
 import { Repository } from './db/repository';
 import {
   buildCompletedResetHintResult,
   buildObviousIrrelevantResult,
   buildSoftResetHintResult,
+  applyTrustedResetContext,
+  CLASSIFIER_VERSION,
+  getStrongResetSignal,
+  getTrustedSourceContext,
+  hasExplicitCodexReference,
   isCompletedResetHint,
   isCodexProductSignalAdmissible,
   isObviousIrrelevant,
   isSoftResetHint,
+  isTrustedContextualReset,
   keywordPrefilter,
 } from './classifier/types';
 import type { SocialSourceProvider, SearchResult, WebSearchProvider } from './providers/types';
@@ -378,7 +391,7 @@ export async function executeCron(
       for (const post of directRecoveryCandidates) {
         if (classificationBudget <= 0) break;
         if (post.id !== undefined && classifiedPostIds.has(post.id)) continue;
-        if (!isCompletedResetHint(post) && !isSoftResetHint(post)) continue;
+        if (!isCompletedResetHint(post) && !isSoftResetHint(post) && !isTrustedContextualReset(post)) continue;
         if (post.id !== undefined) classifiedPostIds.add(post.id);
         candidatesFound++;
         if (!isObviousIrrelevant(post)) llmClassifications++;
@@ -514,10 +527,20 @@ export async function classifyAndCreateEvent(
       ? { status: 'SUCCESS', result: obviousIrrelevantResult }
       : await classifier.classify(post);
     if (!obviousIrrelevantResult) await recordClassifierStatus(repo, classifierOutcome, now);
+    const contextualClassification = applyTrustedResetContext(post, classifierOutcome);
     // Explicit direct completion language is deterministic enough to keep
     // even when the LLM is unavailable. This protects the source-of-truth
     // signal from both transient classifier failures and model drift.
-    if (classifierOutcome.status === 'ERROR' && !completedResetResult && !softResetResult) {
+    if (classifierOutcome.status === 'ERROR'
+      && contextualClassification.outcome.status === 'ERROR'
+      && !completedResetResult
+      && !softResetResult) {
+      await persistClassificationTrace(repo, post, buildClassificationTrace(
+        post,
+        classifierOutcome,
+        false,
+        contextualClassification.sourceContext,
+      ));
       await repo.updateClassificationRetry(post.id!, currentAttempts, now, classifierOutcome.error);
       return { created: false, outcome: classifierOutcome };
     }
@@ -530,14 +553,31 @@ export async function classifyAndCreateEvent(
       ? { status: 'SUCCESS', result: completedResetResult }
       : softResetResult
       ? { status: 'SUCCESS', result: softResetResult }
-      : classifierOutcome;
+      : contextualClassification.outcome;
     if (outcome.status === 'ERROR') {
+      await persistClassificationTrace(repo, post, buildClassificationTrace(
+        post,
+        outcome,
+        false,
+        contextualClassification.sourceContext,
+      ));
       await repo.updateClassificationRetry(post.id!, currentAttempts, now, outcome.error);
       return { created: false, outcome };
     }
     const result = outcome.result;
-    if (!result.relevant || result.category === 'IRRELEVANT' || !isCodexProductSignalAdmissible(result)) {
+    const hasCodexAnchor = hasExplicitCodexReference(post.text) || contextualClassification.applied;
+    if (!result.relevant
+      || result.category === 'IRRELEVANT'
+      || !isCodexProductSignalAdmissible(result)
+      || (result.product_scope === 'CODEX' && !hasCodexAnchor)) {
       await repo.markClassified(post.id!);
+      await persistClassificationTrace(repo, post, buildClassificationTrace(
+        post,
+        outcome,
+        false,
+        contextualClassification.sourceContext,
+        contextualClassification.applied,
+      ));
       return { created: false, outcome };
     }
 
@@ -563,6 +603,14 @@ export async function classifyAndCreateEvent(
       verified_at: sourceQuality === 'INDEXED' ? null : now,
     });
     await repo.markClassified(post.id!);
+    await persistClassificationTrace(repo, post, buildClassificationTrace(
+      post,
+      outcome,
+      eventId !== null,
+      contextualClassification.sourceContext,
+      contextualClassification.applied,
+      eventId === null,
+    ));
     if (eventId !== null) {
       const event = await repo.getEventById(eventId);
       if (event && isResetLifecycleCategory(result.category)) await repo.handleResetEvent(event);
@@ -570,9 +618,91 @@ export async function classifyAndCreateEvent(
     return { created: eventId !== null, outcome };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await persistClassificationTrace(repo, post, {
+      classification_label: 'ERROR',
+      classification_decision: 'RETRY',
+      classification_reason_code: 'CLASSIFIER_ERROR',
+      classification_source_context: getTrustedSourceContext(post).sourceContext,
+      classification_event_created: false,
+      classifier_version: CLASSIFIER_VERSION,
+    });
     await repo.updateClassificationRetry(post.id!, currentAttempts, now, message);
     return { created: false, outcome: { status: 'ERROR', error: message, category: 'ERROR' } };
   }
+}
+
+type TraceCapableRepository = Repository & {
+  recordClassificationDecision?: (id: number, trace: ClassificationDecisionTrace) => Promise<void>;
+};
+
+async function persistClassificationTrace(
+  repo: Repository,
+  post: SourcePost,
+  trace: ClassificationDecisionTrace,
+): Promise<void> {
+  if (!post.id) return;
+  const recorder = (repo as unknown as TraceCapableRepository).recordClassificationDecision;
+  if (typeof recorder !== 'function') return;
+  try {
+    await recorder.call(repo, post.id, trace);
+  } catch (error) {
+    // The event/classification path remains available if an additive trace
+    // column is unavailable in an older local database; production gates
+    // separately verify that the migration and trace writes are present.
+    console.error('[Cron] Failed to persist classification trace:', error);
+  }
+}
+
+function buildClassificationTrace(
+  post: SourcePost,
+  outcome: ClassificationOutcome,
+  eventCreated: boolean,
+  sourceContext: ClassificationDecisionTrace['classification_source_context'],
+  contextualApplied = false,
+  duplicateEvent = false,
+): ClassificationDecisionTrace {
+  const classificationLabel = outcome.status === 'SUCCESS' ? outcome.result.category : 'ERROR';
+  let reasonCode: ClassificationReasonCode;
+  if (outcome.status === 'ERROR') {
+    reasonCode = 'CLASSIFIER_ERROR';
+  } else if (duplicateEvent) {
+    reasonCode = 'DUPLICATE_EVENT';
+  } else if (eventCreated) {
+    reasonCode = contextualApplied
+      ? 'TRUSTED_SOURCE_CONTEXT_APPLIED'
+      : isCompletedResetHint(post)
+      ? 'DETERMINISTIC_COMPLETED_RESET'
+      : isSoftResetHint(post)
+      ? 'DETERMINISTIC_SOFT_RESET_HINT'
+      : 'EVENT_CREATED';
+  } else if (outcome.result.statement_nature === 'OBSERVATION') {
+    reasonCode = 'OBSERVATION_NOT_ADMITTED';
+  } else if (outcome.result.product_scope === 'CODEX'
+    && !hasExplicitCodexReference(post.text)
+    && !contextualApplied) {
+    reasonCode = 'MISSING_PRODUCT_CONTEXT';
+  } else if (['RESET_PLANNED', 'RESET_COMPLETED', 'RESET_TIME_CHANGED', 'POLICY_CHANGE', 'CODEX_UPDATE', 'ROADMAP_HINT', 'FEATURE_DISCUSSION'].includes(outcome.result.category)
+    && outcome.result.product_scope !== 'CODEX') {
+    reasonCode = outcome.result.product_scope === 'AMBIGUOUS'
+      ? 'AMBIGUOUS_PRODUCT_SCOPE'
+      : 'NON_CODEX_PRODUCT_SCOPE';
+  } else if (sourceContext === 'UNTRUSTED_SOURCE' && /\breset\b|重置/i.test(post.text)) {
+    reasonCode = 'UNTRUSTED_SOURCE_CONTEXT';
+  } else if (sourceContext === 'TRUSTED_CODEX_SOURCE_AVAILABLE'
+    && !getStrongResetSignal(post).strong
+    && /\breset\b|重置/i.test(post.text)) {
+    reasonCode = 'WEAK_RESET_SIGNAL';
+  } else {
+    reasonCode = 'NO_PUBLIC_EVENT';
+  }
+  return {
+    classification_label: classificationLabel,
+    classification_decision: eventCreated ? 'EVENT_CREATED' : 'NO_EVENT',
+    classification_reason_code: reasonCode,
+    classification_source_context: sourceContext,
+    classification_event_created: eventCreated,
+    classifier_version: CLASSIFIER_VERSION,
+  };
 }
 
 export async function persistXAccountBatches(

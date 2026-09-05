@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { Env } from '../types';
+import type { ClassificationProvider, Env } from '../types';
+import { classifyAndCreateEvent } from '../cron';
+import { LLMClassifier } from '../classifier/llm';
 import { hmacSha256Hex, isAllowedCommunityOrigin, isCommunityAdminRequest } from '../community/security';
+import { Repository } from '../db/repository';
 import { GambitRepository } from '../open-gambit/repository';
 import { appendResolution } from '../open-gambit/resolution';
 import { publishApprovedGambit, runGambitDiscovery } from '../open-gambit/service';
@@ -72,6 +75,80 @@ openGambitApi.get('/articles/:slug', async (c) => {
     return c.json({ error: 'Open Gambit is not available yet.' }, 503);
   }
 });
+
+/**
+ * Replay one already-ingested authoritative monitor post through the normal
+ * classifier/event path. This is intentionally narrow and authenticated so
+ * an operator can reconcile a missed historical post without broad
+ * rediscovery or direct SQL event insertion.
+ */
+openGambitApi.post('/replay/source/:sourcePostId', async (c) => {
+  const denied = await requireAdmin(c);
+  if (denied) return denied;
+  const id = requestId();
+  const sourcePostId = c.req.param('sourcePostId').trim();
+  if (!/^\d{5,30}$/u.test(sourcePostId)) {
+    return errorResponse(c, 400, 'INVALID_SOURCE_POST_ID', 'Invalid X source post id.', id);
+  }
+  try {
+    const repository = new Repository(c.env.DB);
+    const post = await repository.getSourcePostBySourceId('x_api', sourcePostId);
+    if (!post) return errorResponse(c, 404, 'SOURCE_POST_NOT_FOUND', 'Source post not found.', id);
+    if (post.canonical_platform !== 'x' || post.source_quality === 'INDEXED' || post.verification_status === 'INDEXED_ONLY') {
+      return errorResponse(c, 409, 'SOURCE_POST_NOT_AUTHORITATIVE', 'Only an authoritative X source post can be replayed.', id);
+    }
+    const result = await classifyAndCreateEvent(repository, replayClassifier(c.env), post);
+    const classification = result.outcome.status === 'SUCCESS'
+      ? {
+        label: result.outcome.result.category,
+        relevant: result.outcome.result.relevant,
+        productScope: result.outcome.result.product_scope,
+        statementNature: result.outcome.result.statement_nature,
+        confidence: result.outcome.result.confidence,
+      }
+      : { label: 'ERROR', relevant: false, productScope: null, statementNature: null, confidence: null };
+    return c.json({
+      data: {
+        sourcePostId,
+        sourceRowId: post.id,
+        created: result.created,
+        classification,
+        status: result.outcome.status,
+      },
+      requestId: id,
+    }, result.outcome.status === 'SUCCESS' ? 200 : 503);
+  } catch (error) {
+    console.error('[Open Gambit] source_replay_failed', { requestId: id, error: error instanceof Error ? error.message.slice(0, 160) : 'unknown' });
+    return errorResponse(c, 500, 'SOURCE_REPLAY_FAILED', 'The source post replay failed safely.', id);
+  }
+});
+
+function replayClassifier(env: Env): ClassificationProvider {
+  if (env.LLM_API_KEY?.trim()) return new LLMClassifier(env);
+  // Staging deliberately has no legacy monitor LLM credential. Keep this
+  // replay-only fallback bounded and conservative: contextual deterministic
+  // reset rules may still admit a trusted strong reset, while ordinary posts
+  // remain non-events without sharing Gambit's separate credential namespace.
+  return {
+    classify: async () => ({
+      status: 'SUCCESS' as const,
+      result: {
+        relevant: false,
+        category: 'IRRELEVANT' as const,
+        product_scope: 'OTHER' as const,
+        statement_nature: 'FACT' as const,
+        confidence: 0,
+        title_en: '',
+        title_zh: '',
+        summary_en: '',
+        summary_zh: '',
+        effective_time: null,
+        reset_time: null,
+        reason: 'Replay-only conservative fallback; no classifier credential is configured.',
+      },
+    }),
+  };
+}
 
 openGambitApi.get('/review', async (c) => {
   const denied = await requireAdmin(c);

@@ -4,6 +4,7 @@
 import type { ClassificationProvider, ClassificationOutcome, SourcePost, Env } from '../types';
 import { EVENT_CATEGORIES, PRODUCT_SCOPES, STATEMENT_NATURES } from '../types';
 import type { ProductScope, StatementNature } from '../types';
+import { getTrustedSourceContext } from './types';
 
 interface LLMRequestMessage {
   role: 'system' | 'user';
@@ -99,20 +100,27 @@ RESET AND POLICY RULES:
 10. Prefer reset categories over generic product categories when reset language is explicit. Use this precedence: RESET_COMPLETED > RESET_TIME_CHANGED > RESET_PLANNED > POLICY_CHANGE > CODEX_UPDATE > ROADMAP_HINT > FEATURE_DISCUSSION > IRRELEVANT.
 11. Direct Tibo wording such as "feeling reseted", "brand new usage", or "the reset propagated" is RESET_COMPLETED unless clearly negated or postponed. Future reset-button or milestone/conservation wording without confirmation is a low-confidence RESET_PLANNED hint.
 
+TRUSTED SOURCE CONTEXT:
+12. A verified direct canonical X post from the monitored @thsottiaux account may provide supplemental Codex context when the text contains a strong usage/quota reset signal with broad user or plan scope but omits the word Codex. This is supplemental context, not author-based inference: a generic or weak reset is not enough, arbitrary/untrusted sources do not receive this context, and explicit ChatGPT, ChatGPT Work, or another non-Codex product remains non-Codex unless the same text explicitly binds the reset to Codex.
+
 SAFETY:
-12. Never infer a fact from a question, discussion, intention, hint, observation, or speculation. In particular, do not write "will launch next week" merely because the post asks what should ship next week.
-13. Never invent or convert relative dates. For "tomorrow", "next week", "soon", or similar wording, keep effective_time and reset_time null. Only return a time when the post itself contains an interpretable absolute calendar date/time.
-14. Titles and summaries must state what the post says, not what it might imply. Preserve words such as possible, considering, asking, observing, or upcoming when they matter.
+13. Never infer a fact from a question, discussion, intention, hint, observation, or speculation. In particular, do not write "will launch next week" merely because the post asks what should ship next week.
+14. Never invent or convert relative dates. For "tomorrow", "next week", "soon", or similar wording, keep effective_time and reset_time null. Only return a time when the post itself contains an interpretable absolute calendar date/time.
+15. Titles and summaries must state what the post says, not what it might imply. Preserve words such as possible, considering, asking, observing, or upcoming when they matter.
 
 AUTHOR CONTEXT:
 The source account is provided below. When it is @thsottiaux, call the author Tibo or @thsottiaux, not "a user".`;
 
+    const trustedContext = getTrustedSourceContext(post).trusted
+      ? 'Trusted supplemental context is available: this is a verified direct canonical X post from the monitored Tibo account. Apply it only to a strong usage/reset signal with broad user or plan scope.'
+      : 'No trusted supplemental Codex source context applies to this post.';
     const userMessage = `Post text: "${post.text}"
 Published at: ${post.published_at}
 Source: ${post.source_url}
 Source account: @${post.source_account}
 Evidence quality: ${post.source_quality ?? 'DIRECT'}
 Verification status: ${post.verification_status ?? 'DIRECT_VERIFIED'}
+${trustedContext}
 If evidence quality is INDEXED, treat the snippet as provisional evidence and keep confidence conservative.`;
 
     try {

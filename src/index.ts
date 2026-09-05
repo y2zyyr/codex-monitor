@@ -442,7 +442,7 @@ async function buildHomepageResponse(env: Env, lang: SiteLocale): Promise<Respon
       repo.getLatestManualResetReport(),
       repo.getLatestDirectResetEvent(),
       getPageFreshness(repo, env),
-      getPublishedGambits(env, 2),
+      getPublishedGambits(env, 3),
     ]);
     const visibleManualReset = effectiveManualResetReport(manualReset, latestDirectReset);
     const html = renderHomepage({

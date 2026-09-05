@@ -198,7 +198,8 @@ describe('Open Gambit V1 local end-to-end demo', () => {
     expect(ledger.getResolution()).toBe('HIT');
     expect(ledger.getOriginalPrediction()?.probability).toBe(70);
     expect(ledger.getOriginalPrediction()?.predictionStatement).toContain('generally available');
-    expect(renderOpenGambitArticle(published, 'en')).toContain('Human-approved publication');
+    expect(renderOpenGambitArticle(published, 'en')).not.toContain('Human-approved publication');
+    expect(renderOpenGambitArticle(published, 'en')).not.toContain('AI operation');
     expect(published.translations.zh?.status).toBe('TRANSLATED');
     expect(published.translations.zh?.trajectories[0].probability).toBe(70);
     expect(published.translations.zh?.trajectories[0].deadline).toBe('2026-12-31');
