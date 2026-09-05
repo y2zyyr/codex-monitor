@@ -1,7 +1,7 @@
 import type { Env } from '../types';
 import { gambitBudgetFromEnv, GambitRunBudget } from './budget';
 import { getGambitModelRoleConfig } from './llm';
-import { translateGambit } from './publication';
+import { emptyTranslationResult, translateGambit } from './publication';
 import { GambitRepository } from './repository';
 import { candidateFromDiscoveryItem, discoverConfiguredSources, parseGambitSourceRegistry } from './sources';
 import { MemorySnapshotBucket, R2SnapshotStore, type SnapshotStore } from './snapshots';
@@ -34,6 +34,10 @@ export interface GambitDiscoveryResult {
   sourcesConfigured: number;
   sourcesFetched: number;
   fetchFailures: number;
+  rawItemsFound: number;
+  staleItems: number;
+  malformedItems: number;
+  selectedSourceIds: string[];
   candidatesFound: number;
   duplicates: number;
   politicalRejects: number;
@@ -63,6 +67,10 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
       sourcesConfigured: registry.sources.length,
       sourcesFetched: 0,
       fetchFailures: 0,
+      rawItemsFound: 0,
+      staleItems: 0,
+      malformedItems: 0,
+      selectedSourceIds: [],
       candidatesFound: 0,
       duplicates: 0,
       politicalRejects: 0,
@@ -82,6 +90,10 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
     sourcesConfigured: registry.sources.length,
     sourcesFetched: 0,
     fetchFailures: registry.errors.length,
+    rawItemsFound: 0,
+    staleItems: 0,
+    malformedItems: 0,
+    selectedSourceIds: [],
     candidatesFound: 0,
     duplicates: 0,
     politicalRejects: 0,
@@ -113,11 +125,18 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
     fetchImpl: options.fetchImpl,
     now,
     maxSources: readNumber(env.GAMBIT_MAX_SOURCES_PER_RUN, 20),
+    maxItemsPerSource: readNumber(env.GAMBIT_MAX_ITEMS_PER_SOURCE, 3),
+    maxItemAgeDays: readNumber(env.GAMBIT_MAX_ITEM_AGE_DAYS, 30),
+    rotationKey: windowKey,
     timeoutMs: readNumber(env.GAMBIT_HTTP_TIMEOUT_MS, 8_000),
     maxBytes: readNumber(env.GAMBIT_MAX_SOURCE_BYTES, 512_000),
     budget,
   });
   result.sourcesFetched = discovered.fetchCount;
+  result.rawItemsFound = discovered.rawItemsFound;
+  result.staleItems = discovered.staleItems;
+  result.malformedItems = discovered.malformedItems;
+  result.selectedSourceIds = discovered.selectedSourceIds;
   result.fetchFailures += discovered.failures.length;
   result.errors.push(...discovered.failures.map(failure => `${failure.sourceId}:${failure.status}`));
 
@@ -150,15 +169,23 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
     if (candidateData.candidate.politicalTopic) result.politicalRejects += 1;
     else if (candidateData.candidate.status === 'REJECTED') result.noGambitRejects += 1;
     if (options.startWorkflows !== false && candidateData.candidate.status === 'QUALIFIED') {
-      result.workflowStarts += 1;
       try {
         const workflow = await dispatchQualifiedGambit({
           workflowId: workflowIdForCandidate(candidateId),
           candidateId,
           snapshotIds: [snapshotRow.id],
           startedAt: now.toISOString(),
-        }, env, { repository, providers: options.providers, budget });
-        if ('status' in workflow && workflow.status !== 'DISPATCHED') result.workflows.push(workflow);
+        }, env, {
+          repository,
+          binding: env.GAMBIT_ANALYSIS_WORKFLOW as unknown as import('./workflow').WorkflowBindingLike | undefined,
+          providers: options.providers,
+          budget,
+        });
+        if (workflow.status === 'DISPATCHED') {
+          if (workflow.deduplicated !== true) result.workflowStarts += 1;
+        } else {
+          result.workflows.push(workflow);
+        }
       } catch (error) {
         result.workflowFailures += 1;
         result.errors.push(`workflow:${candidateId}:${error instanceof Error ? error.message.slice(0, 120) : 'failed'}`);
@@ -195,15 +222,17 @@ export async function publishApprovedGambit(
   articleId: number,
   revisionId: number,
   options: { repository?: GambitRepository; translationProvider?: import('./types').GambitLLMProvider; now?: Date } = {},
-): Promise<{ published: boolean; translation: 'TRANSLATED' | 'FAILED' | 'SKIPPED'; article: GambitPublicArticle | null }> {
+): Promise<{ published: boolean; translation: import('./publication').GambitTranslationRunResult; article: GambitPublicArticle | null }> {
   const repository = options.repository ?? new GambitRepository(env.DB);
   const article = await repository.getArticleById(articleId);
-  if (!article || article.articleId !== articleId || article.status !== 'APPROVED') return { published: false, translation: 'SKIPPED', article };
-  if (article.politicalTopic) return { published: false, translation: 'SKIPPED', article };
+  if (!article || article.articleId !== articleId || article.status !== 'APPROVED') return { published: false, translation: emptyTranslationResult(), article };
+  if (article.politicalTopic) return { published: false, translation: emptyTranslationResult(), article };
   const now = options.now ?? new Date();
   const translationRole = getGambitModelRoleConfig(env).find(item => item.role === 'translation');
   const translationStatus = await translateGambit(repository, article, revisionId, options.translationProvider, translationRole, now);
-  const published = await repository.publishApprovedArticle(articleId, revisionId, now.toISOString());
+  const published = translationStatus.status === 'TRANSLATION_READY'
+    ? await repository.publishApprovedArticle(articleId, revisionId, now.toISOString())
+    : false;
   return { published, translation: translationStatus, article: await repository.getArticleById(articleId) };
 }
 

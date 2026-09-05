@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { canonicalJson, safeJsonParse, sha256Hex } from './canonical';
+import { GAMBIT_LOCALES } from './types';
 import type {
   GambitApprovalAction,
   GambitArticleStatus,
@@ -314,10 +315,12 @@ export class GambitRepository {
 
   async createArticleDraft(
     draft: GambitDraft,
-    options: { publication?: 'REVIEW' | 'AUTO_PUBLISH'; now?: string } = {},
+    options: { publication?: 'REVIEW' | 'AUTO_PUBLISH' | 'AUTO_PUBLISH_PENDING'; now?: string } = {},
   ): Promise<{ articleId: number; revisionId: number }> {
     const now = draft.createdAt;
-    const articleStatus = options.publication === 'AUTO_PUBLISH' ? 'PUBLISHED' : 'WAITING_FOR_REVIEW';
+    const articleStatus = options.publication === 'AUTO_PUBLISH'
+      ? 'PUBLISHED'
+      : options.publication === 'AUTO_PUBLISH_PENDING' ? 'DRAFT' : 'WAITING_FOR_REVIEW';
     const publishedAt = articleStatus === 'PUBLISHED' ? (options.now ?? now) : null;
     const existing = await this.db.prepare('SELECT id, current_revision_id FROM gambit_articles WHERE candidate_id = ?').bind(draft.candidateId).first<Row>();
     if (existing?.id) {
@@ -632,6 +635,17 @@ export class GambitRepository {
     return true;
   }
 
+  async publishAutomaticallyArticle(articleId: number, revisionId: number, publishedAt = new Date().toISOString()): Promise<boolean> {
+    const article = await this.db.prepare('SELECT status, current_revision_id, political_topic FROM gambit_articles WHERE id = ?').bind(articleId).first<Row>();
+    if (!article || numberValue(article.current_revision_id) !== revisionId || numberValue(article.political_topic) !== 0) return false;
+    if (String(article.status) === 'PUBLISHED') return true;
+    if (String(article.status) !== 'DRAFT') return false;
+    await this.db.prepare('UPDATE gambit_articles SET status = \'PUBLISHED\', published_at = ?, updated_at = ? WHERE id = ? AND status = \'DRAFT\' AND current_revision_id = ?')
+      .bind(publishedAt, publishedAt, articleId, revisionId).run();
+    await this.db.prepare('UPDATE gambit_article_revisions SET status = \'PUBLISHED\' WHERE id = ? AND status = \'DRAFT\'').bind(revisionId).run();
+    return true;
+  }
+
   async saveTranslation(input: {
     articleId: number;
     revisionId: number;
@@ -795,13 +809,30 @@ export class GambitRepository {
     ).run();
   }
 
-  async getWorkflowResult(workflowId: string): Promise<{ status: string; articleId: number | null; revisionId: number | null; resultHash: string | null } | null> {
-    const row = await this.db.prepare('SELECT status, article_id, revision_id, result_hash FROM gambit_workflow_instances WHERE workflow_id = ?').bind(workflowId).first<Row>();
+  /** Reserve the deterministic workflow id before calling Cloudflare. */
+  async recordWorkflowStart(input: {
+    workflowId: string;
+    candidateId: number;
+    startedAt?: string;
+  }): Promise<boolean> {
+    const now = input.startedAt ?? new Date().toISOString();
+    const result = await this.db.prepare(`
+      INSERT OR IGNORE INTO gambit_workflow_instances (
+        workflow_id, candidate_id, status, article_id, revision_id, result_hash,
+        last_error, created_at, updated_at
+      ) VALUES (?, ?, 'RUNNING', NULL, NULL, NULL, NULL, ?, ?)
+    `).bind(input.workflowId, input.candidateId, now, now).run();
+    return Number(result.meta?.changes ?? 0) > 0;
+  }
+
+  async getWorkflowResult(workflowId: string): Promise<{ status: string; articleId: number | null; revisionId: number | null; resultHash: string | null; reason: string | null } | null> {
+    const row = await this.db.prepare('SELECT status, article_id, revision_id, result_hash, last_error FROM gambit_workflow_instances WHERE workflow_id = ?').bind(workflowId).first<Row>();
     return row ? {
       status: String(row.status),
       articleId: row.article_id === null || row.article_id === undefined ? null : numberValue(row.article_id),
       revisionId: row.revision_id === null || row.revision_id === undefined ? null : numberValue(row.revision_id),
       resultHash: row.result_hash ? String(row.result_hash) : null,
+      reason: row.last_error ? String(row.last_error) : null,
     } : null;
   }
 
@@ -863,10 +894,10 @@ export class GambitRepository {
       createdAt: String(row.created_at),
     } as GambitDraft);
     const translationRows = await this.db.prepare('SELECT content_json FROM gambit_translations WHERE article_id = ? AND revision_id = ? AND status = \'TRANSLATED\'').bind(numberValue(row.id), revisionId).all<Row>();
-    const translations: Partial<Record<'en' | 'zh', GambitTranslation>> = {};
+    const translations: Partial<Record<import('./types').GambitLocale, GambitTranslation>> = {};
     for (const translationRow of translationRows.results) {
       const translation = safeJsonParse<GambitTranslation | null>(String(translationRow.content_json ?? ''), null);
-      if (translation && (translation.locale === 'en' || translation.locale === 'zh')) translations[translation.locale] = translation;
+      if (translation && GAMBIT_LOCALES.includes(translation.locale)) translations[translation.locale] = translation;
     }
     const evidenceRows = await this.db.prepare(`
       SELECT id, snapshot_id, source_id, source_tier, canonical_url, title, publisher,
@@ -879,7 +910,7 @@ export class GambitRepository {
       ...trajectory,
       status: latestStates.get(trajectory.id) ?? trajectory.status,
     }));
-    for (const locale of ['en', 'zh'] as const) {
+    for (const locale of GAMBIT_LOCALES) {
       const translation = translations[locale];
       if (translation) {
         translations[locale] = {

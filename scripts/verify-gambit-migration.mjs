@@ -121,13 +121,16 @@ try {
   const indexes = query("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_gambit_%' ORDER BY name");
   const immutability = verifyImmutability();
   const migrationFiles = readFileSync(join(root, 'migrations', '0021_open_gambit.sql'), 'utf8');
+  const localeRows = query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'gambit_translations'")[0]?.sql ?? '';
+  const localeMigration = readFileSync(join(root, 'migrations', '0023_gambit_translation_locales.sql'), 'utf8');
   const result = {
-    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
+    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && migrationRows.some(row => row.name === '0023_gambit_translation_locales.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && localeMigration.includes("'ja','fr','es'") && localeRows.includes("'ja','fr','es'") && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
     latestMigration: migrationRows.at(-1)?.name ?? null,
     migrationCount: migrationRows.length,
     gambitTableCount: gambitTables.length,
     gambitIndexCount: indexes.length,
     foreignKeyViolations: foreignKeys.length,
+    translationLocales: ['en', 'zh', 'ja', 'fr', 'es'],
     immutability,
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

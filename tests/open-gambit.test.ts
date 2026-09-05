@@ -377,7 +377,7 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     expect(triageProvider.requests).toHaveLength(3);
   });
 
-  it('holds malformed strategic output for human review', async () => {
+  it('classifies malformed strategic output as an operational failure', async () => {
     const triageProvider = new MockGambitProvider(async () => response({
       eventImportance: 0.9,
       aiTechRelevance: true,
@@ -401,15 +401,15 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
       uncertainty: 'TEST_ONLY',
     }));
     const result = await runGambitStages(candidate(), [evidence()], { providers: { triage: triageProvider, gambit_analysis: analysisProvider } });
-    expect(result.status).toBe('NEEDS_HUMAN_REVIEW');
-    expect(result.reason).toBe('ANALYSIS_SCHEMA_INVALID');
+    expect(result.status).toBe('FAILED');
+    expect(result.reason).toBe('PROVIDER_SCHEMA_INVALID');
     expect(result.draft).toBeUndefined();
   });
 
-  it('defers unavailable or malformed LLM stages instead of fabricating success', async () => {
+  it('classifies unavailable or malformed LLM stages operationally instead of fabricating success', async () => {
     const unavailable = await runGambitStages(candidate(), [evidence()]);
-    expect(unavailable.status).toBe('NEEDS_HUMAN_REVIEW');
-    expect(unavailable.reason).toBe('TRIAGE_PROVIDER_UNAVAILABLE');
+    expect(unavailable.status).toBe('FAILED');
+    expect(unavailable.reason).toBe('PROVIDER_UNAVAILABLE');
 
     const malformed = new OpenAICompatibleGambitProvider({
       apiKey: 'TEST_ONLY_KEY',

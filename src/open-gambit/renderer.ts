@@ -347,7 +347,11 @@ export function renderOpenGambitAdminPage(): string {
 }
 
 function localizedContent(article: GambitPublicArticle, lang: SiteLocale): { content: GambitTranslation | GambitPublicArticle; fallback: boolean } {
-  if (lang === 'zh' && article.translations.zh?.status === 'TRANSLATED') return { content: article.translations.zh, fallback: false };
+  const translation = article.translations[lang];
+  if (translation?.status === 'TRANSLATED'
+    && (!translation.translationState || translation.translationState === 'TRANSLATION_READY')) {
+    return { content: translation, fallback: false };
+  }
   if (lang === 'en') return { content: article, fallback: false };
   return { content: article, fallback: true };
 }

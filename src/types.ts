@@ -574,6 +574,8 @@ export interface Env {
   GAMBIT_MAX_HTTP_REQUESTS_PER_RUN?: string;
   GAMBIT_MAX_SOURCE_BYTES?: string;
   GAMBIT_HTTP_TIMEOUT_MS?: string;
+  GAMBIT_MAX_ITEMS_PER_SOURCE?: string;
+  GAMBIT_MAX_ITEM_AGE_DAYS?: string;
   GAMBIT_ADMIN_TOKEN?: string;
   BUILD_ENVIRONMENT?: string;
   BUILD_VERSION?: string;

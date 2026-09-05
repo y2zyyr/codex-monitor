@@ -81,19 +81,25 @@ class AutoPublishFixtureRepository {
     return 1;
   }
 
-  async createArticleDraft(draft: GambitDraft, options: { publication?: 'REVIEW' | 'AUTO_PUBLISH'; now?: string } = {}) {
+  async createArticleDraft(draft: GambitDraft, options: { publication?: 'REVIEW' | 'AUTO_PUBLISH' | 'AUTO_PUBLISH_PENDING'; now?: string } = {}) {
     this.publication = options.publication ?? 'REVIEW';
     const published = this.publication === 'AUTO_PUBLISH';
     this.article = {
       ...draft,
       articleId: 901,
       revisionId: 902,
-      status: published ? 'PUBLISHED' : 'WAITING_FOR_REVIEW',
+      status: published ? 'PUBLISHED' : this.publication === 'AUTO_PUBLISH_PENDING' ? 'DRAFT' : 'WAITING_FOR_REVIEW',
       publishedAt: published ? options.now ?? draft.createdAt : null,
       modifiedAt: options.now ?? draft.createdAt,
       translations: {},
     };
     return { articleId: 901, revisionId: 902 };
+  }
+
+  async publishAutomaticallyArticle() {
+    if (!this.article) return false;
+    this.article = { ...this.article, status: 'PUBLISHED', publishedAt: '2026-09-05T00:02:00.000Z' };
+    return true;
   }
 
   async getArticleById() {
@@ -149,6 +155,7 @@ function qualifyingProviders() {
       }],
       uncertainty: 'Execution and adoption remain uncertain.',
     })),
+    translation: new MockGambitProvider(async request => llm(JSON.parse(request.user))),
   };
 }
 
@@ -267,7 +274,7 @@ describe('ModelYard shell and Open Gambit automatic publication', () => {
     });
     expect(first.status).toBe('COMPLETED');
     expect(first.publicationDecision).toBe('AUTO_PUBLISH_ELIGIBLE');
-    expect(repository.publication).toBe('AUTO_PUBLISH');
+    expect(repository.publication).toBe('AUTO_PUBLISH_PENDING');
     expect(repository.article?.status).toBe('PUBLISHED');
     expect(repository.candidate.status).toBe('PUBLISHED');
     expect(repository.approvalCount).toBe(0);

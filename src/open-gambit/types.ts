@@ -107,6 +107,10 @@ export type GambitPipelineStage = typeof GAMBIT_PIPELINE_STAGES[number];
 export const GAMBIT_PUBLIC_AI_IDENTITIES = ['Claude Fable 5', 'GPT-5.6 Sol', 'DeepSeek V4 Pro'] as const;
 export type GambitPublicAiIdentity = typeof GAMBIT_PUBLIC_AI_IDENTITIES[number];
 
+export const GAMBIT_LOCALES = ['en', 'zh', 'ja', 'fr', 'es'] as const;
+export type GambitLocale = typeof GAMBIT_LOCALES[number];
+export type GambitTranslationState = 'TRANSLATION_READY' | 'TRANSLATION_FAILED' | 'CANONICAL_FALLBACK';
+
 export interface GambitSourceDefinition {
   id: string;
   name: string;
@@ -261,13 +265,13 @@ export interface GambitPublicArticle extends GambitDraft {
   status: GambitArticleStatus;
   publishedAt: string | null;
   modifiedAt: string;
-  translations: Partial<Record<'en' | 'zh', GambitTranslation>>;
+  translations: Partial<Record<GambitLocale, GambitTranslation>>;
   resolutionHistory?: GambitPublicResolutionEvent[];
   corrections?: GambitPublicCorrection[];
 }
 
 export interface GambitTranslation {
-  locale: 'en' | 'zh';
+  locale: GambitLocale;
   headline: string;
   surfaceEvent: string;
   facts: string[];
@@ -283,6 +287,11 @@ export interface GambitTranslation {
   status: 'PENDING' | 'TRANSLATED' | 'FAILED';
   provider: string | null;
   translatedAt: string | null;
+  /** Explicit public rendering state; never inferred from a missing row. */
+  translationState?: GambitTranslationState;
+  /** Canonical provenance carried through every locale rendering. */
+  sourceIds?: string[];
+  evidenceIds?: number[];
 }
 
 export interface GambitPublicResolutionEvent {

@@ -32,14 +32,50 @@ export function workflowIdForCandidate(candidateId: number): string {
 export async function dispatchQualifiedGambit(
   input: GambitWorkflowInput,
   env: Env,
-  options: { binding?: WorkflowBindingLike; repository?: GambitRepository; providers?: Partial<Record<string, GambitLLMProvider>>; budget?: GambitRunBudget } = {},
-): Promise<GambitWorkflowResult | { status: 'DISPATCHED'; workflowId: string; candidateId: number }> {
+  options: {
+    binding?: WorkflowBindingLike;
+    repository?: GambitRepository;
+    providers?: Partial<Record<string, GambitLLMProvider>>;
+    budget?: GambitRunBudget;
+    /** Only local callers may explicitly opt into inline execution. */
+    allowInlineFallback?: boolean;
+  } = {},
+): Promise<GambitWorkflowResult | { status: 'DISPATCHED'; workflowId: string; candidateId: number; deduplicated?: boolean }> {
   const workflowId = input.workflowId || workflowIdForCandidate(input.candidateId);
-  if (options.binding) {
-    await options.binding.create({ id: workflowId, params: { ...input, workflowId } });
-    return { status: 'DISPATCHED', workflowId, candidateId: input.candidateId };
-  }
   const repository = options.repository ?? new GambitRepository(env.DB);
+  const previous = await repository.getWorkflowResult(workflowId);
+  if (previous) {
+    if (previous.status === 'RUNNING') return { status: 'DISPATCHED', workflowId, candidateId: input.candidateId, deduplicated: true };
+    return persistedWorkflowResult(workflowId, input.candidateId, previous);
+  }
+  if (options.binding) {
+    const reserved = await repository.recordWorkflowStart({
+      workflowId,
+      candidateId: input.candidateId,
+      startedAt: input.startedAt,
+    });
+    if (!reserved) return { status: 'DISPATCHED', workflowId, candidateId: input.candidateId, deduplicated: true };
+    try {
+      await options.binding.create({ id: workflowId, params: { ...input, workflowId } });
+      return { status: 'DISPATCHED', workflowId, candidateId: input.candidateId };
+    } catch (error) {
+      const failed: GambitWorkflowResult = {
+        workflowId,
+        status: 'FAILED',
+        candidateId: input.candidateId,
+        reason: 'WORKFLOW_DISPATCH_FAILED',
+      };
+      await repository.recordWorkflowResult({
+        workflowId,
+        candidateId: input.candidateId,
+        result: failed,
+        resultHash: await workflowResultHash(failed),
+        now: input.startedAt,
+      });
+      throw new Error('WORKFLOW_DISPATCH_FAILED');
+    }
+  }
+  if (!options.allowInlineFallback || env.BUILD_ENVIRONMENT !== 'local') throw new Error('WORKFLOW_BINDING_UNAVAILABLE');
   const providers = options.providers ?? createConfiguredProviders(env);
   return runQualifiedGambitWorkflow({ ...input, workflowId }, {
     repository,
@@ -47,6 +83,33 @@ export async function dispatchQualifiedGambit(
     roles: getGambitModelRoleConfig(env),
     budget: options.budget ?? gambitBudgetFromEnv(env),
   });
+}
+
+function persistedWorkflowResult(
+  workflowId: string,
+  candidateId: number,
+  previous: { status: string; articleId: number | null; revisionId: number | null; resultHash: string | null; reason?: string | null },
+): GambitWorkflowResult {
+  const status = previous.status === 'NO_GAMBIT'
+    ? 'NO_GAMBIT'
+    : previous.status === 'WAITING_FOR_REVIEW'
+      ? 'WAITING_FOR_REVIEW'
+      : previous.status === 'NEEDS_HUMAN_REVIEW'
+        ? 'NEEDS_HUMAN_REVIEW'
+        : previous.status === 'FAILED'
+          ? 'FAILED'
+          : 'COMPLETED';
+  return {
+    workflowId,
+    status,
+    candidateId,
+    articleId: previous.articleId ?? undefined,
+    revisionId: previous.revisionId ?? undefined,
+    publicationDecision: status === 'COMPLETED'
+      ? 'AUTO_PUBLISH_ELIGIBLE'
+      : status === 'NO_GAMBIT' ? 'NO_GAMBIT_WORTH_PUBLISHING' : status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : undefined,
+    reason: 'DUPLICATE_WORKFLOW_RESULT',
+  };
 }
 
 /**
@@ -72,7 +135,11 @@ export async function runLocalGambitWorkflow(
 export function createConfiguredProviders(env: Env, fetchImpl?: typeof fetch): Partial<Record<string, GambitLLMProvider>> {
   const providers: Partial<Record<string, GambitLLMProvider>> = {};
   for (const role of getGambitModelRoleConfig(env)) {
-    const provider = providerForRole(role, env, fetchImpl);
+    const provider = providerForRole(role, env, fetchImpl, diagnostic => {
+      // This is deliberately limited to operational metadata. Never log
+      // credentials, prompts, response bodies, or model reasoning.
+      console.info('[Open Gambit] provider_diagnostic', diagnostic);
+    });
     if (provider) providers[role.role] = provider;
   }
   return providers;

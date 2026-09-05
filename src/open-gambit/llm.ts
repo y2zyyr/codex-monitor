@@ -65,6 +65,20 @@ export interface GambitProviderOptions {
   modelId: string;
   providerName?: string;
   fetchImpl?: typeof fetch;
+  onDiagnostic?: (diagnostic: GambitProviderDiagnostic) => void;
+}
+
+export interface GambitProviderDiagnostic {
+  phase: 'REQUEST' | 'HTTP' | 'PARSE' | 'SCHEMA' | 'TIMEOUT' | 'NETWORK';
+  endpointHost: string;
+  role: string;
+  provider: string;
+  modelId: string;
+  attempt: number;
+  latencyMs: number;
+  status?: number;
+  errorCode?: string;
+  retryable: boolean;
 }
 
 interface CompletionPayload {
@@ -92,6 +106,7 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
 
   async complete<T>(request: GambitLLMRequest): Promise<GambitLLMResponse<T>> {
     const endpoint = `${this.options.baseUrl.replace(/\/+$/u, '')}/chat/completions`;
+    const endpointHost = safeEndpointHost(endpoint);
     const maxAttempts = Math.min(3, Math.max(1, request.retryLimit + 1));
     const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
     let lastError = 'provider_error';
@@ -99,6 +114,16 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
       const signal = AbortSignal.timeout(request.timeoutMs);
       const started = Date.now();
       try {
+        this.emitDiagnostic({
+          phase: 'REQUEST',
+          endpointHost,
+          role: request.role,
+          provider: this.name,
+          modelId: this.options.modelId,
+          attempt: attempt + 1,
+          latencyMs: 0,
+          retryable: false,
+        });
         const response = await this.fetchImpl(endpoint, {
           method: 'POST',
           signal,
@@ -125,8 +150,21 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
         });
         if (!response.ok) {
           lastError = `http_${response.status}`;
+          const retryable = response.status === 429 || response.status >= 500;
+          this.emitDiagnostic({
+            phase: 'HTTP',
+            endpointHost,
+            role: request.role,
+            provider: this.name,
+            modelId: this.options.modelId,
+            attempt: attempt + 1,
+            latencyMs: Date.now() - started,
+            status: response.status,
+            errorCode: lastError,
+            retryable,
+          });
           // 4xx validation/authentication errors are not made better by retry.
-          if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
+          if (!retryable || attempt + 1 >= maxAttempts) break;
           await boundedBackoff(attempt);
           continue;
         }
@@ -134,18 +172,36 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
         const content = data.content;
         if (typeof content !== 'string' || !content.trim()) {
           lastError = 'empty_response';
-          await boundedBackoff(attempt);
-          continue;
+          this.emitDiagnostic({
+            phase: 'PARSE',
+            endpointHost,
+            role: request.role,
+            provider: this.name,
+            modelId: this.options.modelId,
+            attempt: attempt + 1,
+            latencyMs: Date.now() - started,
+            errorCode: lastError,
+            retryable: false,
+          });
+          break;
         }
         let value: T;
         try {
           value = JSON.parse(content) as T;
         } catch {
           lastError = 'invalid_structured_json';
-          // Malformed strategic output is not retried indefinitely.
-          if (attempt + 1 >= maxAttempts) break;
-          await boundedBackoff(attempt);
-          continue;
+          this.emitDiagnostic({
+            phase: 'SCHEMA',
+            endpointHost,
+            role: request.role,
+            provider: this.name,
+            modelId: this.options.modelId,
+            attempt: attempt + 1,
+            latencyMs: Date.now() - started,
+            errorCode: lastError,
+            retryable: false,
+          });
+          break;
         }
         return {
           value,
@@ -157,10 +213,31 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
         };
       } catch (error) {
         lastError = isTimeoutError(error) ? 'timeout' : 'network_error';
-        if (attempt + 1 < maxAttempts) await boundedBackoff(attempt);
+        const phase = lastError === 'timeout' ? 'TIMEOUT' : 'NETWORK';
+        const retryable = attempt + 1 < maxAttempts;
+        this.emitDiagnostic({
+          phase,
+          endpointHost,
+          role: request.role,
+          provider: this.name,
+          modelId: this.options.modelId,
+          attempt: attempt + 1,
+          latencyMs: Date.now() - started,
+          errorCode: lastError,
+          retryable,
+        });
+        if (retryable) await boundedBackoff(attempt);
       }
     }
     throw new GambitProviderError(lastError);
+  }
+
+  private emitDiagnostic(diagnostic: GambitProviderDiagnostic): void {
+    try {
+      this.options.onDiagnostic?.(diagnostic);
+    } catch {
+      // Diagnostics must never change provider behavior.
+    }
   }
 }
 
@@ -235,6 +312,7 @@ export function providerForRole(
   role: GambitModelRoleConfig,
   env: Pick<Env, 'GAMBIT_LLM_API_KEY' | 'GAMBIT_LLM_BASE_URL'>,
   fetchImpl?: typeof fetch,
+  onDiagnostic?: (diagnostic: GambitProviderDiagnostic) => void,
 ): GambitLLMProvider | null {
   const key = env.GAMBIT_LLM_API_KEY?.trim();
   const modelId = role.runtimeModelId?.trim();
@@ -245,7 +323,16 @@ export function providerForRole(
     baseUrl: env.GAMBIT_LLM_BASE_URL?.trim() || 'https://api.openai.com/v1',
     providerName: role.runtimeProvider,
     fetchImpl,
+    onDiagnostic,
   });
+}
+
+function safeEndpointHost(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname.slice(0, 120);
+  } catch {
+    return 'invalid-endpoint';
+  }
 }
 
 function publicIdentity(value: unknown, fallback: GambitPublicAiIdentity): GambitPublicAiIdentity {

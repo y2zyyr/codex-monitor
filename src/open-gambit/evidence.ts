@@ -2,6 +2,7 @@ import { sha256Hex } from './canonical';
 import type { GambitEvidence, GambitSourceDefinition, GambitSourceSnapshot, GambitSourceTier } from './types';
 
 export const GAMBIT_EXTRACTOR_VERSION = 'gambit-html-1';
+export const GAMBIT_FEED_EXTRACTOR_VERSION = 'gambit-feed-item-1';
 
 export type EvidenceFetchStatus =
   | 'SOURCE_TOO_LARGE'
@@ -21,6 +22,8 @@ export interface EvidenceFetchFailure {
 export interface EvidenceFetchSuccess {
   ok: true;
   snapshot: Omit<GambitSourceSnapshot, 'id' | 'r2Key' | 'retentionUntil' | 'createdAt'>;
+  feedItems: ExtractedFeedItem[];
+  isFeed: boolean;
 }
 
 export type EvidenceFetchResult = EvidenceFetchFailure | EvidenceFetchSuccess;
@@ -207,6 +210,10 @@ export async function fetchEvidence(
     const finalUrl = normalizeGambitUrl(currentUrl) ?? normalizedRequestedUrl;
     const canonicalUrl = normalizeGambitUrl(extracted.canonicalUrl || finalUrl) ?? finalUrl;
     const normalizedContent = extracted.content;
+    const feedItems = extracted.feedItems.map(item => ({
+      ...item,
+      canonicalUrl: resolveSafeUrl(item.canonicalUrl, finalUrl),
+    }));
     return {
       ok: true,
       snapshot: {
@@ -223,6 +230,8 @@ export async function fetchEvidence(
         extractorVersion: GAMBIT_EXTRACTOR_VERSION,
         sourceQualityTier: source.qualityTier,
       },
+      feedItems,
+      isFeed: extracted.isFeed === true,
     };
   }
 
@@ -257,17 +266,32 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<st
   }
 }
 
-interface ExtractedEvidenceDocument {
+export interface ExtractedFeedItem {
+  stableId: string;
+  title: string | null;
+  canonicalUrl: string | null;
+  publishedAt: string | null;
+  publisher: string | null;
+  content: string;
+}
+
+export interface ExtractedEvidenceDocument {
   title: string | null;
   publisher: string | null;
   publishedAt: string | null;
   canonicalUrl: string | null;
   content: string;
+  feedItems: ExtractedFeedItem[];
+  isFeed: boolean;
 }
 
 export function extractEvidenceDocument(raw: string, contentType: string, maxCharacters = 80_000): ExtractedEvidenceDocument {
   const isJson = contentType.includes('json') || raw.trimStart().startsWith('{');
   if (isJson) return extractJsonDocument(raw, maxCharacters);
+  if (isXmlContentType(contentType) || looksLikeXmlFeed(raw)) {
+    const feed = extractFeedDocument(raw, maxCharacters);
+    if (feed) return feed;
+  }
   const title = firstMatch(raw, /<title[^>]*>([\s\S]*?)<\/title>/iu);
   const ogTitle = firstMeta(raw, 'og:title');
   const publisher = firstMeta(raw, 'og:site_name') || firstMeta(raw, 'author') || firstMeta(raw, 'article:author');
@@ -283,6 +307,8 @@ export function extractEvidenceDocument(raw: string, contentType: string, maxCha
     publishedAt: normalizeDate(publishedValue || jsonLd.publishedAt),
     canonicalUrl: canonical ? decodeHtmlEntities(canonical).trim() : null,
     content,
+    feedItems: [],
+    isFeed: false,
   };
 }
 
@@ -304,9 +330,287 @@ function extractJsonDocument(raw: string, maxCharacters: number): ExtractedEvide
       publishedAt: normalizeDate(publishedAt),
       canonicalUrl: url,
       content: normalizeVisibleText(decodeHtmlEntities(stripMarkup(content))).slice(0, maxCharacters),
+      feedItems: [],
+      isFeed: false,
     };
   } catch {
-    return { title: null, publisher: null, publishedAt: null, canonicalUrl: null, content: '' };
+    return { title: null, publisher: null, publishedAt: null, canonicalUrl: null, content: '', feedItems: [], isFeed: false };
+  }
+}
+
+function isXmlContentType(contentType: string): boolean {
+  return contentType.includes('xml') || contentType.includes('rss') || contentType.includes('atom');
+}
+
+function looksLikeXmlFeed(raw: string): boolean {
+  const trimmed = raw.trimStart().toLowerCase();
+  return trimmed.startsWith('<?xml') || trimmed.startsWith('<rss') || trimmed.startsWith('<feed');
+}
+
+interface SafeXmlNode {
+  name: string;
+  attributes: Record<string, string>;
+  children: SafeXmlNode[];
+  text: string;
+}
+
+/**
+ * Small, bounded XML tokenizer for feeds. It deliberately accepts no DTD,
+ * entity declaration, external entity, or external resource syntax. Feed
+ * data is treated as untrusted text and is never turned into a DOM.
+ */
+function parseSafeXml(raw: string): SafeXmlNode | null {
+  const maxNodes = 2_000;
+  const maxDepth = 24;
+  const maxTextCharacters = 600_000;
+  const stack: SafeXmlNode[] = [];
+  let root: SafeXmlNode | null = null;
+  let position = 0;
+  let nodeCount = 0;
+  let textCharacters = 0;
+
+  const appendText = (value: string): boolean => {
+    if (!value || stack.length === 0) return true;
+    textCharacters += value.length;
+    if (textCharacters > maxTextCharacters) return false;
+    stack[stack.length - 1].text += value;
+    return true;
+  };
+
+  while (position < raw.length) {
+    if (raw[position] !== '<') {
+      const nextTag = raw.indexOf('<', position);
+      const end = nextTag < 0 ? raw.length : nextTag;
+      if (!appendText(raw.slice(position, end))) return null;
+      position = end;
+      continue;
+    }
+
+    if (raw.startsWith('<!--', position)) {
+      const end = raw.indexOf('-->', position + 4);
+      if (end < 0) return null;
+      position = end + 3;
+      continue;
+    }
+    if (raw.startsWith('<![CDATA[', position)) {
+      const end = raw.indexOf(']]>', position + 9);
+      if (end < 0 || !appendText(raw.slice(position + 9, end))) return null;
+      position = end + 3;
+      continue;
+    }
+    if (raw.startsWith('<?', position)) {
+      const end = raw.indexOf('?>', position + 2);
+      if (end < 0) return null;
+      position = end + 2;
+      continue;
+    }
+    // Reject every declaration other than comments, CDATA, and the XML
+    // processing instruction handled above. In particular, this rejects
+    // DOCTYPE/ENTITY before any XML parser could interpret it.
+    if (raw.startsWith('<!', position)) return null;
+
+    const tagEnd = findXmlTagEnd(raw, position + 1);
+    if (tagEnd < 0) return null;
+    const tag = parseXmlTag(raw.slice(position + 1, tagEnd));
+    if (!tag) return null;
+    position = tagEnd + 1;
+
+    if (tag.closing) {
+      const current = stack.pop();
+      if (!current || current.name !== tag.name) return null;
+      continue;
+    }
+    if (nodeCount >= maxNodes || stack.length >= maxDepth) return null;
+    nodeCount += 1;
+    const node: SafeXmlNode = { name: tag.name, attributes: tag.attributes, children: [], text: '' };
+    if (stack.length > 0) stack[stack.length - 1].children.push(node);
+    else if (root) return null;
+    else root = node;
+    if (!tag.selfClosing) stack.push(node);
+  }
+  return root && stack.length === 0 ? root : null;
+}
+
+function findXmlTagEnd(raw: string, start: number): number {
+  let quote = '';
+  for (let index = start; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (quote) {
+      if (character === quote) quote = '';
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === '>') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function parseXmlTag(rawTag: string): { name: string; attributes: Record<string, string>; closing: boolean; selfClosing: boolean } | null {
+  let value = rawTag.trim();
+  if (!value) return null;
+  const closing = value.startsWith('/');
+  if (closing) {
+    value = value.slice(1).trim();
+    const name = readXmlName(value, 0);
+    return name && value.slice(name.end).trim() === ''
+      ? { name: name.value.toLowerCase(), attributes: {}, closing: true, selfClosing: false }
+      : null;
+  }
+  const selfClosing = value.endsWith('/');
+  if (selfClosing) value = value.slice(0, -1).trimEnd();
+  const name = readXmlName(value, 0);
+  if (!name) return null;
+  const attributes: Record<string, string> = {};
+  let position = name.end;
+  while (position < value.length) {
+    while (isXmlWhitespace(value[position])) position += 1;
+    if (position >= value.length) break;
+    const attribute = readXmlName(value, position);
+    if (!attribute) return null;
+    position = attribute.end;
+    while (isXmlWhitespace(value[position])) position += 1;
+    if (value[position] !== '=') return null;
+    position += 1;
+    while (isXmlWhitespace(value[position])) position += 1;
+    const quote = value[position];
+    if (quote !== '"' && quote !== "'") return null;
+    const end = value.indexOf(quote, position + 1);
+    if (end < 0) return null;
+    attributes[attribute.value.toLowerCase()] = decodeXmlEntities(value.slice(position + 1, end));
+    position = end + 1;
+  }
+  return { name: name.value.toLowerCase(), attributes, closing: false, selfClosing };
+}
+
+function readXmlName(value: string, start: number): { value: string; end: number } | null {
+  let position = start;
+  while (position < value.length && isXmlNameCharacter(value[position], position === start)) position += 1;
+  return position > start ? { value: value.slice(start, position), end: position } : null;
+}
+
+function isXmlNameCharacter(value: string | undefined, first: boolean): boolean {
+  if (!value) return false;
+  const code = value.charCodeAt(0);
+  if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || value === '_') return true;
+  if (!first && ((code >= 48 && code <= 57) || value === '.' || value === ':' || value === '-')) return true;
+  return (value.codePointAt(0) ?? 0) >= 0x80;
+}
+
+function isXmlWhitespace(value: string | undefined): boolean {
+  return value === ' ' || value === '\t' || value === '\r' || value === '\n';
+}
+
+function extractFeedDocument(raw: string, maxCharacters: number): ExtractedEvidenceDocument | null {
+  const root = parseSafeXml(raw);
+  if (!root || (root.name !== 'rss' && root.name !== 'feed')) return null;
+  const channel = findChild(root, ['channel']);
+  const container = channel ?? root;
+  const entries = root.name === 'rss'
+    ? (channel?.children.filter(child => child.name === 'item') ?? [])
+    : root.children.filter(child => child.name === 'entry');
+  const title = cleanText(elementText(findChild(container, ['title'])));
+  const publisher = cleanText(elementText(findChild(container, ['author', 'dc:creator', 'creator', 'publisher'])))
+    || cleanText(elementText(findChild(root, ['author', 'dc:creator', 'creator', 'publisher'])));
+  const publishedAt = normalizeDate(elementText(findChild(container, ['pubdate', 'published', 'updated', 'dc:date', 'date'])));
+  const canonicalUrl = cleanText(elementText(findChild(container, ['link']))) || root.attributes['xml:base'] || null;
+  const feedItems: ExtractedFeedItem[] = entries.slice(0, 200).map(entry => extractFeedItem(entry, root.name === 'rss' ? 'rss' : 'feed')).filter((item): item is ExtractedFeedItem => item !== null);
+  const aggregateParts = [title, ...feedItems.map(item => [item.title, item.publishedAt, item.content].filter(Boolean).join('\n'))].filter(Boolean);
+  return {
+    title,
+    publisher,
+    publishedAt,
+    canonicalUrl,
+    content: normalizeVisibleText(aggregateParts.join('\n\n')).slice(0, maxCharacters),
+    feedItems,
+    isFeed: true,
+  };
+}
+
+function extractFeedItem(entry: SafeXmlNode, kind: 'rss' | 'feed'): ExtractedFeedItem | null {
+  const title = cleanText(elementText(findChild(entry, ['title'])));
+  const idValue = cleanText(elementText(findChild(entry, kind === 'rss' ? ['guid', 'id'] : ['id'])));
+  const canonicalUrl = kind === 'rss'
+    ? cleanText(elementText(findChild(entry, ['link'])))
+    : atomAlternateLink(entry);
+  const publishedAt = normalizeDate(elementText(findChild(entry, kind === 'rss'
+    ? ['pubdate', 'dc:date', 'date', 'published', 'updated']
+    : ['published', 'updated', 'pubdate'])));
+  const publisher = cleanText(elementText(findChild(entry, kind === 'rss'
+    ? ['author', 'dc:creator', 'creator']
+    : ['author', 'creator'])));
+  const rawContent = elementText(findChild(entry, kind === 'rss'
+    ? ['content:encoded', 'content', 'description', 'summary']
+    : ['content', 'summary', 'description']));
+  const content = normalizeVisibleText(decodeHtmlEntities(stripMarkup(rawContent))).slice(0, 12_000);
+  if (!title || !content) return null;
+  const stableId = idValue || canonicalUrl || `${title}|${publishedAt ?? ''}`;
+  return { stableId: stableId.slice(0, 500), title, canonicalUrl, publishedAt, publisher, content };
+}
+
+function atomAlternateLink(entry: SafeXmlNode): string | null {
+  const links = entry.children.filter(child => child.name === 'link');
+  const alternate = links.find(link => !link.attributes.rel || link.attributes.rel.toLowerCase() === 'alternate');
+  return cleanText(alternate?.attributes.href || (alternate ? elementText(alternate) : null));
+}
+
+function findChild(node: SafeXmlNode, names: string[]): SafeXmlNode | null {
+  const wanted = new Set(names.map(name => name.toLowerCase()));
+  return node.children.find(child => wanted.has(child.name) || wanted.has(localXmlName(child.name))) ?? null;
+}
+
+function localXmlName(name: string): string {
+  const separator = name.indexOf(':');
+  return separator >= 0 ? name.slice(separator + 1) : name;
+}
+
+function elementText(node: SafeXmlNode | null | undefined): string {
+  if (!node) return '';
+  const childText = node.children.map(child => elementText(child)).filter(Boolean).join('\n');
+  return decodeXmlEntities([node.text, childText].filter(Boolean).join('\n'));
+}
+
+function decodeXmlEntities(value: string): string {
+  let output = '';
+  let position = 0;
+  while (position < value.length) {
+    const ampersand = value.indexOf('&', position);
+    if (ampersand < 0) {
+      output += value.slice(position);
+      break;
+    }
+    output += value.slice(position, ampersand);
+    const semicolon = value.indexOf(';', ampersand + 1);
+    if (semicolon < 0) {
+      output += value.slice(ampersand);
+      break;
+    }
+    const entity = value.slice(ampersand + 1, semicolon);
+    if (entity === 'amp') output += '&';
+    else if (entity === 'lt') output += '<';
+    else if (entity === 'gt') output += '>';
+    else if (entity === 'quot') output += '"';
+    else if (entity === 'apos') output += "'";
+    else if (entity.startsWith('#x') || entity.startsWith('#X')) output += safeCodePoint(entity.slice(2), 16);
+    else if (entity.startsWith('#')) output += safeCodePoint(entity.slice(1), 10);
+    else output += '';
+    position = semicolon + 1;
+  }
+  return output;
+}
+
+function safeCodePoint(value: string, radix: number): string {
+  const code = Number.parseInt(value, radix);
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '';
+  return String.fromCodePoint(code);
+}
+
+function resolveSafeUrl(raw: string | null, baseUrl: string): string | null {
+  if (!raw) return null;
+  try {
+    return normalizeGambitUrl(new URL(raw, baseUrl).toString());
+  } catch {
+    return null;
   }
 }
 

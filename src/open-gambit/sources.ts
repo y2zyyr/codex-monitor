@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from './canonical';
 import { GambitRunBudget } from './budget';
-import { fetchEvidence } from './evidence';
+import { fetchEvidence, GAMBIT_FEED_EXTRACTOR_VERSION, isHostnameAllowed, normalizeGambitUrl } from './evidence';
 import { makeCandidateFromDecision, qualificationGate } from './policy';
 import type {
   GambitCandidate,
@@ -106,12 +106,37 @@ export interface DiscoveryItem {
   title: string;
   summary: string;
   snapshot: GambitSourceSnapshot;
+  stableId?: string;
+  feedUrl?: string;
 }
 
 export interface DiscoveryResult {
   items: DiscoveryItem[];
   failures: Array<{ sourceId: string; status: string; error: string }>;
   fetchCount: number;
+  selectedSourceIds: string[];
+  rawItemsFound: number;
+  staleItems: number;
+  malformedItems: number;
+}
+
+/**
+ * Deterministic registry rotation. A run key chooses a stable offset in the
+ * enabled registry and then walks it in registry order, so bounded runs do
+ * not repeatedly privilege the first source. No content can influence the
+ * selected source list.
+ */
+export function selectSourcesForRun(
+  sources: GambitSourceDefinition[],
+  maxSources = 20,
+  rotationKey?: string,
+): GambitSourceDefinition[] {
+  const enabled = sources.filter(source => source.enabled);
+  const limit = Math.min(enabled.length, Math.max(0, Math.floor(maxSources)));
+  if (limit === 0) return [];
+  if (!rotationKey || enabled.length <= limit) return enabled.slice(0, limit);
+  const offset = fnv1a32(rotationKey) % enabled.length;
+  return Array.from({ length: limit }, (_unused, index) => enabled[(offset + index) % enabled.length]);
 }
 
 /**
@@ -120,12 +145,29 @@ export interface DiscoveryResult {
  */
 export async function discoverConfiguredSources(
   sources: GambitSourceDefinition[],
-  options: { fetchImpl?: typeof fetch; now?: Date; maxSources?: number; timeoutMs?: number; maxBytes?: number; budget?: GambitRunBudget } = {},
+  options: {
+    fetchImpl?: typeof fetch;
+    now?: Date;
+    maxSources?: number;
+    maxItemsPerSource?: number;
+    maxItemAgeDays?: number;
+    rotationKey?: string;
+    timeoutMs?: number;
+    maxBytes?: number;
+    budget?: GambitRunBudget;
+  } = {},
 ): Promise<DiscoveryResult> {
   const items: DiscoveryItem[] = [];
   const failures: DiscoveryResult['failures'] = [];
   let fetchCount = 0;
-  for (const source of sources.filter(item => item.enabled).slice(0, options.maxSources ?? 20)) {
+  let rawItemsFound = 0;
+  let staleItems = 0;
+  let malformedItems = 0;
+  const now = options.now ?? new Date();
+  const maxItemsPerSource = Math.min(5, Math.max(1, Math.floor(options.maxItemsPerSource ?? 3)));
+  const maxItemAgeDays = Math.min(365, Math.max(1, Math.floor(options.maxItemAgeDays ?? 30)));
+  const selectedSources = selectSourcesForRun(sources, options.maxSources ?? 20, options.rotationKey);
+  for (const source of selectedSources) {
     if (options.budget && !options.budget.consume('gambit_http')) {
       failures.push({ sourceId: source.id, status: 'BUDGET_EXCEEDED', error: 'The per-run gambit_http budget was exhausted.' });
       continue;
@@ -141,19 +183,94 @@ export async function discoverConfiguredSources(
       failures.push({ sourceId: source.id, status: result.status, error: result.error });
       continue;
     }
-    items.push({
-      source,
-      url: result.snapshot.canonicalUrl,
-      title: result.snapshot.title || source.name,
-      summary: result.snapshot.normalizedContent.slice(0, 2_000),
-      snapshot: result.snapshot,
+    if (!result.isFeed) {
+      if (result.snapshot.title && result.snapshot.normalizedContent.trim()) {
+        items.push({
+          source,
+          url: result.snapshot.canonicalUrl,
+          title: result.snapshot.title || source.name,
+          summary: result.snapshot.normalizedContent.slice(0, 2_000),
+          snapshot: result.snapshot,
+          feedUrl: source.feedUrl || source.url,
+        });
+      } else {
+        malformedItems += 1;
+      }
+      continue;
+    }
+
+    if (result.feedItems.length === 0) {
+      malformedItems += 1;
+      continue;
+    }
+
+    rawItemsFound += result.feedItems.length;
+    const seen = new Set<string>();
+    const eligible = [] as typeof result.feedItems;
+    for (const feedItem of result.feedItems) {
+      const canonicalUrl = normalizeGambitUrl(feedItem.canonicalUrl || '');
+      const key = feedItem.stableId || canonicalUrl || `${feedItem.title ?? ''}|${feedItem.publishedAt ?? ''}`;
+      if (!feedItem.title || !feedItem.content || !canonicalUrl || !isHostnameAllowed(canonicalUrl, source)) {
+        malformedItems += 1;
+        continue;
+      }
+      if (feedItem.publishedAt) {
+        const publishedAt = new Date(feedItem.publishedAt).getTime();
+        if (Number.isFinite(publishedAt) && publishedAt < now.getTime() - maxItemAgeDays * 86_400_000) {
+          staleItems += 1;
+          continue;
+        }
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      eligible.push({ ...feedItem, canonicalUrl });
+    }
+    eligible.sort((left, right) => {
+      const leftTime = left.publishedAt ? new Date(left.publishedAt).getTime() : 0;
+      const rightTime = right.publishedAt ? new Date(right.publishedAt).getTime() : 0;
+      return rightTime - leftTime || left.stableId.localeCompare(right.stableId);
     });
+    for (const feedItem of eligible.slice(0, maxItemsPerSource)) {
+      const snapshot: GambitSourceSnapshot = {
+        sourceId: source.id,
+        requestedUrl: result.snapshot.requestedUrl,
+        finalUrl: result.snapshot.finalUrl,
+        canonicalUrl: feedItem.canonicalUrl!,
+        title: feedItem.title!,
+        publisher: feedItem.publisher || result.snapshot.publisher || source.publisher,
+        publishedAt: feedItem.publishedAt,
+        retrievedAt: result.snapshot.retrievedAt,
+        normalizedContent: feedItem.content.slice(0, 12_000),
+        contentHash: await sha256Hex(`${feedItem.stableId}|${feedItem.canonicalUrl}|${feedItem.content}`),
+        extractorVersion: GAMBIT_FEED_EXTRACTOR_VERSION,
+        sourceQualityTier: source.qualityTier,
+      };
+      items.push({
+        source,
+        url: snapshot.canonicalUrl,
+        title: snapshot.title!,
+        summary: feedItem.content.slice(0, 2_000),
+        snapshot,
+        stableId: feedItem.stableId,
+        feedUrl: source.feedUrl || source.url,
+      });
+    }
   }
-  return { items, failures, fetchCount };
+  return {
+    items,
+    failures,
+    fetchCount,
+    selectedSourceIds: selectedSources.map(source => source.id),
+    rawItemsFound,
+    staleItems,
+    malformedItems,
+  };
 }
 
-export async function fingerprintCandidate(title: string, canonicalUrl: string, content: string): Promise<string> {
-  const normalized = `${normalizeTitle(title)}|${canonicalUrl}|${normalizeContent(content).slice(0, 2_000)}`;
+export async function fingerprintCandidate(title: string, canonicalUrl: string, content: string, stableId?: string): Promise<string> {
+  const normalized = stableId
+    ? `stable:${normalizeContent(stableId).slice(0, 500)}`
+    : `${normalizeTitle(title)}|${canonicalUrl}|${normalizeContent(content).slice(0, 2_000)}`;
   return sha256Hex(normalized);
 }
 
@@ -161,7 +278,7 @@ export async function candidateFromDiscoveryItem(item: DiscoveryItem, snapshotId
   candidate: GambitCandidate;
   evidence: GambitEvidence;
 }> {
-  const fingerprint = await fingerprintCandidate(item.title, item.snapshot.canonicalUrl, item.snapshot.normalizedContent);
+  const fingerprint = await fingerprintCandidate(item.title, item.snapshot.canonicalUrl, item.snapshot.normalizedContent, item.stableId);
   const evidence: GambitEvidence = {
     snapshotId,
     sourceId: item.source.id,
@@ -201,4 +318,13 @@ function normalizeTitle(value: string): string {
 
 function normalizeContent(value: string): string {
   return value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+}
+
+function fnv1a32(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
 }

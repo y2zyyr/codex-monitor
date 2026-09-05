@@ -131,7 +131,7 @@ export async function runGambitStages(
     };
   }
   if (triage.error) {
-    return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: triage.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
+    return { status: 'FAILED', candidateId, reason: operationalProviderReason('TRIAGE', triage.error), triage: usableTriage };
   }
 
   const analysisRole = roleConfig('gambit_analysis', roles);
@@ -165,9 +165,9 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (analysisResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: analysisResult.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
+  if (analysisResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('ANALYSIS', analysisResult.error), triage: usableTriage };
   const analysis = normalizeAnalysis(analysisResult.value);
-  if (!analysis) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: 'ANALYSIS_SCHEMA_INVALID', publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage };
+  if (!analysis) return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage };
   if (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING') {
     return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage };
   }
@@ -203,7 +203,7 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (criticResult.error) return { status: 'NEEDS_HUMAN_REVIEW', candidateId, reason: criticResult.error, publicationDecision: 'NEEDS_HUMAN_REVIEW', triage: usableTriage, analysis };
+  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis };
   const critic = normalizeCritic(criticResult.value ?? deterministicCritic(analysis));
   const publicationGate = deterministicPublicationGate(candidate, analysis, critic);
   if (publicationGate.errors.length > 0) {
@@ -232,16 +232,16 @@ export async function runQualifiedGambitWorkflow(
   if (!dependencies.repository) throw new Error('GambitRepository is required for the persisted workflow path.');
   const repository = dependencies.repository;
   const previous = await repository.getWorkflowResult(input.workflowId);
-  if (previous && ['WAITING_FOR_REVIEW', 'NO_GAMBIT', 'NEEDS_HUMAN_REVIEW', 'COMPLETED'].includes(previous.status)) {
+  if (previous && ['WAITING_FOR_REVIEW', 'NO_GAMBIT', 'NEEDS_HUMAN_REVIEW', 'FAILED', 'COMPLETED'].includes(previous.status)) {
     return {
       workflowId: input.workflowId,
-      status: previous.status === 'COMPLETED' ? 'COMPLETED' : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT' : previous.status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : 'WAITING_FOR_REVIEW',
+      status: previous.status === 'COMPLETED' ? 'COMPLETED' : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT' : previous.status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : previous.status === 'FAILED' ? 'FAILED' : 'WAITING_FOR_REVIEW',
       candidateId: input.candidateId,
       articleId: previous.articleId ?? undefined,
       revisionId: previous.revisionId ?? undefined,
       publicationDecision: previous.status === 'COMPLETED'
         ? 'AUTO_PUBLISH_ELIGIBLE'
-        : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT_WORTH_PUBLISHING' : 'NEEDS_HUMAN_REVIEW',
+        : previous.status === 'NO_GAMBIT' ? 'NO_GAMBIT_WORTH_PUBLISHING' : previous.status === 'NEEDS_HUMAN_REVIEW' ? 'NEEDS_HUMAN_REVIEW' : undefined,
       reason: 'DUPLICATE_WORKFLOW_RESULT',
     };
   }
@@ -257,6 +257,17 @@ export async function runQualifiedGambitWorkflow(
   const snapshots = await repository.getSnapshots(candidate.snapshotIds);
   const evidence = snapshots.map(snapshotToEvidence);
   const stageResult = await runGambitStages(candidate, evidence, dependencies);
+  if (stageResult.status === 'FAILED') {
+    await repository.setCandidateStatus(input.candidateId, 'DISCOVERED', null);
+    const result: GambitWorkflowResult = {
+      workflowId: input.workflowId,
+      status: 'FAILED',
+      candidateId: input.candidateId,
+      reason: stageResult.reason ?? 'PROVIDER_ERROR',
+    };
+    await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
+    return result;
+  }
   if (stageResult.status === 'NO_GAMBIT') {
     await repository.setCandidateStatus(input.candidateId, 'REJECTED', stageResult.reason || 'NO_GAMBIT_WORTH_PUBLISHING');
     const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason: stageResult.reason, publicationDecision: stageResult.publicationDecision ?? publicationDecisionForReason(stageResult.reason) };
@@ -267,6 +278,8 @@ export async function runQualifiedGambitWorkflow(
     const published = await publishQualifiedGambit(repository, stageResult.draft, {
       translationProvider: dependencies.providers?.translation,
       translationRole: roleConfig('translation', dependencies.roles ?? []),
+      budget: dependencies.budget,
+      runId: dependencies.runId,
       now: dependencies.now,
     });
     if (published.published && published.articleId && published.revisionId) {
@@ -284,14 +297,16 @@ export async function runQualifiedGambitWorkflow(
       await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
       return result;
     }
+    const publicationFailureReason = published.translation.status === 'TRANSLATION_FAILED'
+      ? 'TRANSLATION_FAILED'
+      : 'CANONICAL_FALLBACK_NOT_READY';
     const result: GambitWorkflowResult = {
       workflowId: input.workflowId,
-      status: 'NEEDS_HUMAN_REVIEW',
+      status: 'FAILED',
       candidateId: input.candidateId,
-      reason: 'AUTO_PUBLISH_PERSISTENCE_FAILED',
-      publicationDecision: 'NEEDS_HUMAN_REVIEW',
+      reason: publicationFailureReason,
     };
-    await repository.setCandidateStatus(input.candidateId, 'REJECTED', 'NEEDS_HUMAN_REVIEW');
+    await repository.setCandidateStatus(input.candidateId, 'DISCOVERED', null);
     await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
     return result;
   }
@@ -453,6 +468,17 @@ async function optionalStage<T>(
     }
     return { error: code };
   }
+}
+
+function operationalProviderReason(stage: 'TRIAGE' | 'ANALYSIS' | 'CRITIC', code: string): string {
+  if (code === `${stage}_PROVIDER_UNAVAILABLE`) return 'PROVIDER_UNAVAILABLE';
+  if (code === 'timeout') return 'PROVIDER_TIMEOUT';
+  if (code === 'network_error') return 'PROVIDER_NETWORK_ERROR';
+  if (code === 'empty_response') return 'PROVIDER_EMPTY_RESPONSE';
+  if (code === 'invalid_structured_json' || code === 'ANALYSIS_SCHEMA_INVALID') return 'PROVIDER_SCHEMA_INVALID';
+  if (code === 'GAMBIT_LLM_BUDGET_EXCEEDED') return 'PROVIDER_BUDGET_EXCEEDED';
+  if (code.startsWith('http_')) return `PROVIDER_HTTP_${code.slice(5)}`;
+  return `PROVIDER_${code.toUpperCase().replace(/[^A-Z0-9]+/gu, '_').slice(0, 64)}`;
 }
 
 function deterministicCritic(analysis: GambitAnalysis): GambitCriticResult {
