@@ -172,14 +172,28 @@ const COMMUNITY_PATHS: Record<SiteLocale, string> = {
   fr: '/fr/community/',
 };
 
-const OPEN_GAMBIT_PATHS: Record<'en' | 'zh', string> = {
+export const OPEN_GAMBIT_PATHS: Record<SiteLocale, string> = {
   en: '/open-gambit/',
   zh: '/zh/open-gambit/',
+  ja: '/ja/open-gambit/',
+  fr: '/fr/open-gambit/',
+  es: '/es/open-gambit/',
 };
 
-const AI_DISCLOSURE_PATHS: Record<'en' | 'zh', string> = {
+export const AI_DISCLOSURE_PATHS: Record<SiteLocale, string> = {
   en: '/about/ai/',
   zh: '/zh/about/ai/',
+  ja: '/ja/about/ai/',
+  fr: '/fr/about/ai/',
+  es: '/es/about/ai/',
+};
+
+export const RSS_PATHS: Record<SiteLocale, string> = {
+  en: '/feed.xml',
+  zh: '/zh/feed.xml',
+  ja: '/ja/feed.xml',
+  fr: '/fr/feed.xml',
+  es: '/es/feed.xml',
 };
 
 function escapeHtml(value: string | null | undefined): string {
@@ -227,7 +241,7 @@ export function renderSharedHeader(lang: SiteLocale, options: SharedHeaderOption
     + SITE_LOCALES.map(locale => '<a href="' + escapeHtml(localePath(languageBasePath, locale)) + '"' + (locale === lang ? ' aria-current="page"' : '') + '>' + escapeHtml(SITE_LOCALE_LABELS[locale]) + '</a>').join('')
     + '</div></details>';
   const moduleName = copy.monitor;
-  const openGambitPath = OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en'];
+  const openGambitPath = OPEN_GAMBIT_PATHS[lang];
   return [
     '    <header class="header">',
     '      <div class="header-left">',
@@ -269,10 +283,10 @@ export function renderSharedFooter(lang: SiteLocale): string {
     '          <a href="' + escapeHtml(landingPath('faq', lang)) + '">' + escapeHtml(labels.faq) + '</a>',
     '          <a href="' + escapeHtml(landingPath('methodology', lang)) + '">' + escapeHtml(labels.methodology) + '</a>',
     '          <a href="' + escapeHtml(communityPath(lang)) + '">' + escapeHtml(labels.community) + '</a>',
-    '          <a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en']) + '">' + escapeHtml(labels.openGambit) + '</a>',
-    '          <a href="' + escapeHtml(AI_DISCLOSURE_PATHS[lang === 'zh' ? 'zh' : 'en']) + '">' + escapeHtml(labels.aiDisclosure) + '</a>',
+    '          <a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang]) + '">' + escapeHtml(labels.openGambit) + '</a>',
+    '          <a href="' + escapeHtml(AI_DISCLOSURE_PATHS[lang]) + '">' + escapeHtml(labels.aiDisclosure) + '</a>',
     '          <a href="https://modelyard.dev" target="_blank" rel="noopener noreferrer">ModelYard</a>',
-    '          <a href="/feed.xml">RSS</a>',
+    '          <a href="' + escapeHtml(RSS_PATHS[lang]) + '">RSS</a>',
     '        </nav>',
     '      </div>',
     '    </footer>',

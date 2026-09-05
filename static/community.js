@@ -37,7 +37,7 @@
     minute: '分钟前',
     hour: '小时前',
     day: '天前',
-    topic: '主题', allTopics: '全部主题', search: '搜索', searchPlaceholder: '搜索留言、链接或昵称', searchButton: '搜索动态', clearFilters: '清除筛选', allPosts: '全部留言', featuredPosts: '精选', githubPosts: 'GitHub 仓库', showing: '显示', filteredResults: '筛选结果', pinned: '置顶', featured: '精选', announcement: '公告', verifiedAdmin: '已认证管理员', aiAccount: '自动账号', noMatchingPosts: '没有符合这些筛选条件的留言。'
+    topic: '主题', allTopics: '全部主题', search: '搜索', searchPlaceholder: '搜索留言、链接或昵称', searchButton: '搜索动态', clearFilters: '清除筛选', allPosts: '全部留言', featuredPosts: '精选', githubPosts: 'GitHub 仓库', showing: '显示', filteredResults: '筛选结果', pinned: '置顶', featured: '精选', announcement: '公告', verifiedAdmin: '已认证管理员', aiAccount: '自动账号', noMatchingPosts: '没有符合这些筛选条件的留言。', noPosts: '还没有留言。', firstPost: '来发布第一条留言吧。'
   } : {
     nicknameRequired: 'Please enter a nickname.',
     nicknameReserved: 'This nickname is reserved for official accounts.',
@@ -68,18 +68,18 @@
     minute: 'min ago',
     hour: 'hr ago',
     day: 'days ago',
-    topic: 'Topic', allTopics: 'All topics', search: 'Search', searchPlaceholder: 'Search messages, links, or nicknames', searchButton: 'Search feed', clearFilters: 'Clear filters', allPosts: 'All posts', featuredPosts: 'Featured', githubPosts: 'GitHub repos', showing: 'Showing', filteredResults: 'Filtered results', pinned: 'Pinned', featured: 'Featured', announcement: 'Announcement', verifiedAdmin: 'Verified administrator', aiAccount: 'Automated account', noMatchingPosts: 'No posts match these filters.'
+    topic: 'Topic', allTopics: 'All topics', search: 'Search', searchPlaceholder: 'Search messages, links, or nicknames', searchButton: 'Search feed', clearFilters: 'Clear filters', allPosts: 'All posts', featuredPosts: 'Featured', githubPosts: 'GitHub repos', showing: 'Showing', filteredResults: 'Filtered results', pinned: 'Pinned', featured: 'Featured', announcement: 'Announcement', verifiedAdmin: 'Verified administrator', aiAccount: 'Automated account', noMatchingPosts: 'No posts match these filters.', noPosts: 'No posts yet.', firstPost: 'Be the first to leave a message.'
   };
 
-  if (locale === 'ja') copy = Object.assign({}, copy, {
+  if (locale === 'ja') copy = {
     nicknameRequired: 'ニックネームを入力してください。', nicknameReserved: 'このニックネームは公式アカウント用に予約されています。', contentRequired: '内容を入力してください。', nicknameTooLong: 'ニックネームが長すぎます。', contentTooLong: '内容が長すぎます。', topicRequired: 'トピックを選択してください。', securityCheck: '投稿前にセキュリティチェックを完了してください。', posting: '投稿中…', posted: 'メッセージを投稿しました。', pending: 'メッセージを送信しました。審査をお待ちください。', postError: '投稿できません。しばらくしてからお試しください。', loading: '読み込み中…', loadError: 'コミュニティを読み込めません。', loadMore: 'さらに読み込む', showOriginal: '原文を表示', hideOriginal: '原文を隠す', original: '原文', translatedFrom: '翻訳元', unknownLanguage: '不明な言語', openExternal: '外部リンクを開く', stars: 'スター', forks: 'フォーク', language: '言語', license: 'ライセンス', repo: 'GitHub リポジトリ', justNow: 'たった今', minute: '分前', hour: '時間前', day: '日前', topic: 'トピック', allTopics: 'すべてのトピック', search: '検索', searchPlaceholder: 'メッセージ、リンク、ニックネームを検索', searchButton: 'フィードを検索', clearFilters: 'フィルターをクリア', allPosts: 'すべての投稿', featuredPosts: 'おすすめ', githubPosts: 'GitHub リポジトリ', showing: '表示中', filteredResults: '絞り込み結果', pinned: 'ピン留め', featured: 'おすすめ', announcement: 'お知らせ', verifiedAdmin: '認証済み管理者', aiAccount: '自動アカウント', noMatchingPosts: '条件に一致する投稿はありません。', noPosts: 'まだ投稿はありません。', firstPost: '最初のメッセージを投稿しましょう。'
-  });
-  if (locale === 'es') copy = Object.assign({}, copy, {
+  };
+  if (locale === 'es') copy = {
     nicknameRequired: 'Introduce un apodo.', nicknameReserved: 'Este apodo está reservado para cuentas oficiales.', contentRequired: 'Introduce un mensaje.', nicknameTooLong: 'El apodo es demasiado largo.', contentTooLong: 'El mensaje es demasiado largo.', topicRequired: 'Elige un tema.', securityCheck: 'Completa la comprobación de seguridad antes de publicar.', posting: 'Publicando…', posted: 'Tu mensaje se ha publicado.', pending: 'Tu mensaje se ha enviado para revisión.', postError: 'No se puede publicar ahora. Inténtalo de nuevo más tarde.', loading: 'Cargando…', loadError: 'No se puede cargar la comunidad ahora.', loadMore: 'Cargar más', showOriginal: 'Mostrar original', hideOriginal: 'Ocultar original', original: 'Original', translatedFrom: 'Traducido del', unknownLanguage: 'idioma desconocido', openExternal: 'Abrir enlace externo', stars: 'Estrellas', forks: 'Forks', language: 'Lenguaje', license: 'Licencia', repo: 'Repositorio de GitHub', justNow: 'ahora mismo', minute: 'min', hour: 'h', day: 'días', topic: 'Tema', allTopics: 'Todos los temas', search: 'Buscar', searchPlaceholder: 'Buscar mensajes, enlaces o apodos', searchButton: 'Buscar en el feed', clearFilters: 'Borrar filtros', allPosts: 'Todas las publicaciones', featuredPosts: 'Destacadas', githubPosts: 'Repositorios de GitHub', showing: 'Mostrando', filteredResults: 'Resultados filtrados', pinned: 'Fijada', featured: 'Destacada', announcement: 'Anuncio', verifiedAdmin: 'Administrador verificado', aiAccount: 'Cuenta automatizada', noMatchingPosts: 'No hay publicaciones que coincidan con estos filtros.', noPosts: 'Aún no hay publicaciones.', firstPost: 'Sé la primera persona en dejar un mensaje.'
-  });
-  if (locale === 'fr') copy = Object.assign({}, copy, {
-    nicknameRequired: 'Saisissez un pseudo.', nicknameReserved: 'Ce pseudo est réservé aux comptes officiels.', contentRequired: 'Saisissez un message.', nicknameTooLong: 'Le pseudo est trop long.', contentTooLong: 'Le message est trop long.', topicRequired: 'Choisissez un sujet.', securityCheck: 'Terminez le contrôle de sécurité avant de publier.', posting: 'Publication…', posted: 'Votre message a été publié.', pending: 'Votre message a été envoyé pour modération.', postError: 'Publication impossible pour le moment. Réessayez plus tard.', loading: 'Chargement…', loadError: 'La communauté est momentanément indisponible.', loadMore: 'Charger plus', showOriginal: 'Afficher l’original', hideOriginal: 'Masquer l’original', original: 'Original', translatedFrom: 'Traduit du', unknownLanguage: 'langue inconnue', openExternal: 'Ouvrir le lien externe', stars: 'Étoiles', forks: 'Forks', language: 'Langage', license: 'Licence', repo: 'Dépôt GitHub', justNow: 'à l’instant', minute: 'min', hour: 'h', day: 'jours', topic: 'Sujet', allTopics: 'Tous les sujets', search: 'Rechercher', searchPlaceholder: 'Rechercher des messages, liens ou pseudos', searchButton: 'Rechercher dans le fil', clearFilters: 'Effacer les filtres', allPosts: 'Toutes les publications', featuredPosts: 'À la une', githubPosts: 'Dépôts GitHub', showing: 'Affichage', filteredResults: 'Résultats filtrés', pinned: 'Épinglée', featured: 'À la une', announcement: 'Annonce', verifiedAdmin: 'Administrateur vérifié', noMatchingPosts: 'Aucune publication ne correspond à ces filtres.', noPosts: 'Aucune publication pour le moment.', firstPost: 'Soyez la première personne à laisser un message.'
-  });
+  };
+  if (locale === 'fr') copy = {
+    nicknameRequired: 'Saisissez un pseudo.', nicknameReserved: 'Ce pseudo est réservé aux comptes officiels.', contentRequired: 'Saisissez un message.', nicknameTooLong: 'Le pseudo est trop long.', contentTooLong: 'Le message est trop long.', topicRequired: 'Choisissez un sujet.', securityCheck: 'Terminez le contrôle de sécurité avant de publier.', posting: 'Publication…', posted: 'Votre message a été publié.', pending: 'Votre message a été envoyé pour modération.', postError: 'Publication impossible pour le moment. Réessayez plus tard.', loading: 'Chargement…', loadError: 'La communauté est momentanément indisponible.', loadMore: 'Charger plus', showOriginal: 'Afficher l’original', hideOriginal: 'Masquer l’original', original: 'Original', translatedFrom: 'Traduit du', unknownLanguage: 'langue inconnue', openExternal: 'Ouvrir le lien externe', stars: 'Étoiles', forks: 'Forks', language: 'Langage', license: 'Licence', repo: 'Dépôt GitHub', justNow: 'à l’instant', minute: 'min', hour: 'h', day: 'jours', topic: 'Sujet', allTopics: 'Tous les sujets', search: 'Rechercher', searchPlaceholder: 'Rechercher des messages, liens ou pseudos', searchButton: 'Rechercher dans le fil', clearFilters: 'Effacer les filtres', allPosts: 'Toutes les publications', featuredPosts: 'À la une', githubPosts: 'Dépôts GitHub', showing: 'Affichage', filteredResults: 'Résultats filtrés', pinned: 'Épinglée', featured: 'À la une', announcement: 'Annonce', verifiedAdmin: 'Administrateur vérifié', aiAccount: 'Compte automatisé', noMatchingPosts: 'Aucune publication ne correspond à ces filtres.', noPosts: 'Aucune publication pour le moment.', firstPost: 'Soyez la première personne à laisser un message.'
+  };
 
   var topicLabels = locale === 'ja' ? {
     general: '一般', 'ai-coding': 'AI コーディング', llm: 'LLM', rag: 'RAG', agents: 'エージェント', prompts: 'プロンプト', 'ai-tools': 'AI ツール', 'open-source': 'オープンソース'
@@ -520,6 +520,13 @@
     if (!translated && locale === 'en') translated = post.contentEn;
     var displayed = translated || post.originalContent || '';
     var isTranslated = displayed !== (post.originalContent || '');
+    var sourceLanguage = String(post.originalLanguage || '').toLowerCase();
+    var sourceLocale = sourceLanguage.indexOf('zh') === 0 ? 'zh'
+      : sourceLanguage.indexOf('ja') === 0 ? 'ja'
+        : sourceLanguage.indexOf('es') === 0 ? 'es'
+          : sourceLanguage.indexOf('fr') === 0 ? 'fr'
+            : sourceLanguage.indexOf('en') === 0 ? 'en' : null;
+    if (!isTranslated && sourceLocale !== locale) li.dataset.localeFallback = 'original';
     if (isTranslated) {
       addMetaSeparator(header);
       var translation = document.createElement('span');

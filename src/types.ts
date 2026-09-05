@@ -53,7 +53,6 @@ export const DISPLAY_TIME_ZONES = [
   'Asia/Shanghai',
   'Asia/Tokyo',
   'Europe/Paris',
-  'Europe/Madrid',
 ] as const;
 export type DisplayTimeZone = typeof DISPLAY_TIME_ZONES[number];
 

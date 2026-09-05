@@ -1,5 +1,5 @@
 // ============================================================
-// Tibo Codex Monitor - Frontend Dashboard (Complete Bilingual)
+// Tibo Codex Monitor - Frontend Dashboard (Complete Five-Locale)
 // ============================================================
 
 const API_BASE = '/api';
@@ -27,6 +27,7 @@ const messages = {
     degraded: 'DEGRADED',
     stale: 'STALE',
     unknown: 'UNKNOWN',
+    statusUnknown: 'Unknown',
     awaitingFirstRun: 'AWAITING FIRST RUN',
 
     // Status cards
@@ -186,6 +187,7 @@ const messages = {
     degraded: '服务降级',
     stale: '数据过期',
     unknown: '未知',
+    statusUnknown: '未知',
     awaitingFirstRun: '等待首次运行',
 
     // Status cards
@@ -331,14 +333,13 @@ const messages = {
   }
 };
 
-// The header language menu exposes all supported locales. The additional
-// dictionaries intentionally inherit the complete English key set so a newly
-// added dashboard string cannot become blank while its translation is added.
-messages.ja = Object.assign({}, messages.en, {
+// The header language menu exposes all supported locales. Each dictionary is
+// explicit so a missing translation cannot silently inherit English.
+messages.ja = {
   siteTitle: 'ModelYard · Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
   siteDescription: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
   intro: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、使用量制限、ポリシー更新を追跡します。各イベントに出典と確認状態を表示します。',
-  monitoring: '監視中', toggleLanguage: '言語を選択', live: '稼働中',
+  monitoring: '監視中', toggleLanguage: '言語を選択', live: '稼働中', notConfigured: '未設定', sourceNotConfigured: 'ソース未設定', classifierNotConfigured: '分類器未設定', degraded: '低下', stale: '古いデータ', unknown: '不明', statusUnknown: '不明', awaitingFirstRun: '初回実行待ち',
   lastReset: '最近のリセット', currentPolicy: '最新ポリシー変更', latestChange: '最新の更新', lastChecked: '最終確認', sourceStatus: '情報源',
   statusAnswerTitle: '現在のリセット状態', statusAnswerLead: 'まず既知の最新リセット状態を確認し、イベントを開いて出典と確認の詳細をご覧ください。', lastConfirmedReset: '最後に確認されたリセット', lastRecordedReset: '最後に記録されたリセット', nextKnownReset: '次に予定されているリセット', checkingLiveStatus: 'リセットの状態を確認中…', viewResetHistory: 'リセット履歴を見る', viewLatestEvent: '最新イベントを見る',
   xDirectSource: 'X 直接ソース', webIndexedSource: 'ウェブ検索インデックス', lastNewPost: '最新の投稿', lastCheckedUnavailable: '確認済みの実行はまだありません', latestEventTitle: '最新イベント',
@@ -350,12 +351,12 @@ messages.ja = Object.assign({}, messages.en, {
   type: '種類', title: 'タイトル', summary: '概要', chineseTitle: '中国語タイトル', englishSummary: '英語の概要', chineseSummary: '中国語の概要', aiSummary: 'AI 概要', originalSource: '元のソース', source: 'ソース', published: '公開日時', beijingTime: 'ニューヨーク時間', resetTime: 'リセット時刻', effectiveTime: '適用時刻', confidence: '信頼度', publishedTimeUnavailable: '公開時刻は不明です', viewOriginal: '元の投稿を見る', verificationStatus: '確認ステータス', firstDiscoveredVia: '最初の発見元', lastVerifiedVia: '最後の確認元',
   sourceNotConfiguredTitle: '公開ソースはまだ接続されていません。', aiClassifierReady: 'AI 分類器の準備完了：', monitoringWillBegin: '公開ソースを接続すると監視が始まります。', footer: '非公式モニター · OpenAI とは提携していません。',
   categoryPlanned: 'リセット予定', categoryCompleted: 'リセット完了', categoryTimeChanged: '時刻変更', categoryPolicy: 'ポリシー変更', resetExpected: 'リセット予定', notAnnounced: '未発表', resetDue: 'リセット時刻', checking: '確認中', ago: '前', secondsAgo: '秒前', minutesAgoShort: '分前', hoursAgoShort: '時間前', daysAgoShort: '日前',
-});
-messages.es = Object.assign({}, messages.en, {
+};
+messages.es = {
   siteTitle: 'ModelYard · Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
   siteDescription: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos públicos, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
   intro: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos, límites y políticas públicas; cada evento incluye su fuente y estado de verificación.',
-  monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'EN DIRECTO',
+  monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'EN DIRECTO', notConfigured: 'NO CONFIGURADO', sourceNotConfigured: 'FUENTE NO CONFIGURADA', classifierNotConfigured: 'CLASIFICADOR NO CONFIGURADO', degraded: 'DEGRADADO', stale: 'DESACTUALIZADO', unknown: 'DESCONOCIDO', statusUnknown: 'Desconocido', awaitingFirstRun: 'A LA ESPERA DE LA PRIMERA EJECUCIÓN',
   lastReset: 'Último restablecimiento', currentPolicy: 'Último cambio de política', latestChange: 'Última actualización', lastChecked: 'Última comprobación', sourceStatus: 'Fuente de información',
   statusAnswerTitle: 'Estado actual del restablecimiento', statusAnswerLead: 'Consulta primero el estado conocido más reciente y abre un evento para ver su fuente y verificación.', lastConfirmedReset: 'Último restablecimiento confirmado', lastRecordedReset: 'Último restablecimiento registrado', nextKnownReset: 'Próximo restablecimiento conocido', checkingLiveStatus: 'Comprobando el estado del restablecimiento…', viewResetHistory: 'Ver historial de restablecimientos', viewLatestEvent: 'Ver el último evento',
   xDirectSource: 'X directo', webIndexedSource: 'Índice web', lastNewPost: 'última publicación', lastCheckedUnavailable: 'Aún no hay comprobaciones correctas', latestEventTitle: 'Último evento',
@@ -367,12 +368,12 @@ messages.es = Object.assign({}, messages.en, {
   type: 'Tipo', title: 'Título', summary: 'Resumen', chineseTitle: 'Título en chino', englishSummary: 'Resumen en inglés', chineseSummary: 'Resumen en chino', aiSummary: 'Resumen de IA', originalSource: 'Fuente original', source: 'Fuente', published: 'Publicado', beijingTime: 'Hora de Nueva York', resetTime: 'Hora del restablecimiento', effectiveTime: 'Hora efectiva', confidence: 'Confianza', publishedTimeUnavailable: 'Hora de publicación no disponible', viewOriginal: 'Ver publicación original', verificationStatus: 'Estado de verificación', firstDiscoveredVia: 'Descubierto inicialmente mediante', lastVerifiedVia: 'Verificado por última vez mediante',
   sourceNotConfiguredTitle: 'Aún no hay una fuente pública conectada.', aiClassifierReady: 'Clasificador de IA listo:', monitoringWillBegin: 'La supervisión comenzará al conectar una fuente pública.', footer: 'Monitor independiente · No afiliado a OpenAI.',
   categoryPlanned: 'Restablecimiento previsto', categoryCompleted: 'Restablecimiento completado', categoryTimeChanged: 'Hora modificada', categoryPolicy: 'Cambio de política', resetExpected: 'Restablecimiento previsto', notAnnounced: 'no anunciado', resetDue: 'restablecimiento pendiente', checking: 'Comprobando', ago: 'hace', secondsAgo: 's', minutesAgoShort: 'min', hoursAgoShort: 'h', daysAgoShort: 'd',
-});
-messages.fr = Object.assign({}, messages.en, {
+};
+messages.fr = {
   siteTitle: 'ModelYard · Suivi des réinitialisations Tibo Codex | Limites et politiques',
   siteDescription: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations publiques, les limites ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
   intro: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations, limites et politiques publiques ; chaque événement inclut sa source et son état de vérification.',
-  monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'EN DIRECT',
+  monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'EN DIRECT', notConfigured: 'NON CONFIGURÉ', sourceNotConfigured: 'SOURCE NON CONFIGURÉE', classifierNotConfigured: 'CLASSIFICATEUR NON CONFIGURÉ', degraded: 'DÉGRADÉ', stale: 'OBSOLÈTE', unknown: 'INCONNU', statusUnknown: 'Inconnu', awaitingFirstRun: 'EN ATTENTE DE LA PREMIÈRE EXÉCUTION',
   lastReset: 'Dernière réinitialisation', currentPolicy: 'Dernier changement de politique', latestChange: 'Dernière mise à jour', lastChecked: 'Dernière vérification', sourceStatus: 'Source d’information',
   statusAnswerTitle: 'État actuel de la réinitialisation', statusAnswerLead: 'Consultez d’abord le dernier état connu, puis ouvrez un événement pour voir sa source et sa vérification.', lastConfirmedReset: 'Dernière réinitialisation confirmée', lastRecordedReset: 'Dernière réinitialisation enregistrée', nextKnownReset: 'Prochaine réinitialisation connue', checkingLiveStatus: 'Vérification de l’état de la réinitialisation…', viewResetHistory: 'Voir l’historique des réinitialisations', viewLatestEvent: 'Voir le dernier événement',
   xDirectSource: 'X direct', webIndexedSource: 'Index web', lastNewPost: 'dernier post', lastCheckedUnavailable: 'Aucune vérification réussie pour le moment', latestEventTitle: 'Dernier événement',
@@ -384,7 +385,7 @@ messages.fr = Object.assign({}, messages.en, {
   type: 'Type', title: 'Titre', summary: 'Résumé', chineseTitle: 'Titre chinois', englishSummary: 'Résumé anglais', chineseSummary: 'Résumé chinois', aiSummary: 'Résumé IA', originalSource: 'Source originale', source: 'Source', published: 'Publié', beijingTime: 'Heure de New York', resetTime: 'Heure de réinitialisation', effectiveTime: 'Heure d’effet', confidence: 'Confiance', publishedTimeUnavailable: 'Heure de publication indisponible', viewOriginal: 'Voir le post original', verificationStatus: 'État de vérification', firstDiscoveredVia: 'Première découverte via', lastVerifiedVia: 'Dernière vérification via',
   sourceNotConfiguredTitle: 'Aucune source publique n’est encore connectée.', aiClassifierReady: 'Classificateur IA prêt :', monitoringWillBegin: 'La surveillance commencera après la connexion d’une source publique.', footer: 'Moniteur indépendant · Non affilié à OpenAI.',
   categoryPlanned: 'Réinitialisation prévue', categoryCompleted: 'Réinitialisation terminée', categoryTimeChanged: 'Heure modifiée', categoryPolicy: 'Changement de politique', resetExpected: 'Réinitialisation prévue', notAnnounced: 'non annoncée', resetDue: 'réinitialisation due', checking: 'Vérification', ago: 'il y a', secondsAgo: 's', minutesAgoShort: 'min', hoursAgoShort: 'h', daysAgoShort: 'j',
-});
+};
 
 // These legacy keys are retained for compatibility with older render paths;
 // their value must follow the page's locale-neutral displayed-time wording.
@@ -433,7 +434,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // --- i18n Core ---
 function t(key) {
   const dict = messages[lang] || messages.en;
-  return dict[key] !== undefined ? dict[key] : (messages.en[key] || key);
+  return dict[key] !== undefined ? dict[key] : key;
 }
 
 function formatMessage(key, values) {

@@ -26,13 +26,13 @@ describe('Timezone Conversion', () => {
       expect(displayTimeZoneForLanguage('zh-CN')).toBe(CHINESE_DISPLAY_TIME_ZONE);
       expect(displayTimeZoneForLanguage('ja')).toBe('Asia/Tokyo');
       expect(displayTimeZoneForLanguage('fr')).toBe('Europe/Paris');
-      expect(displayTimeZoneForLanguage('es')).toBe('Europe/Madrid');
+      expect(displayTimeZoneForLanguage('es')).toBe('America/New_York');
       expect(DEFAULT_TIMEZONE_BY_LOCALE).toEqual({
         en: 'America/New_York',
         zh: 'Asia/Shanghai',
         ja: 'Asia/Tokyo',
         fr: 'Europe/Paris',
-        es: 'Europe/Madrid',
+        es: 'America/New_York',
       });
     });
 
@@ -43,7 +43,7 @@ describe('Timezone Conversion', () => {
         zh: { day: '31', hour: '10', minute: '42' },
         ja: { day: '31', hour: '11', minute: '42' },
         fr: { day: '31', hour: '04', minute: '42' },
-        es: { day: '31', hour: '04', minute: '42' },
+        es: { day: '30', hour: '22', minute: '42' },
       } as const;
 
       for (const locale of ['en', 'zh', 'ja', 'fr', 'es'] as const) {
@@ -62,7 +62,7 @@ describe('Timezone Conversion', () => {
       }
     });
 
-    it('keeps DST behavior in Intl for New York, Paris, and Madrid', () => {
+    it('keeps DST behavior in Intl for New York and Paris', () => {
       for (const locale of ['en', 'fr', 'es'] as const) {
         const winter = formatDateTimeForLocale('2026-01-15T12:00:00.000Z', locale);
         const summer = formatDateTimeForLocale('2026-07-15T12:00:00.000Z', locale);

@@ -11,7 +11,7 @@ export const DEFAULT_TIMEZONE_BY_LOCALE: Record<SiteLocale, DisplayTimeZone> = {
   zh: CHINESE_DISPLAY_TIME_ZONE,
   ja: 'Asia/Tokyo',
   fr: 'Europe/Paris',
-  es: 'Europe/Madrid',
+  es: 'America/New_York',
 };
 
 export function displayTimeZoneForLanguage(lang: SiteLocale | 'en-US' | 'zh-CN'): DisplayTimeZone {

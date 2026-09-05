@@ -28,6 +28,7 @@ import { runGambitDiscovery } from './open-gambit/service';
 import { renderAiDisclosurePage, renderOpenGambitAdminPage, renderOpenGambitArticle, renderOpenGambitLanding } from './open-gambit/renderer';
 import { OpenGambitAnalysisWorkflow } from './open-gambit/workflow-entrypoint';
 import type { GambitPublicArticle } from './open-gambit/types';
+import { AI_DISCLOSURE_PATHS, OPEN_GAMBIT_PATHS, RSS_PATHS } from './site-shell';
 import {
   renderHomepage,
   renderEventPage,
@@ -180,7 +181,7 @@ async function getPublishedGambits(env: Env, limit = 10): Promise<GambitPublicAr
   }
 }
 
-async function buildOpenGambitLandingResponse(env: Env, lang: 'en' | 'zh'): Promise<Response> {
+async function buildOpenGambitLandingResponse(env: Env, lang: SiteLocale): Promise<Response> {
   const html = renderOpenGambitLanding(await getPublishedGambits(env, 10), lang, env.SITE_URL);
   return new Response(html, {
     status: 200,
@@ -191,7 +192,7 @@ async function buildOpenGambitLandingResponse(env: Env, lang: 'en' | 'zh'): Prom
   });
 }
 
-async function buildOpenGambitArticleResponse(env: Env, slug: string, lang: 'en' | 'zh'): Promise<Response> {
+async function buildOpenGambitArticleResponse(env: Env, slug: string, lang: SiteLocale): Promise<Response> {
   if (!/^[a-z0-9][a-z0-9-]{0,95}$/u.test(slug)) {
     return new Response(render404(lang, siteIntegrations(env)), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
   }
@@ -213,7 +214,7 @@ async function buildOpenGambitArticleResponse(env: Env, slug: string, lang: 'en'
   }
 }
 
-function buildAiDisclosureResponse(env: Env, lang: 'en' | 'zh'): Response {
+function buildAiDisclosureResponse(env: Env, lang: SiteLocale): Response {
   return new Response(renderAiDisclosurePage(lang, env.SITE_URL), {
     status: 200,
     headers: {
@@ -310,28 +311,39 @@ app.get('/sitemap.xml', async (c) => {
 });
 
 // ── RSS Feed ──
-app.get('/feed.xml', async (c) => {
+async function buildRssResponse(env: Env, lang: SiteLocale): Promise<Response> {
   try {
-    const repo = new Repository(c.env.DB);
+    const repo = new Repository(env.DB);
     const [eventsResult, manualReset, latestDirectReset] = await Promise.all([
       repo.getEvents({ limit: 20 }),
       repo.getLatestManualResetReport(),
       repo.getLatestDirectResetEvent(),
     ]);
     const visibleManualReset = effectiveManualResetReport(manualReset, latestDirectReset);
-    return c.newResponse(renderRssFeed(eventsResult.data, 'zh', toPublicManualResetReport(visibleManualReset), c.env.SITE_URL), 200, {
-      'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
+    return new Response(renderRssFeed(eventsResult.data, lang, toPublicManualResetReport(visibleManualReset), env.SITE_URL), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/rss+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
+      },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[RSS] Error:', msg);
-    return c.newResponse(renderRssFeed([], 'zh', null, c.env.SITE_URL), 500, {
-      'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'no-store',
+    return new Response(renderRssFeed([], lang, null, env.SITE_URL), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/rss+xml; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
     });
   }
-});
+}
+
+app.get(RSS_PATHS.en, (c) => buildRssResponse(c.env, 'en'));
+for (const locale of SITE_LOCALES.filter(candidate => candidate !== 'en')) {
+  app.get(RSS_PATHS[locale], (c) => buildRssResponse(c.env, locale));
+}
 
 // ── Dynamic robots.txt ──
 app.get('/robots.txt', async (c) => {
@@ -418,18 +430,16 @@ app.get('/admin/open-gambit/', (c) => new Response(renderOpenGambitAdminPage(), 
   },
 }));
 
-app.get('/open-gambit', (c) => c.redirect('/open-gambit/', 301));
-app.get('/open-gambit/', (c) => buildOpenGambitLandingResponse(c.env, 'en'));
-app.get('/open-gambit/:slug', (c) => c.redirect(`/open-gambit/${encodeURIComponent(c.req.param('slug'))}/`, 301));
-app.get('/open-gambit/:slug/', (c) => buildOpenGambitArticleResponse(c.env, c.req.param('slug'), 'en'));
-app.get('/zh/open-gambit', (c) => c.redirect('/zh/open-gambit/', 301));
-app.get('/zh/open-gambit/', (c) => buildOpenGambitLandingResponse(c.env, 'zh'));
-app.get('/zh/open-gambit/:slug', (c) => c.redirect(`/zh/open-gambit/${encodeURIComponent(c.req.param('slug'))}/`, 301));
-app.get('/zh/open-gambit/:slug/', (c) => buildOpenGambitArticleResponse(c.env, c.req.param('slug'), 'zh'));
-app.get('/about/ai', (c) => c.redirect('/about/ai/', 301));
-app.get('/about/ai/', (c) => buildAiDisclosureResponse(c.env, 'en'));
-app.get('/zh/about/ai', (c) => c.redirect('/zh/about/ai/', 301));
-app.get('/zh/about/ai/', (c) => buildAiDisclosureResponse(c.env, 'zh'));
+for (const locale of SITE_LOCALES) {
+  const gambitPath = OPEN_GAMBIT_PATHS[locale];
+  const disclosurePath = AI_DISCLOSURE_PATHS[locale];
+  app.get(gambitPath.slice(0, -1), (c) => c.redirect(gambitPath, 301));
+  app.get(gambitPath, (c) => buildOpenGambitLandingResponse(c.env, locale));
+  app.get(`${gambitPath}:slug`, (c) => c.redirect(`${gambitPath}${encodeURIComponent(c.req.param('slug') || '')}/`, 301));
+  app.get(`${gambitPath}:slug/`, (c) => buildOpenGambitArticleResponse(c.env, c.req.param('slug') || '', locale));
+  app.get(disclosurePath.slice(0, -1), (c) => c.redirect(disclosurePath, 301));
+  app.get(disclosurePath, (c) => buildAiDisclosureResponse(c.env, locale));
+}
 
 async function buildHomepageResponse(env: Env, lang: SiteLocale): Promise<Response> {
   try {
@@ -520,93 +530,10 @@ async function buildLocalizedEventResponse(env: Env, idValue: string, lang: Site
   }
 }
 
-for (const locale of SITE_LOCALES.filter(candidate => candidate !== 'en' && candidate !== 'zh')) {
-  app.get(`/${locale}/events/:id`, (c) => buildLocalizedEventResponse(c.env, c.req.param('id'), locale));
+for (const locale of SITE_LOCALES) {
+  const eventPath = locale === 'en' ? '/events/:id' : `/${locale}/events/:id`;
+  app.get(eventPath, (c) => buildLocalizedEventResponse(c.env, c.req.param('id') || '', locale));
 }
-
-// ── SSR: Event Page (English) ──
-app.get('/events/:id', async (c) => {
-  try {
-    const id = Number(c.req.param('id'));
-    if (isNaN(id) || id <= 0) {
-      return c.newResponse(render404('en', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-    }
-
-    const repo = new Repository(c.env.DB);
-    const event = await repo.getEventById(id);
-    if (!event || event.id === undefined) {
-      return c.newResponse(render404('en', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-    }
-
-    const allEvents = await repo.getEvents({ limit: 100 });
-    const eventIndex = allEvents.data.findIndex((e: MonitorEvent) => e.id !== undefined && e.id === id);
-    const prevEvent = eventIndex > 0 ? allEvents.data[eventIndex - 1] : null;
-    const nextEvent = eventIndex >= 0 && eventIndex < allEvents.data.length - 1
-      ? allEvents.data[eventIndex + 1]
-      : null;
-
-    const relatedEvents = allEvents.data
-      .filter((e: MonitorEvent) => e.id !== id && e.category === event.category)
-      .slice(0, 5);
-
-    const html = renderEventPage({
-      event,
-      prevEvent,
-      nextEvent,
-      relatedEvents,
-    }, 'en', siteIntegrations(c.env));
-
-    const response = c.html(html);
-    response.headers.set('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=60');
-    return response;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[SSR /events/:id] Error:', msg);
-    return c.newResponse(render404('en', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-  }
-});
-
-// ── SSR: Event Page (Chinese) ──
-app.get('/zh/events/:id', async (c) => {
-  try {
-    const id = Number(c.req.param('id'));
-    if (isNaN(id) || id <= 0) {
-      return c.newResponse(render404('zh', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-    }
-
-    const repo = new Repository(c.env.DB);
-    const event = await repo.getEventById(id);
-    if (!event || event.id === undefined) {
-      return c.newResponse(render404('zh', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-    }
-
-    const allEvents = await repo.getEvents({ limit: 100 });
-    const eventIndex = allEvents.data.findIndex((e: MonitorEvent) => e.id !== undefined && e.id === id);
-    const prevEvent = eventIndex > 0 ? allEvents.data[eventIndex - 1] : null;
-    const nextEvent = eventIndex >= 0 && eventIndex < allEvents.data.length - 1
-      ? allEvents.data[eventIndex + 1]
-      : null;
-
-    const relatedEvents = allEvents.data
-      .filter((e: MonitorEvent) => e.id !== id && e.category === event.category)
-      .slice(0, 5);
-
-    const html = renderEventPage({
-      event,
-      prevEvent,
-      nextEvent,
-      relatedEvents,
-    }, 'zh', siteIntegrations(c.env));
-
-    const response = c.html(html);
-    response.headers.set('Cache-Control', 'public, max-age=0, s-maxage=300, stale-while-revalidate=60');
-    return response;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[SSR /zh/events/:id] Error:', msg);
-    return c.newResponse(render404('zh', siteIntegrations(c.env)), 404, { 'Content-Type': 'text/html; charset=utf-8' });
-  }
-});
 
 // ── Static Assets Fallback ──
 app.get('/*', async (c) => {

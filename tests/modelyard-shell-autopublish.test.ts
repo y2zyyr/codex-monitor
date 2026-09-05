@@ -210,7 +210,7 @@ describe('ModelYard shell and Open Gambit automatic publication', () => {
     expect(chineseLanding).not.toContain('AI 运营说明');
     const chineseHomepage = renderHomepage({ events: [], latestEvent: null, lastReset: null, lastPolicy: null, lastCheckedAt: null, totalEvents: 0, gambitArticles: [article] }, 'zh');
     expect(chineseHomepage).toContain('<h2 id="homepageGambitTitle">阳谋</h2>');
-    expect(chineseHomepage).toContain('ANALYSIS · 阳谋');
+    expect(chineseHomepage).toContain('分析 · 阳谋');
     expect(chineseHomepage).not.toContain('<h2 id="homepageGambitTitle">Open Gambit</h2>');
   });
 

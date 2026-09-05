@@ -13,7 +13,7 @@ import { languageLabel } from './community/translation';
 import { SITE_HTML_LANG, SITE_LOCALES, localePath, type SiteLocale } from './i18n';
 import { staticAssetUrl } from './assets';
 import { isEventIndexEligible } from './utils/index-policy';
-import { MODELYARD_BRAND, renderSharedFooter, renderSharedHeader, SITE_BRAND_COPY as SHARED_SITE_BRAND_COPY, PRIMARY_NAV_LABELS as SHARED_PRIMARY_NAV_LABELS } from './site-shell';
+import { AI_DISCLOSURE_PATHS, MODELYARD_BRAND, OPEN_GAMBIT_PATHS, RSS_PATHS, renderSharedFooter, renderSharedHeader, SITE_BRAND_COPY as SHARED_SITE_BRAND_COPY, PRIMARY_NAV_LABELS as SHARED_PRIMARY_NAV_LABELS } from './site-shell';
 import {
   datePartsInTimeZone,
   displayTimeZoneForLanguage,
@@ -44,16 +44,6 @@ const COMMUNITY_PATHS: Record<SiteLocale, string> = {
   ja: '/ja/community/',
   es: '/es/community/',
   fr: '/fr/community/',
-};
-
-const OPEN_GAMBIT_PATHS: Record<'en' | 'zh', string> = {
-  en: '/open-gambit/',
-  zh: '/zh/open-gambit/',
-};
-
-const AI_DISCLOSURE_PATHS: Record<'en' | 'zh', string> = {
-  en: '/about/ai/',
-  zh: '/zh/about/ai/',
 };
 
 const HOMEPAGE_COPY: Record<SiteLocale, { title: string; description: string }> = {
@@ -315,6 +305,127 @@ const CATEGORY_LABELS: Record<SiteLocale, Record<string, string>> = {
   fr: { RESET_PLANNED: 'Réinitialisation prévue', RESET_COMPLETED: 'Réinitialisation terminée', RESET_TIME_CHANGED: 'Heure modifiée', POLICY_CHANGE: 'Changement de politique', CODEX_UPDATE: 'Mise à jour Codex', ROADMAP_HINT: 'Indice de feuille de route', FEATURE_DISCUSSION: 'Discussion de fonctionnalité' },
 };
 
+type LandingUiCopy = {
+  breadcrumb: string;
+  latestStatus: string;
+  latestRecorded: string;
+  primarySource: string;
+  viewReset: string;
+  viewLimits: string;
+  unknownLatest: string;
+  recentEvents: string;
+  howToRead: string;
+  definitionsLead: string;
+  methodology: string;
+  currentStatus: string;
+  latestResetLead: string;
+  unknownReset: string;
+  timeline: string;
+  resetTypes: string;
+  planned: string;
+  completed: string;
+  changed: string;
+  relatedLimits: string;
+  browseLimits: string;
+  faq: string;
+  readMethodology: string;
+  recordedCategories: string;
+  policyCategory: string;
+  changedCategory: string;
+  updates: string;
+  scope: string;
+  scopeText: string;
+  noMatchingEvents: string;
+  noResetEvents: string;
+  updated: string;
+};
+
+const LANDING_UI_COPY: Record<SiteLocale, LandingUiCopy> = {
+  en: {
+    breadcrumb: 'Breadcrumb', latestStatus: 'Latest public status', latestRecorded: 'Latest recorded event', primarySource: 'Primary source:', viewReset: 'View reset history', viewLimits: 'View limit updates', unknownLatest: 'Current status: Unknown; no event is recorded.', recentEvents: 'Recent events', howToRead: 'How to read this page', definitionsLead: 'Definitions for verification, source type, and timestamps are in the', methodology: 'methodology', currentStatus: 'Current status', latestResetLead: 'Latest reset record:', unknownReset: 'Current status: Unknown; no reset events are recorded.', timeline: 'Timeline', resetTypes: 'Reset types recorded', planned: 'planned or announced in the public source.', completed: 'completed in the public source.', changed: 'reset timing changed.', relatedLimits: 'Related limit updates', browseLimits: 'Browse rate-limit and policy updates', faq: 'Read the FAQ', readMethodology: 'Read the methodology', recordedCategories: 'Recorded categories on this page', policyCategory: 'events classified as policy or subscription changes.', changedCategory: 'events classified as reset-time changes.', updates: 'Updates', scope: 'Scope', scopeText: 'Covers 5-hour, weekly, rate, plan, and subscription updates. Open an event for its source and status.', noMatchingEvents: 'No matching events are recorded.', noResetEvents: 'No reset events are recorded.', updated: 'Updated',
+  },
+  zh: {
+    breadcrumb: '面包屑导航', latestStatus: '最新公开状态', latestRecorded: '最近记录的事件', primarySource: '主要来源：', viewReset: '查看重置历史', viewLimits: '查看限额更新', unknownLatest: '当前状态：未知，尚无事件记录。', recentEvents: '最近事件', howToRead: '如何阅读', definitionsLead: '验证状态、来源类型和时间字段的定义见', methodology: '方法论', currentStatus: '当前状态', latestResetLead: '最近的重置记录：', unknownReset: '当前状态：未知，暂无重置事件。', timeline: '时间线', resetTypes: '重置类型', planned: '公开来源中的计划或公告。', completed: '公开来源中的完成公告。', changed: '重置时间发生变化。', relatedLimits: '相关限额更新', browseLimits: '查看限额和政策更新', faq: '查看常见问题', readMethodology: '查看方法论', recordedCategories: '本页包含的分类', policyCategory: '政策或订阅相关的事件分类。', changedCategory: '重置时间变更分类。', updates: '更新', scope: '范围说明', scopeText: '记录涵盖 5 小时、周限额、速率、套餐和订阅更新；打开事件查看来源和状态。', noMatchingEvents: '暂无符合条件的事件。', noResetEvents: '暂无重置事件。', updated: '最近更新',
+  },
+  ja: {
+    breadcrumb: 'パンくずリスト', latestStatus: '最新の公開状況', latestRecorded: '最新の記録イベント', primarySource: '主な出典：', viewReset: 'リセット履歴を見る', viewLimits: '制限の更新を見る', unknownLatest: '現在の状況は不明です。イベントはまだ記録されていません。', recentEvents: '最近のイベント', howToRead: 'このページの見方', definitionsLead: '確認状態、ソース種別、時刻の定義は', methodology: '方法論', currentStatus: '現在の状況', latestResetLead: '最新のリセット記録：', unknownReset: '現在の状況は不明です。リセットイベントはまだ記録されていません。', timeline: 'タイムライン', resetTypes: '記録されるリセット種別', planned: '公開ソースで予定または告知されたもの。', completed: '公開ソースで完了が告知されたもの。', changed: 'リセット時刻が変更されたもの。', relatedLimits: '関連する制限の更新', browseLimits: '制限とポリシーの更新を見る', faq: 'FAQを見る', readMethodology: '方法論を見る', recordedCategories: 'このページの記録カテゴリ', policyCategory: 'ポリシーまたはサブスクリプションの変更として分類されたイベント。', changedCategory: 'リセット時刻の変更として分類されたイベント。', updates: '更新', scope: '対象範囲', scopeText: '5 時間制限、週間制限、レート、プラン、サブスクリプションの更新を扱います。イベントから出典と確認状態を確認できます。', noMatchingEvents: '条件に一致するイベントはありません。', noResetEvents: 'リセットイベントはまだありません。', updated: '更新日時',
+  },
+  fr: {
+    breadcrumb: 'Fil d’Ariane', latestStatus: 'Dernière situation publique', latestRecorded: 'Dernier événement enregistré', primarySource: 'Source principale :', viewReset: 'Voir l’historique des réinitialisations', viewLimits: 'Voir les mises à jour des limites', unknownLatest: 'Situation actuelle inconnue ; aucun événement n’est enregistré.', recentEvents: 'Événements récents', howToRead: 'Comment lire cette page', definitionsLead: 'Les définitions de la vérification, du type de source et des horaires se trouvent dans la', methodology: 'méthodologie', currentStatus: 'Situation actuelle', latestResetLead: 'Dernière réinitialisation enregistrée :', unknownReset: 'Situation actuelle inconnue ; aucune réinitialisation n’est enregistrée.', timeline: 'Chronologie', resetTypes: 'Types de réinitialisation enregistrés', planned: 'prévue ou annoncée dans la source publique.', completed: 'indiquée comme terminée dans la source publique.', changed: 'horaire de réinitialisation modifié.', relatedLimits: 'Mises à jour des limites associées', browseLimits: 'Voir les mises à jour des limites et politiques', faq: 'Lire la FAQ', readMethodology: 'Lire la méthodologie', recordedCategories: 'Catégories enregistrées sur cette page', policyCategory: 'événements classés comme changements de politique ou d’abonnement.', changedCategory: 'événements classés comme changements d’horaire de réinitialisation.', updates: 'Mises à jour', scope: 'Périmètre', scopeText: 'Couvre les limites de 5 heures et hebdomadaires, le débit, les offres et les abonnements. Ouvrez un événement pour voir sa source et son état.', noMatchingEvents: 'Aucun événement correspondant n’est enregistré.', noResetEvents: 'Aucune réinitialisation n’est enregistrée.', updated: 'Mis à jour',
+  },
+  es: {
+    breadcrumb: 'Ruta de navegación', latestStatus: 'Último estado público', latestRecorded: 'Último evento registrado', primarySource: 'Fuente principal:', viewReset: 'Ver historial de restablecimientos', viewLimits: 'Ver actualizaciones de límites', unknownLatest: 'Estado actual desconocido; no hay ningún evento registrado.', recentEvents: 'Eventos recientes', howToRead: 'Cómo leer esta página', definitionsLead: 'Las definiciones de verificación, tipo de fuente y marcas de tiempo están en la', methodology: 'metodología', currentStatus: 'Estado actual', latestResetLead: 'Último restablecimiento registrado:', unknownReset: 'Estado actual desconocido; no hay restablecimientos registrados.', timeline: 'Línea temporal', resetTypes: 'Tipos de restablecimiento registrados', planned: 'previsto o anunciado en la fuente pública.', completed: 'indicado como completado en la fuente pública.', changed: 'hora del restablecimiento modificada.', relatedLimits: 'Actualizaciones de límites relacionadas', browseLimits: 'Ver actualizaciones de límites y políticas', faq: 'Leer las preguntas frecuentes', readMethodology: 'Leer la metodología', recordedCategories: 'Categorías registradas en esta página', policyCategory: 'eventos clasificados como cambios de política o suscripción.', changedCategory: 'eventos clasificados como cambios de hora de restablecimiento.', updates: 'Actualizaciones', scope: 'Alcance', scopeText: 'Incluye límites de 5 horas y semanales, velocidad, planes y suscripciones. Abre un evento para ver su fuente y estado.', noMatchingEvents: 'No hay eventos que coincidan.', noResetEvents: 'No hay restablecimientos registrados.', updated: 'Actualizado',
+  },
+};
+
+const HOMEPAGE_GAMBIT_COPY: Record<SiteLocale, { label: string; title: string; intro: string; viewAll: string; estimate: string }> = {
+  en: { label: 'ANALYSIS · Open Gambit', title: 'Open Gambit', intro: 'Strategic analysis of AI, products and ecosystems, with facts, analysis and AI forecasts kept distinct.', viewAll: 'View all', estimate: 'AI estimate · ~' },
+  zh: { label: '分析 · 阳谋', title: '阳谋', intro: 'AI、产品与生态的战略分析；事实、分析与 AI 走势分开标注。', viewAll: '查看全部', estimate: 'AI 走势 · 约' },
+  ja: { label: '分析 · Open Gambit', title: 'Open Gambit', intro: 'AI、製品、エコシステムの戦略分析。事実、分析、AI 予測を分けて表示します。', viewAll: 'すべて見る', estimate: 'AI 推定 · 約' },
+  fr: { label: 'ANALYSE · Open Gambit', title: 'Open Gambit', intro: 'Analyse stratégique de l’IA, des produits et des écosystèmes, avec faits, analyse et prévisions IA clairement séparés.', viewAll: 'Tout voir', estimate: 'Estimation IA · ~' },
+  es: { label: 'ANÁLISIS · Open Gambit', title: 'Open Gambit', intro: 'Análisis estratégico de IA, productos y ecosistemas, con hechos, análisis y previsiones de IA diferenciados.', viewAll: 'Ver todo', estimate: 'Estimación de IA · ~' },
+};
+
+type FaqCopy = { aria: string; items: Array<[string, string]>; readFull: string; methodology: string; browse: string; history: string; limits: string };
+const FAQ_COPY: Record<SiteLocale, FaqCopy> = {
+  en: { aria: 'Frequently asked questions', items: [['What does this monitor track?', 'It records Tibo’s public Codex updates about usage resets, limit changes, and subscription policy, with the source and status shown for each event.'], ['Is this website official?', 'It is an independent monitor and is not affiliated with OpenAI. Every event links to its original source.'], ['How are OpenAI Codex, ChatGPT, and GPT covered?', 'The monitor groups public updates that mention OpenAI Codex, ChatGPT Work, GPT, usage limits, or related policy terms. It records public events only; it does not read accounts or show live balances.'], ['What is a Codex usage reset?', 'A public post classified as RESET_PLANNED or RESET_COMPLETED. Open the event for its source and details.'], ['What is a 5-hour or weekly limit?', 'The monitor tracks public changes to these limits; current account limits belong on the product page.'], ['What is a banked reset?', 'The monitor keeps the wording used in the original post. Open the event for its source and status.'], ['Where does the data come from?', 'Sources include direct X data, official sources, and web-search index hits. The source type appears on each event.'], ['How are events verified?', 'DIRECT_VERIFIED, OFFICIAL_VERIFIED, and INDEXED_ONLY show the evidence path. See the methodology page for the rules.']], readFull: 'Read the full', methodology: 'methodology and verification rules', browse: 'You can also browse the', history: 'reset history', limits: 'rate-limit updates' },
+  zh: { aria: '常见问题列表', items: [['这个网站监控什么？', '记录 Tibo 公开发布的 Codex 额度重置、限额变化和订阅政策事件；每条事件都显示来源和状态。'], ['这个网站是官方的吗？', '这是独立监控站，与 OpenAI 无隶属关系。每条事件都附原始来源。'], ['OpenAI Codex、ChatGPT 和 GPT 有什么关系？', '这些词用于描述公开帖文中涉及的产品和模型；本站重点记录 Codex 使用额度、ChatGPT Work 限额及相关政策。本站不读取个人账户，也不显示实时余额。'], ['什么是 Codex 使用额度重置？', '公开帖文会被分类为“计划重置”或“重置完成”，详情见事件来源。'], ['5 小时限额或周限额是多少？', '本站记录这类限额的公开变更；当前账户额度请以产品页面为准。'], ['什么是 Banked Reset？', '本站按原帖记录 Banked Reset 的说法，具体含义见原始来源。'], ['数据来自哪里？', '来源包括 X 直接数据、官方来源和网页搜索索引；来源类型会显示在事件上。'], ['事件如何验证？', 'DIRECT_VERIFIED、OFFICIAL_VERIFIED 和 INDEXED_ONLY 表示不同的证据路径；规则见方法论。']], readFull: '查看完整的', methodology: '方法论与验证规则', browse: '也可以浏览', history: '重置历史', limits: '限额更新' },
+  ja: { aria: 'よくある質問', items: [['このモニターは何を追跡しますか？', 'Tibo が公開した Codex の使用量リセット、制限変更、サブスクリプションポリシーを、各イベントの出典と確認状態付きで記録します。'], ['このサイトは公式ですか？', 'OpenAI とは提携していない独立したモニターです。各イベントに原文ソースを付けています。'], ['OpenAI Codex、ChatGPT、GPT はどのように扱われますか？', 'OpenAI Codex、ChatGPT Work、GPT、使用量制限などに触れた公開情報をまとめます。アカウント情報や現在の残量は取得しません。'], ['Codex の使用量リセットとは何ですか？', '公開投稿が RESET_PLANNED または RESET_COMPLETED と分類されたものです。イベントから出典と詳細を確認できます。'], ['5 時間制限や週間制限とは何ですか？', 'これらの制限に関する公開変更を追跡します。個別アカウントの現在の制限は製品ページで確認してください。'], ['Banked Reset とは何ですか？', '原文で使われた表現をそのまま記録します。イベントから出典と状態を確認できます。'], ['データはどこから来ますか？', 'X の直接データ、公式ソース、ウェブ検索インデックスを利用します。ソース種別はイベントに表示されます。'], ['イベントはどう確認されますか？', 'DIRECT_VERIFIED、OFFICIAL_VERIFIED、INDEXED_ONLY が証拠経路を示します。ルールは方法論ページをご覧ください。']], readFull: '詳しい', methodology: '方法論と確認ルール', browse: '次のページもご覧ください：', history: 'リセット履歴', limits: '制限の更新' },
+  fr: { aria: 'Questions fréquentes', items: [['Que suit ce moniteur ?', 'Il consigne les informations publiques de Tibo sur les réinitialisations, les changements de limites et les politiques d’abonnement Codex, avec la source et l’état de chaque événement.'], ['Ce site est-il officiel ?', 'C’est un moniteur indépendant, sans affiliation avec OpenAI. Chaque événement renvoie à sa source originale.'], ['Comment OpenAI Codex, ChatGPT et GPT sont-ils couverts ?', 'Le moniteur regroupe les informations publiques mentionnant OpenAI Codex, ChatGPT Work, GPT, les limites d’utilisation ou des politiques associées. Il ne lit pas les comptes et n’affiche pas les soldes en temps réel.'], ['Qu’est-ce qu’une réinitialisation d’utilisation Codex ?', 'Une publication classée RESET_PLANNED ou RESET_COMPLETED. Ouvrez l’événement pour voir sa source et ses détails.'], ['Qu’est-ce qu’une limite de 5 heures ou hebdomadaire ?', 'Le moniteur suit les changements publics de ces limites ; les limites actuelles d’un compte sont indiquées dans le produit.'], ['Qu’est-ce qu’une réinitialisation bancaire ?', 'Le moniteur conserve les termes de la publication originale. Ouvrez l’événement pour voir sa source et son état.'], ['D’où viennent les données ?', 'Les sources comprennent les données X directes, les sources officielles et les index de recherche web. Le type de source apparaît sur chaque événement.'], ['Comment les événements sont-ils vérifiés ?', 'DIRECT_VERIFIED, OFFICIAL_VERIFIED et INDEXED_ONLY indiquent le parcours de preuve. Consultez la méthodologie pour les règles.']], readFull: 'Lire la', methodology: 'méthodologie et les règles de vérification', browse: 'Vous pouvez aussi consulter', history: 'l’historique des réinitialisations', limits: 'les mises à jour des limites' },
+  es: { aria: 'Preguntas frecuentes', items: [['¿Qué supervisa este monitor?', 'Registra las actualizaciones públicas de Tibo sobre restablecimientos de uso, cambios de límites y políticas de suscripción de Codex, con la fuente y el estado de cada evento.'], ['¿Este sitio web es oficial?', 'Es un monitor independiente y no está afiliado a OpenAI. Cada evento enlaza con su fuente original.'], ['¿Cómo se cubren OpenAI Codex, ChatGPT y GPT?', 'El monitor agrupa información pública sobre OpenAI Codex, ChatGPT Work, GPT, límites de uso y políticas relacionadas. No lee cuentas ni muestra saldos en tiempo real.'], ['¿Qué es un restablecimiento de uso de Codex?', 'Una publicación clasificada como RESET_PLANNED o RESET_COMPLETED. Abre el evento para consultar su fuente y detalles.'], ['¿Qué es un límite de 5 horas o semanal?', 'El monitor sigue los cambios públicos de estos límites; los límites actuales de una cuenta deben consultarse en el producto.'], ['¿Qué es un restablecimiento bancado?', 'El monitor conserva los términos de la publicación original. Abre el evento para ver su fuente y estado.'], ['¿De dónde proceden los datos?', 'Las fuentes incluyen datos directos de X, fuentes oficiales e índices de búsqueda web. El tipo de fuente aparece en cada evento.'], ['¿Cómo se verifican los eventos?', 'DIRECT_VERIFIED, OFFICIAL_VERIFIED e INDEXED_ONLY muestran la ruta de evidencia. Consulta la metodología para conocer las reglas.']], readFull: 'Lee la', methodology: 'metodología y las reglas de verificación', browse: 'También puedes consultar', history: 'el historial de restablecimientos', limits: 'las actualizaciones de límites' },
+};
+
+const METHODOLOGY_COPY: Record<SiteLocale, Array<[string, string]>> = {
+  en: [['Purpose', 'Tracks public Codex limit, reset, rate-limit, and subscription updates. It reports events, not account balances.'], ['Sources', 'Sources include direct X data, official sources, and web-search index hits. Each event keeps its source link and type.'], ['Status', 'DIRECT / OFFICIAL means the corresponding source was obtained; INDEXED_ONLY means it came from a search index and awaits direct source confirmation.'], ['Summaries', 'Titles and summaries may be generated by the classifier and are marked AI summary; the original source is the review path.'], ['Updates', 'Scheduled checks refresh the data and record monitor, source-fetch, and event-verification times separately.'], ['Corrections', 'Later evidence can update an event’s status; dates absent from the source remain Unknown.'], ['Current rules', 'For account limits and current policy, use OpenAI’s official information.']],
+  zh: [['网站用途', '记录公开来源中的 Codex 额度、重置、限额和订阅政策动态。页面展示事件，不读取账户额度。'], ['数据来源', '来源包括 X 直接数据、官方来源和网页搜索索引；每条事件保留来源链接和来源类型。'], ['状态', 'DIRECT / OFFICIAL 表示已取得对应来源；INDEXED_ONLY 表示来自搜索索引，等待直接来源。'], ['摘要', '标题和摘要可能由分类器生成，并标记为 AI summary；原始来源用于复核。'], ['更新时间', '定时检查更新数据，并分别记录监控检查、来源获取和事件验证时间。'], ['更正', '后续证据可以更新事件状态；来源未提供的时间保持未知。'], ['当前规则', '需要账户额度或最新政策时，请查看 OpenAI 官方信息。']],
+  ja: [['目的', '公開された Codex の制限、リセット、レート制限、サブスクリプションの更新を追跡します。アカウント残量ではなくイベントを記録します。'], ['情報源', 'X の直接データ、公式ソース、ウェブ検索インデックスを利用します。各イベントに出典リンクと種別を残します。'], ['状態', 'DIRECT / OFFICIAL は対応するソースを取得済み、INDEXED_ONLY は検索インデックス由来で直接確認を待つ状態です。'], ['要約', 'タイトルと要約は分類器が生成する場合があり、AI summary と表示します。確認には原文ソースを使います。'], ['更新', '定期チェックでデータを更新し、監視、ソース取得、イベント確認の時刻を分けて記録します。'], ['訂正', '後続の証拠でイベント状態を更新できます。ソースにない日付は不明のままです。'], ['現在のルール', 'アカウントの制限や最新ポリシーは OpenAI の公式情報を確認してください。']],
+  fr: [['Objectif', 'Suit les mises à jour publiques des limites, réinitialisations, débits et abonnements Codex. Les événements sont suivis, pas les soldes de comptes.'], ['Sources', 'Les sources comprennent les données X directes, les sources officielles et les index de recherche web. Chaque événement conserve son lien et son type.'], ['État', 'DIRECT / OFFICIAL signifie que la source correspondante a été obtenue ; INDEXED_ONLY indique une source d’index en attente de confirmation directe.'], ['Résumés', 'Les titres et résumés peuvent être générés par le classificateur et portent la mention AI summary ; la source originale sert à la vérification.'], ['Mises à jour', 'Les contrôles planifiés actualisent les données et enregistrent séparément les horaires du moniteur, de la récupération et de la vérification.'], ['Corrections', 'De nouvelles preuves peuvent mettre à jour l’état d’un événement ; les dates absentes de la source restent inconnues.'], ['Règles actuelles', 'Pour les limites d’un compte et la politique actuelle, consultez les informations officielles d’OpenAI.']],
+  es: [['Objetivo', 'Sigue las actualizaciones públicas de límites, restablecimientos, velocidad y suscripciones de Codex. Registra eventos, no saldos de cuentas.'], ['Fuentes', 'Las fuentes incluyen datos directos de X, fuentes oficiales e índices de búsqueda web. Cada evento conserva su enlace y tipo de fuente.'], ['Estado', 'DIRECT / OFFICIAL indica que se obtuvo la fuente correspondiente; INDEXED_ONLY procede de un índice y espera confirmación directa.'], ['Resúmenes', 'El clasificador puede generar títulos y resúmenes, marcados como AI summary; la fuente original permite revisarlos.'], ['Actualizaciones', 'Las comprobaciones programadas actualizan los datos y registran por separado las horas del monitor, de obtención y de verificación.'], ['Correcciones', 'Las pruebas posteriores pueden actualizar el estado de un evento; las fechas ausentes en la fuente siguen siendo desconocidas.'], ['Reglas actuales', 'Para los límites de una cuenta y la política vigente, consulta la información oficial de OpenAI.']],
+};
+
+type EventDetailCopy = {
+  unknown: string;
+  pending: string;
+  whatChanged: string;
+  verification: string;
+  sourceType: string;
+  status: string;
+  foundVia: string;
+  verifiedVia: string;
+  summary: string;
+  aiSummary: string;
+  meaning: string;
+  type: string;
+  eventDates: string;
+  published: string;
+  observed: string;
+  lastVerified: string;
+  effective: string;
+  resetTime: string;
+  recordUpdated: string;
+  originalSource: string;
+  evidence: string;
+  source: string;
+  viewOriginal: string;
+  openSource: string;
+  confidence: string;
+  related: string;
+  topicPrefix: string;
+  context: string;
+  contextLead: string;
+  topicTimeline: string;
+  eventChronology: string;
+  home: string;
+};
+
+const EVENT_DETAIL_COPY: Record<SiteLocale, EventDetailCopy> = {
+  en: { unknown: 'Unknown', pending: 'Pending verification', whatChanged: 'What Changed', verification: 'Verification', sourceType: 'Source type', status: 'Status', foundVia: 'Found via', verifiedVia: 'Verified via', summary: 'Summary', aiSummary: 'AI summary', meaning: 'What does this mean?', type: 'Type', eventDates: 'Event dates', published: 'Published', observed: 'Observed', lastVerified: 'Last verified', effective: 'Effective', resetTime: 'Reset time', recordUpdated: 'Record updated', originalSource: 'Original Source', evidence: 'Evidence', source: 'Source', viewOriginal: 'View Original', openSource: 'Open source', confidence: 'Confidence', related: 'More events in this category', topicPrefix: 'Topic: ', context: 'Historical context', contextLead: 'See the previous/next events or the', topicTimeline: 'topic timeline', eventChronology: 'Event chronology', home: 'Home' },
+  zh: { unknown: '未知', pending: '待验证', whatChanged: '变更内容', verification: '验证', sourceType: '来源类型', status: '状态', foundVia: '发现方式', verifiedVia: '验证方式', summary: '摘要', aiSummary: 'AI 摘要', meaning: '这意味着什么？', type: '类型', eventDates: '时间', published: '发布时间', observed: '观察时间', lastVerified: '最近验证', effective: '生效时间', resetTime: '重置时间', recordUpdated: '记录更新时间', originalSource: '原始来源', evidence: '证据', source: '来源', viewOriginal: '查看原帖', openSource: '打开来源', confidence: '置信度', related: '同类型事件', topicPrefix: '主题入口：', context: '历史上下文', contextLead: '查看前后事件或', topicTimeline: '主题时间线', eventChronology: '事件时间顺序', home: '首页' },
+  ja: { unknown: '不明', pending: '確認待ち', whatChanged: '変更内容', verification: '確認', sourceType: 'ソース種別', status: '状態', foundVia: '発見経路', verifiedVia: '確認経路', summary: '概要', aiSummary: 'AI 要約', meaning: 'これは何を意味しますか？', type: '種別', eventDates: 'イベントの日時', published: '公開日', observed: '観測日時', lastVerified: '最終確認', effective: '適用日時', resetTime: 'リセット日時', recordUpdated: '記録の更新', originalSource: '原文ソース', evidence: '証拠', source: 'ソース', viewOriginal: '原文を見る', openSource: 'ソースを開く', confidence: '確度', related: '同じカテゴリのイベント', topicPrefix: 'トピック：', context: '過去の経緯', contextLead: '前後のイベント、または', topicTimeline: 'トピックのタイムライン', eventChronology: 'イベントの時系列', home: 'ホーム' },
+  fr: { unknown: 'Inconnu', pending: 'Vérification en attente', whatChanged: 'Ce qui a changé', verification: 'Vérification', sourceType: 'Type de source', status: 'État', foundVia: 'Trouvé via', verifiedVia: 'Vérifié via', summary: 'Résumé', aiSummary: 'Résumé IA', meaning: 'Qu’est-ce que cela signifie ?', type: 'Type', eventDates: 'Dates de l’événement', published: 'Publication', observed: 'Observation', lastVerified: 'Dernière vérification', effective: 'Prise d’effet', resetTime: 'Heure de réinitialisation', recordUpdated: 'Mise à jour du registre', originalSource: 'Source originale', evidence: 'Preuve', source: 'Source', viewOriginal: 'Voir l’original', openSource: 'Ouvrir la source', confidence: 'Confiance', related: 'Autres événements de cette catégorie', topicPrefix: 'Sujet : ', context: 'Contexte historique', contextLead: 'Consultez les événements précédents et suivants ou la', topicTimeline: 'chronologie du sujet', eventChronology: 'Chronologie des événements', home: 'Accueil' },
+  es: { unknown: 'Desconocido', pending: 'Verificación pendiente', whatChanged: 'Qué ha cambiado', verification: 'Verificación', sourceType: 'Tipo de fuente', status: 'Estado', foundVia: 'Descubierto mediante', verifiedVia: 'Verificado mediante', summary: 'Resumen', aiSummary: 'Resumen de IA', meaning: '¿Qué significa esto?', type: 'Tipo', eventDates: 'Fechas del evento', published: 'Publicado', observed: 'Observado', lastVerified: 'Última verificación', effective: 'Vigente', resetTime: 'Hora del restablecimiento', recordUpdated: 'Registro actualizado', originalSource: 'Fuente original', evidence: 'Evidencia', source: 'Fuente', viewOriginal: 'Ver original', openSource: 'Abrir fuente', confidence: 'Confianza', related: 'Más eventos de esta categoría', topicPrefix: 'Tema: ', context: 'Contexto histórico', contextLead: 'Consulta los eventos anterior y siguiente o la', topicTimeline: 'línea temporal del tema', eventChronology: 'Cronología del evento', home: 'Inicio' },
+};
+
 export interface SiteIntegrations {
   /** Canonical first-party origin for this deployment, including staging. */
   siteUrl?: string;
@@ -506,13 +617,18 @@ function getTopicPath(category: string, lang: SiteLocale): string {
 }
 
 function getTopicLabel(category: string, lang: SiteLocale): string {
+  const labels = {
+    rate: { en: 'Rate limit updates', zh: '限额更新', ja: '制限の更新', fr: 'Mises à jour des limites', es: 'Actualizaciones de límites' },
+    reset: { en: 'Reset history', zh: '重置历史', ja: 'リセット履歴', fr: 'Historique des réinitialisations', es: 'Historial de restablecimientos' },
+    latest: { en: 'Latest updates', zh: '最新动态', ja: '最新情報', fr: 'Dernières infos', es: 'Últimas novedades' },
+  } as const;
   if (category === 'POLICY_CHANGE' || category === 'RESET_TIME_CHANGED') {
-    return lang === 'zh' ? '限额更新' : 'Rate limit updates';
+    return labels.rate[lang];
   }
   if (category === 'RESET_PLANNED' || category === 'RESET_COMPLETED') {
-    return lang === 'zh' ? '重置历史' : 'Reset history';
+    return labels.reset[lang];
   }
-  return lang === 'zh' ? '最新动态' : 'Latest updates';
+  return labels.latest[lang];
 }
 
 function getEventUrl(id: number, lang: SiteLocale): string {
@@ -676,7 +792,51 @@ interface EventPageData {
   relatedEvents: MonitorEvent[];
 }
 
-type CommunityCopy = Record<string, string>;
+interface CommunityCopy {
+  title: string;
+  description: string;
+  lede: string;
+  breadcrumb: string;
+  composerTitle: string;
+  nickname: string;
+  content: string;
+  topic: string;
+  allTopics: string;
+  topicGeneral: string;
+  nicknamePlaceholder: string;
+  contentPlaceholder: string;
+  contentHint: string;
+  post: string;
+  postingDisabled: string;
+  feedTitle: string;
+  noPosts: string;
+  firstPost: string;
+  noMatchingPosts: string;
+  search: string;
+  searchPlaceholder: string;
+  searchButton: string;
+  clearFilters: string;
+  allPosts: string;
+  featuredPosts: string;
+  githubPosts: string;
+  showing: string;
+  filteredResults: string;
+  pinned: string;
+  featured: string;
+  announcement: string;
+  verifiedAdmin: string;
+  aiAccount: string;
+  translatedFrom: string;
+  showOriginal: string;
+  hideOriginal: string;
+  original: string;
+  loadMore: string;
+  loading: string;
+  unableToLoad: string;
+  unableToPost: string;
+  securityCheck: string;
+  privacyNote: string;
+}
 
 const COMMUNITY_COPY: Record<SiteLocale, CommunityCopy> = {
   en: {
@@ -933,6 +1093,16 @@ function communityLanguageLabel(language: string, lang: SiteLocale): string {
   return COMMUNITY_LANGUAGE_LABELS[lang][language] || (lang === 'zh' ? language : languageLabel(language));
 }
 
+function communitySourceLocale(language: string): SiteLocale | null {
+  const normalized = String(language || '').toLowerCase();
+  if (normalized.startsWith('zh')) return 'zh';
+  if (normalized.startsWith('ja')) return 'ja';
+  if (normalized.startsWith('es')) return 'es';
+  if (normalized.startsWith('fr')) return 'fr';
+  if (normalized.startsWith('en')) return 'en';
+  return null;
+}
+
 function communityTopicLabel(topic: CommunityTopic, lang: SiteLocale): string {
   return COMMUNITY_TOPIC_LABELS[topic][lang];
 }
@@ -1173,10 +1343,11 @@ function renderCommunityPost(post: PublicCommunityPost, lang: SiteLocale): strin
     || (isZh ? post.contentZh : lang === 'en' ? post.contentEn : null);
   const displayed = translated || post.originalContent;
   const isTranslated = displayed !== post.originalContent;
+  const usesLocaleFallback = !isTranslated && communitySourceLocale(post.originalLanguage) !== lang;
   const originalId = 'community-original-' + post.id;
   const embeds = post.embeds.map(embed => renderCommunityEmbed(embed, lang)).filter(Boolean).join('\n');
   return [
-    '<li class="community-post" data-post-id="' + post.id + '">',
+    '<li class="community-post" data-post-id="' + post.id + '"' + (usesLocaleFallback ? ' data-locale-fallback="original"' : '') + '>',
     '  <article>',
     '    <div class="community-post-badges">',
     '      <span class="community-topic-badge">' + escapeHtml(communityTopicLabel(topic, lang)) + '</span>',
@@ -1242,7 +1413,6 @@ function communityClientPost(post: PublicCommunityPost): Record<string, unknown>
 }
 
 function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
-  const isZh = meta.lang === 'zh';
   const brandCopy = SITE_BRAND_COPY[meta.lang];
   const ogImage = meta.ogImage || SITE_URL + staticAssetUrl('og-default.png');
   const langAttr = SITE_HTML_LANG[meta.lang];
@@ -1300,7 +1470,7 @@ function renderHead(meta: SeoMeta, integrations?: SiteIntegrations): string {
     '  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">',
     '  <link rel="icon" type="image/svg+xml" href="' + staticAssetUrl('favicon.svg') + '">',
     '  <link rel="alternate icon" href="' + staticAssetUrl('favicon.ico') + '">',
-    '  <link rel="alternate" type="application/rss+xml" title="' + escapeHtml(brandCopy.rssTitle) + '" href="' + SITE_URL + '/feed.xml">',
+    '  <link rel="alternate" type="application/rss+xml" title="' + escapeHtml(brandCopy.rssTitle) + '" href="' + SITE_URL + RSS_PATHS[meta.lang] + '">',
     '  <script src="' + staticAssetUrl('locale-time.js') + '" defer></script>',
     '  <script src="' + staticAssetUrl('local-time.js') + '" defer></script>',
     '  <script src="' + staticAssetUrl('analytics.js') + '" defer></script>',
@@ -1527,9 +1697,16 @@ function eventSummary(event: MonitorEvent, lang: SiteLocale): string {
 }
 
 function eventHasLocalizedContent(event: MonitorEvent, lang: SiteLocale): boolean {
-  if (lang === 'en' || lang === 'zh') return true;
+  // Every locale has a valid public route. Missing generated translations use
+  // the canonical English record and are marked in the rendered DOM instead of
+  // silently removing the event from indexes or navigation.
+  return Boolean(event.id) && Boolean(lang);
+}
+
+function eventUsesLocaleFallback(event: MonitorEvent, lang: SiteLocale): boolean {
+  if (lang === 'en' || lang === 'zh') return false;
   const translation = event.translations?.[lang];
-  return translation?.status === 'translated' && Boolean(translation.title && translation.summary);
+  return !(translation?.status === 'translated' && Boolean(translation.title && translation.summary));
 }
 
 function eventAlternatePaths(event: MonitorEvent): Partial<Record<SiteLocale, string>> {
@@ -1541,26 +1718,32 @@ function eventAlternatePaths(event: MonitorEvent): Partial<Record<SiteLocale, st
 }
 
 function eventDateMarkup(iso: string | null | undefined, lang: SiteLocale, className = 'event-date'): string {
-  const fallback = iso ? formatDateForLanguage(iso, lang) : (lang === 'zh' ? '未知' : 'Unknown');
+  const fallback = iso ? formatDateForLanguage(iso, lang) : ({ en: 'Unknown', zh: '未知', ja: '不明', fr: 'Inconnue', es: 'Desconocida' }[lang]);
   return localTimeElement(iso, fallback, className);
 }
 
 function renderEventTrustFacts(event: MonitorEvent, lang: SiteLocale): string {
-  const isZh = lang === 'zh';
-  const unknown = isZh ? '未知' : 'Unknown';
-  const pending = isZh ? '待验证' : 'Pending verification';
+  const copy = {
+    en: { verification: 'Verification status', source: 'Source type', published: 'Published', observed: 'Observed', verified: 'Last verified', confidence: 'Confidence', discovered: 'Discovered via', unknown: 'Unknown', pending: 'Pending verification' },
+    zh: { verification: '验证状态', source: '来源类型', published: '发布时间', observed: '观察时间', verified: '最近验证', confidence: '置信度', discovered: '发现方式', unknown: '未知', pending: '待验证' },
+    ja: { verification: '確認状態', source: 'ソース種別', published: '公開日', observed: '観測日時', verified: '最終確認', confidence: '確度', discovered: '発見経路', unknown: '不明', pending: '確認待ち' },
+    fr: { verification: 'État de vérification', source: 'Type de source', published: 'Publication', observed: 'Observation', verified: 'Dernière vérification', confidence: 'Confiance', discovered: 'Découvert via', unknown: 'Inconnu', pending: 'Vérification en attente' },
+    es: { verification: 'Estado de verificación', source: 'Tipo de fuente', published: 'Publicado', observed: 'Observado', verified: 'Última verificación', confidence: 'Confianza', discovered: 'Descubierto mediante', unknown: 'Desconocido', pending: 'Verificación pendiente' },
+  }[lang];
+  const unknown = copy.unknown;
+  const pending = copy.pending;
   const verified = event.verified_at
     ? eventDateMarkup(event.verified_at, lang, 'trust-time')
     : escapeHtml(pending);
   return [
     '<dl class="trust-facts">',
-    '  <div><dt>' + (isZh ? '验证状态' : 'Verification status') + '</dt><dd><code>' + escapeHtml(getVerificationStatusCode(event)) + '</code> · ' + escapeHtml(getVerificationLabel(event, lang)) + '</dd></div>',
-    '  <div><dt>' + (isZh ? '来源类型' : 'Source type') + '</dt><dd><span class="source-quality-badge ' + sourceQualityClass(event) + '">' + escapeHtml(getSourceQualityLabel(event, lang)) + '</span></dd></div>',
-    '  <div><dt>' + (isZh ? '发布时间' : 'Published') + '</dt><dd>' + eventDateMarkup(event.published_at, lang, 'trust-time') + '</dd></div>',
-    '  <div><dt>' + (isZh ? '观察时间' : 'Observed') + '</dt><dd>' + eventDateMarkup(event.observed_at, lang, 'trust-time') + '</dd></div>',
-    '  <div><dt>' + (isZh ? '最近验证' : 'Last verified') + '</dt><dd>' + verified + '</dd></div>',
-    '  <div><dt>' + (isZh ? '置信度' : 'Confidence') + '</dt><dd>' + Math.round(event.confidence * 100) + '%</dd></div>',
-    '  <div><dt>' + (isZh ? '发现方式' : 'Discovered via') + '</dt><dd>' + escapeHtml(event.first_discovered_via || unknown) + '</dd></div>',
+    '  <div><dt>' + copy.verification + '</dt><dd><code>' + escapeHtml(getVerificationStatusCode(event)) + '</code> · ' + escapeHtml(getVerificationLabel(event, lang)) + '</dd></div>',
+    '  <div><dt>' + copy.source + '</dt><dd><span class="source-quality-badge ' + sourceQualityClass(event) + '">' + escapeHtml(getSourceQualityLabel(event, lang)) + '</span></dd></div>',
+    '  <div><dt>' + copy.published + '</dt><dd>' + eventDateMarkup(event.published_at, lang, 'trust-time') + '</dd></div>',
+    '  <div><dt>' + copy.observed + '</dt><dd>' + eventDateMarkup(event.observed_at, lang, 'trust-time') + '</dd></div>',
+    '  <div><dt>' + copy.verified + '</dt><dd>' + verified + '</dd></div>',
+    '  <div><dt>' + copy.confidence + '</dt><dd>' + Math.round(event.confidence * 100) + '%</dd></div>',
+    '  <div><dt>' + copy.discovered + '</dt><dd>' + escapeHtml(event.first_discovered_via || unknown) + '</dd></div>',
     '</dl>',
   ].join('\n');
 }
@@ -1569,52 +1752,52 @@ function renderLandingEventItem(event: MonitorEvent, lang: SiteLocale, headingLe
   const title = eventTitle(event, lang);
   const summary = eventSummary(event, lang);
   const heading = 'h' + headingLevel;
+  const ui = LANDING_UI_COPY[lang];
   const source = event.source_url
-    ? '<a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + (lang === 'zh' ? '查看来源' : 'View source') + '</a>'
-    : '<span>' + (lang === 'zh' ? '来源未知' : 'Source unknown') + '</span>';
+    ? '<a href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + (lang === 'zh' ? '查看来源' : lang === 'ja' ? 'ソースを見る' : lang === 'fr' ? 'Voir la source' : lang === 'es' ? 'Ver la fuente' : 'View source') + '</a>'
+    : '<span>' + (lang === 'zh' ? '来源未知' : lang === 'ja' ? 'ソース不明' : lang === 'fr' ? 'Source inconnue' : lang === 'es' ? 'Fuente desconocida' : 'Source unknown') + '</span>';
   return [
-    '<li class="landing-event-item">',
+    '<li class="landing-event-item"' + (eventUsesLocaleFallback(event, lang) ? ' data-locale-fallback="en"' : '') + '>',
     '  <div class="landing-event-meta"><span class="category-badge category-' + event.category + '">' + escapeHtml(getCategoryLabel(event.category, lang)) + '</span><span class="source-quality-badge ' + sourceQualityClass(event) + '">' + escapeHtml(getSourceQualityLabel(event, lang)) + '</span><span>' + eventDateMarkup(event.published_at, lang) + '</span></div>',
     '  <' + heading + '><a href="' + getEventUrl(event.id!, lang) + '">' + escapeHtml(title) + '</a></' + heading + '>',
     '  <p>' + escapeHtml(summary) + '</p>',
-    '  <p class="landing-event-source"><span>' + escapeHtml((lang === 'zh' ? '验证：' : 'Verification: ') + getVerificationLabel(event, lang)) + '</span> · ' + source + '</p>',
+    '  <p class="landing-event-source"><span>' + escapeHtml(({ en: 'Verification: ', zh: '验证：', ja: '確認：', fr: 'Vérification : ', es: 'Verificación: ' }[lang]) + getVerificationLabel(event, lang)) + '</span> · ' + source + '</p>',
     '</li>',
   ].join('\n');
 }
 
 function renderLandingEventList(events: MonitorEvent[], lang: SiteLocale, headingLevel: 3 | 4 = 3): string {
   if (events.length === 0) {
-    return '<p class="empty-state">' + (lang === 'zh' ? '暂无符合条件的事件。' : 'No matching events are recorded.') + '</p>';
+    return '<p class="empty-state">' + LANDING_UI_COPY[lang].noMatchingEvents + '</p>';
   }
   return '<ol class="landing-event-list">' + events.map(event => renderLandingEventItem(event, lang, headingLevel)).join('\n') + '</ol>';
 }
 
 function renderLandingFreshness(data: LandingPageData, lang: SiteLocale): string {
   const updatedAt = data.lastCheckedAt || data.sourceLastFetchedAt || null;
-  const isZh = lang === 'zh';
   return [
     '<dl class="freshness-facts">',
-    '  <div><dt>' + (isZh ? '最近更新' : 'Updated') + '</dt><dd>' + eventDateMarkup(updatedAt, lang, 'trust-time') + '</dd></div>',
+    '  <div><dt>' + LANDING_UI_COPY[lang].updated + '</dt><dd>' + eventDateMarkup(updatedAt, lang, 'trust-time') + '</dd></div>',
     '</dl>',
   ].join('\n');
 }
 
 function renderResetTimeline(events: MonitorEvent[], lang: SiteLocale): string {
-  if (events.length === 0) return '<p class="empty-state">' + (lang === 'zh' ? '暂无重置事件。' : 'No reset events are recorded.') + '</p>';
+  if (events.length === 0) return '<p class="empty-state">' + LANDING_UI_COPY[lang].noResetEvents + '</p>';
 
   const timeZone = displayTimeZoneForLanguage(lang);
   const groups: Array<{ year: string; month: string; events: MonitorEvent[] }> = [];
   for (const event of events) {
     const date = event.published_at ? parseStoredUtc(event.published_at) : null;
     const parts = date ? datePartsInTimeZone(date, timeZone) : null;
-    const year = parts ? parts.year : (lang === 'zh' ? '未知年份' : 'Unknown year');
+    const year = parts ? parts.year : ({ en: 'Unknown year', zh: '未知年份', ja: '不明な年', fr: 'Année inconnue', es: 'Año desconocido' }[lang]);
     const month = parts
       ? (lang === 'zh'
         ? String(Number(parts.month)) + '月'
         : (date
           ? new Intl.DateTimeFormat(SITE_HTML_LANG[lang], { timeZone, month: 'long' }).format(date)
-          : 'Unknown month'))
-      : (lang === 'zh' ? '未知月份' : 'Unknown month');
+          : ({ en: 'Unknown month', zh: '未知月份', ja: '不明な月', fr: 'Mois inconnu', es: 'Mes desconocido' }[lang])))
+      : ({ en: 'Unknown month', zh: '未知月份', ja: '不明な月', fr: 'Mois inconnu', es: 'Mes desconocido' }[lang]);
     let group = groups.find(candidate => candidate.year === year && candidate.month === month);
     if (!group) {
       group = { year, month, events: [] };
@@ -1641,62 +1824,22 @@ function renderFaqContent(lang: SiteLocale): string {
   const methodologyPath = getLandingPath('methodology', lang);
   const historyPath = getLandingPath('reset-history', lang);
   const ratePath = getLandingPath('rate-limit-updates', lang);
-  const items = lang === 'zh'
-    ? [
-      ['这个网站监控什么？', '记录 Tibo 公开发布的 Codex 额度重置、限额变化和订阅政策事件；每条事件都显示来源和状态。'],
-      ['这个网站是官方的吗？', '这是独立监控站，与 OpenAI 无隶属关系。每条事件都附原始来源。'],
-      ['OpenAI Codex、ChatGPT 和 GPT 有什么关系？', '这些词用于描述公开帖文中涉及的产品和模型；本站重点记录 Codex 使用额度、ChatGPT Work 限额及相关政策。本站不读取个人账户，也不显示实时余额。'],
-      ['什么是 Codex 使用额度重置？', '公开帖文会被分类为“计划重置”或“重置完成”，详情见事件来源。'],
-      ['5 小时限额或周限额是多少？', '本站记录这类限额的公开变更；当前账户额度请以产品页面为准。'],
-      ['什么是 Banked Reset？', '本站按原帖记录 Banked Reset 的说法，具体含义见原始来源。'],
-      ['数据来自哪里？', '来源包括 X 直接数据、官方来源和网页搜索索引；来源类型会显示在事件上。'],
-      ['事件如何验证？', 'DIRECT_VERIFIED、OFFICIAL_VERIFIED 和 INDEXED_ONLY 表示不同的证据路径；规则见方法论。'],
-    ]
-    : [
-      ['What does this monitor track?', 'It records Tibo’s public Codex updates about usage resets, limit changes, and subscription policy, with the source and status shown for each event.'],
-      ['Is this website official?', 'It is an independent monitor and is not affiliated with OpenAI. Every event links to its original source.'],
-      ['How are OpenAI Codex, ChatGPT, and GPT covered?', 'The monitor groups public updates that mention OpenAI Codex, ChatGPT Work, GPT, usage limits, or related policy terms. It records public events only; it does not read accounts or show live balances.'],
-      ['What is a Codex usage reset?', 'A public post classified as RESET_PLANNED or RESET_COMPLETED. Open the event for its source and details.'],
-      ['What is a 5-hour or weekly limit?', 'The monitor tracks public changes to these limits; current account limits belong on the product page.'],
-      ['What is a banked reset?', 'The monitor keeps the wording used in the original post. Open the event for its source and status.'],
-      ['Where does the data come from?', 'Sources include direct X data, official sources, and web-search index hits. The source type appears on each event.'],
-      ['How are events verified?', 'DIRECT_VERIFIED, OFFICIAL_VERIFIED, and INDEXED_ONLY show the evidence path. See the methodology page for the rules.'],
-    ];
+  const copy = FAQ_COPY[lang];
   return [
-    '<section class="faq-list" aria-label="' + (lang === 'zh' ? '常见问题列表' : 'Frequently asked questions') + '">',
-    ...items.map(([question, answer]) => [
+    '<section class="faq-list" aria-label="' + escapeHtml(copy.aria) + '">',
+    ...copy.items.map(([question, answer]) => [
       '  <section class="faq-item">',
       '    <h2>' + escapeHtml(question) + '</h2>',
       '    <p>' + escapeHtml(answer) + '</p>',
       '  </section>',
     ].join('\n')),
     '</section>',
-    '<p class="cross-link">' + (lang === 'zh' ? '查看完整的' : 'Read the full ') + '<a href="' + methodologyPath + '">' + (lang === 'zh' ? '方法论与验证规则' : 'methodology and verification rules') + '</a>。' + (lang === 'zh' ? '也可以浏览' : ' You can also browse the ') + '<a href="' + historyPath + '">' + (lang === 'zh' ? '重置历史' : 'reset history') + '</a> ' + (lang === 'zh' ? '和' : 'and') + ' <a href="' + ratePath + '">' + (lang === 'zh' ? '限额更新' : 'rate-limit updates') + '</a>。</p>',
+    '<p class="cross-link">' + copy.readFull + ' <a href="' + methodologyPath + '">' + copy.methodology + '</a>。 ' + copy.browse + ' <a href="' + historyPath + '">' + copy.history + '</a> ' + (lang === 'zh' ? '和' : lang === 'ja' ? '、' : lang === 'fr' ? 'et ' : lang === 'es' ? 'y ' : 'and ') + '<a href="' + ratePath + '">' + copy.limits + '</a>。</p>',
   ].join('\n');
 }
 
 function renderMethodologyContent(lang: SiteLocale): string {
-  const isZh = lang === 'zh';
-  const sections = isZh
-    ? [
-      ['网站用途', '记录公开来源中的 Codex 额度、重置、限额和订阅政策动态。页面展示事件，不读取账户额度。'],
-      ['数据来源', '来源包括 X 直接数据、官方来源和网页搜索索引；每条事件保留来源链接和来源类型。'],
-      ['状态', 'DIRECT / OFFICIAL 表示已取得对应来源；INDEXED_ONLY 表示来自搜索索引，等待直接来源。'],
-      ['摘要', '标题和摘要可能由分类器生成，并标记为 AI summary；原始来源用于复核。'],
-      ['更新时间', '定时检查更新数据，并分别记录监控检查、来源获取和事件验证时间。'],
-      ['更正', '后续证据可以更新事件状态；来源未提供的时间保持未知。'],
-      ['当前规则', '需要账户额度或最新政策时，请查看 OpenAI 官方信息。'],
-    ]
-    : [
-      ['Purpose', 'Tracks public Codex limit, reset, rate-limit, and subscription updates. It reports events, not account balances.'],
-      ['Sources', 'Sources include direct X data, official sources, and web-search index hits. Each event keeps its source link and type.'],
-      ['Status', 'DIRECT / OFFICIAL means the corresponding source was obtained; INDEXED_ONLY means it came from a search index and awaits direct source confirmation.'],
-      ['Summaries', 'Titles and summaries may be generated by the classifier and are marked AI summary; the original source is the review path.'],
-      ['Updates', 'Scheduled checks refresh the data and record monitor, source-fetch, and event-verification times separately.'],
-      ['Corrections', 'Later evidence can update an event’s status; dates absent from the source remain Unknown.'],
-      ['Current rules', 'For account limits and current policy, use OpenAI’s official information.'],
-    ];
-  return sections.map(([heading, text]) => [
+  return METHODOLOGY_COPY[lang].map(([heading, text]) => [
     '<section class="methodology-section">',
     '  <h2>' + escapeHtml(heading) + '</h2>',
     '  <p>' + escapeHtml(text) + '</p>',
@@ -1705,7 +1848,7 @@ function renderMethodologyContent(lang: SiteLocale): string {
 }
 
 export function renderLandingPage(data: LandingPageData, lang: SiteLocale, integrations?: SiteIntegrations): string {
-  const isZh = lang === 'zh';
+  const ui = LANDING_UI_COPY[lang];
   const copy = LANDING_COPY[data.page][lang];
   const events = data.events;
   const latestEvent = data.latestEvent || events[0] || null;
@@ -1736,72 +1879,72 @@ export function renderLandingPage(data: LandingPageData, lang: SiteLocale, integ
   if (data.page === 'latest') {
     content = [
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '最新公开状态' : 'Latest public status') + '</h2>',
+      '  <h2>' + ui.latestStatus + '</h2>',
       latestEvent
         ? [
           '  <div class="trust-panel">',
-          '    <h3>' + (isZh ? '最近记录的事件' : 'Latest recorded event') + '</h3>',
+          '    <h3>' + ui.latestRecorded + '</h3>',
           '    <p class="featured-event-title"><a href="' + getEventUrl(latestEvent.id!, lang) + '">' + escapeHtml(eventPageHeadline(latestEvent, lang)) + '</a></p>',
           '    <p class="featured-event-summary">' + escapeHtml(eventSummary(latestEvent, lang)) + '</p>',
           renderEventTrustFacts(latestEvent, lang),
-          latestEvent.source_url ? '    <p class="primary-source"><strong>' + (isZh ? '主要来源：' : 'Primary source: ') + '</strong><a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(latestEvent.id)) + '" data-analytics-event-category="' + escapeHtml(latestEvent.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(latestEvent)) + '">' + escapeHtml(latestEvent.source_url) + '</a></p>' : '',
-          '    <p class="status-note"><a href="' + getLandingPath('reset-history', lang) + '">' + (isZh ? '查看重置历史' : 'View reset history') + '</a> · <a href="' + getLandingPath('rate-limit-updates', lang) + '">' + (isZh ? '查看限额更新' : 'View limit updates') + '</a></p>',
+          latestEvent.source_url ? '    <p class="primary-source"><strong>' + ui.primarySource + '</strong><a href="' + escapeHtml(latestEvent.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(latestEvent.id)) + '" data-analytics-event-category="' + escapeHtml(latestEvent.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(latestEvent)) + '">' + escapeHtml(latestEvent.source_url) + '</a></p>' : '',
+          '    <p class="status-note"><a href="' + getLandingPath('reset-history', lang) + '">' + ui.viewReset + '</a> · <a href="' + getLandingPath('rate-limit-updates', lang) + '">' + ui.viewLimits + '</a></p>',
           '  </div>',
         ].filter(Boolean).join('\n')
-        : '  <p class="empty-state">' + (isZh ? '当前状态：未知，尚无事件记录。' : 'Current status: Unknown; no event is recorded.') + '</p>',
+        : '  <p class="empty-state">' + ui.unknownLatest + '</p>',
       renderLandingFreshness(data, lang),
       '</section>',
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '最近事件' : 'Recent events') + '</h2>',
+      '  <h2>' + ui.recentEvents + '</h2>',
       renderLandingEventList(events, lang),
       '</section>',
       '<section class="landing-section cross-link-section">',
-      '  <h2>' + (isZh ? '如何阅读' : 'How to read this page') + '</h2>',
-      '  <p>' + (isZh ? '验证状态、来源类型和时间字段的定义见' : 'Definitions for verification, source type, and timestamps are in the ') + '<a href="' + getLandingPath('methodology', lang) + '">' + (isZh ? '方法论' : 'methodology') + '</a>。</p>',
+      '  <h2>' + ui.howToRead + '</h2>',
+      '  <p>' + ui.definitionsLead + ' <a href="' + getLandingPath('methodology', lang) + '">' + ui.methodology + '</a>。</p>',
       '</section>',
     ].join('\n');
   } else if (data.page === 'reset-history') {
     content = [
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '当前状态' : 'Current status') + '</h2>',
+      '  <h2>' + ui.currentStatus + '</h2>',
       latestEvent
-        ? '  <p>' + (isZh ? '最近的重置记录：' : 'Latest reset record: ') + '<a href="' + getEventUrl(latestEvent.id!, lang) + '">' + escapeHtml(eventTitle(latestEvent, lang)) + '</a> · ' + escapeHtml(getVerificationLabel(latestEvent, lang)) + '</p>'
-        : '  <p class="empty-state">' + (isZh ? '当前状态：未知，暂无重置事件。' : 'Current status: Unknown; no reset events are recorded.') + '</p>',
+        ? '  <p>' + ui.latestResetLead + ' <a href="' + getEventUrl(latestEvent.id!, lang) + '">' + escapeHtml(eventTitle(latestEvent, lang)) + '</a> · ' + escapeHtml(getVerificationLabel(latestEvent, lang)) + '</p>'
+        : '  <p class="empty-state">' + ui.unknownReset + '</p>',
       '</section>',
       '<section class="landing-section history-timeline">',
-      '  <h2>' + (isZh ? '时间线' : 'Timeline') + '</h2>',
+      '  <h2>' + ui.timeline + '</h2>',
       renderResetTimeline(events, lang),
       '</section>',
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '重置类型' : 'Reset types recorded') + '</h2>',
+      '  <h2>' + ui.resetTypes + '</h2>',
       '  <ul class="plain-list">',
-      '    <li><code>RESET_PLANNED</code> — ' + (isZh ? '公开来源中的计划或公告。' : 'planned or announced in the public source.') + '</li>',
-      '    <li><code>RESET_COMPLETED</code> — ' + (isZh ? '公开来源中的完成公告。' : 'completed in the public source.') + '</li>',
-      '    <li><code>RESET_TIME_CHANGED</code> — ' + (isZh ? '重置时间发生变化。' : 'reset timing changed.') + '</li>',
+      '    <li><code>RESET_PLANNED</code> — ' + ui.planned + '</li>',
+      '    <li><code>RESET_COMPLETED</code> — ' + ui.completed + '</li>',
+      '    <li><code>RESET_TIME_CHANGED</code> — ' + ui.changed + '</li>',
       '  </ul>',
       '</section>',
       '<section class="landing-section cross-link-section">',
-      '  <h2>' + (isZh ? '相关限额更新' : 'Related limit updates') + '</h2>',
-      '  <p><a href="' + getLandingPath('rate-limit-updates', lang) + '">' + (isZh ? '查看限额和政策更新' : 'Browse rate-limit and policy updates') + '</a> · <a href="' + getLandingPath('faq', lang) + '">' + (isZh ? '查看常见问题' : 'Read the FAQ') + '</a> · <a href="' + getLandingPath('methodology', lang) + '">' + (isZh ? '查看方法论' : 'Read the methodology') + '</a>。</p>',
+      '  <h2>' + ui.relatedLimits + '</h2>',
+      '  <p><a href="' + getLandingPath('rate-limit-updates', lang) + '">' + ui.browseLimits + '</a> · <a href="' + getLandingPath('faq', lang) + '">' + ui.faq + '</a> · <a href="' + getLandingPath('methodology', lang) + '">' + ui.readMethodology + '</a>。</p>',
       '</section>',
     ].join('\n');
   } else if (data.page === 'rate-limit-updates') {
     content = [
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '本页包含的分类' : 'Recorded categories on this page') + '</h2>',
+      '  <h2>' + ui.recordedCategories + '</h2>',
       '  <ul class="plain-list">',
-      '    <li><code>POLICY_CHANGE</code> — ' + (isZh ? '政策或订阅相关的事件分类。' : 'events classified as policy or subscription changes.') + '</li>',
-      '    <li><code>RESET_TIME_CHANGED</code> — ' + (isZh ? '重置时间变更分类。' : 'events classified as reset-time changes.') + '</li>',
+      '    <li><code>POLICY_CHANGE</code> — ' + ui.policyCategory + '</li>',
+      '    <li><code>RESET_TIME_CHANGED</code> — ' + ui.changedCategory + '</li>',
       '  </ul>',
       '</section>',
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '更新' : 'Updates') + '</h2>',
+      '  <h2>' + ui.updates + '</h2>',
       renderLandingEventList(events, lang),
       '</section>',
       '<section class="landing-section">',
-      '  <h2>' + (isZh ? '范围说明' : 'Scope') + '</h2>',
-      '  <p>' + (isZh ? '记录涵盖 5 小时、周限额、速率、套餐和订阅更新；打开事件查看来源和状态。' : 'Covers 5-hour, weekly, rate, plan, and subscription updates. Open an event for its source and status.') + '</p>',
-      '  <p><a href="' + getLandingPath('reset-history', lang) + '">' + (isZh ? '查看重置历史' : 'View reset history') + '</a> · <a href="' + getLandingPath('methodology', lang) + '">' + (isZh ? '查看方法论' : 'Read methodology') + '</a></p>',
+      '  <h2>' + ui.scope + '</h2>',
+      '  <p>' + ui.scopeText + '</p>',
+      '  <p><a href="' + getLandingPath('reset-history', lang) + '">' + ui.viewReset + '</a> · <a href="' + getLandingPath('methodology', lang) + '">' + ui.readMethodology + '</a></p>',
       '</section>',
     ].join('\n');
   } else if (data.page === 'faq') {
@@ -1815,7 +1958,7 @@ export function renderLandingPage(data: LandingPageData, lang: SiteLocale, integ
     '  <div id="app">',
     renderSiteHeader(lang, { alternatePath: getLandingPath(data.page, lang === 'en' ? 'zh' : 'en') }),
     '    <main class="landing-page">',
-    '      <nav class="breadcrumb" aria-label="' + escapeHtml(lang === 'zh' ? '面包屑导航' : lang === 'ja' ? 'パンくずリスト' : lang === 'es' ? 'Ruta de navegación' : lang === 'fr' ? 'Fil d’Ariane' : 'Breadcrumb') + '">',
+    '      <nav class="breadcrumb" aria-label="' + escapeHtml(ui.breadcrumb) + '">',
     '        <a href="' + getHomePath(lang) + '">' + escapeHtml(SITE_BRAND_COPY[lang].home) + '</a><span class="breadcrumb-sep">/</span><span class="breadcrumb-current">' + escapeHtml(copy.title) + '</span>',
     '      </nav>',
     '      <header class="landing-header">',
@@ -1892,28 +2035,28 @@ function renderHomepageGambitModule(articles: GambitPublicArticle[], lang: SiteL
     .filter(article => article.status === 'PUBLISHED' && !article.politicalTopic && Boolean(article.publishedAt))
     .slice(0, 3);
   if (visible.length === 0) return '';
-  const isZh = lang === 'zh';
+  const copy = HOMEPAGE_GAMBIT_COPY[lang];
   const cards = visible.map(article => {
-    const path = (lang === 'zh' ? '/zh' : '') + '/open-gambit/' + encodeURIComponent(article.slug) + '/';
-    const content = isZh && article.translations?.zh?.status === 'TRANSLATED' ? article.translations.zh : article;
+    const path = localePath('/open-gambit/' + encodeURIComponent(article.slug) + '/', lang);
+    const content = lang === 'zh' && article.translations?.zh?.status === 'TRANSLATED' ? article.translations.zh : article;
     const summary = truncateHomepageGambitSummary(content.thesis || content.surfaceEvent);
     const publicationDate = article.publishedAt || article.modifiedAt;
     const firstTrajectory = content.trajectories[0];
     return [
-      '      <article class="homepage-gambit-card">',
-      '        <p class="homepage-gambit-label">' + (isZh ? 'ANALYSIS · 阳谋' : 'ANALYSIS · Open Gambit') + '</p>',
+      '      <article class="homepage-gambit-card"' + (lang !== 'en' && !(lang === 'zh' && article.translations?.zh?.status === 'TRANSLATED') ? ' data-locale-fallback="en"' : '') + '>',
+      '        <p class="homepage-gambit-label">' + copy.label + '</p>',
       '        <h3><a href="' + escapeHtml(path) + '">' + escapeHtml(content.headline) + '</a></h3>',
       '        <p class="homepage-gambit-summary">' + escapeHtml(summary) + '</p>',
       '        <p class="homepage-gambit-meta">' + localTimeElement(publicationDate, formatDateShort(publicationDate, lang), 'homepage-gambit-date', 'date')
-        + (firstTrajectory ? ' · ' + escapeHtml(isZh ? `AI 走势 · 约${firstTrajectory.probability}%` : `AI estimate · ~${firstTrajectory.probability}%`) : '')
+        + (firstTrajectory ? ' · ' + escapeHtml(copy.estimate + firstTrajectory.probability + (lang === 'zh' || lang === 'ja' ? '%' : '%')) : '')
         + '</p>',
       '      </article>',
     ].join('\n');
   }).join('\n');
   return [
     '    <section class="homepage-gambit-module" aria-labelledby="homepageGambitTitle">',
-    '      <div class="section-header"><h2 id="homepageGambitTitle">' + (isZh ? '阳谋' : 'Open Gambit') + '</h2><a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang === 'zh' ? 'zh' : 'en']) + '">' + (isZh ? '查看全部' : 'View all') + ' →</a></div>',
-    '      <p class="homepage-gambit-intro">' + escapeHtml(isZh ? 'AI、产品与生态的战略分析；事实、分析与 AI 走势分开标注。' : 'Strategic analysis of AI, products and ecosystems, with facts, analysis and AI forecasts kept distinct.') + '</p>',
+    '      <div class="section-header"><h2 id="homepageGambitTitle">' + copy.title + '</h2><a href="' + escapeHtml(OPEN_GAMBIT_PATHS[lang]) + '">' + copy.viewAll + ' →</a></div>',
+    '      <p class="homepage-gambit-intro">' + escapeHtml(copy.intro) + '</p>',
     '      <div class="homepage-gambit-list">',
     cards,
     '      </div>',
@@ -2226,7 +2369,7 @@ export function renderHomepage(data: HomepageData, lang: SiteLocale, integration
       const eventUrl = getEventUrl(event.id!, lang);
 
       eventsHtml += [
-        '<li class="timeline-item ' + event.category + '">',
+        '<li class="timeline-item ' + event.category + '"' + (eventUsesLocaleFallback(event, lang) ? ' data-locale-fallback="en"' : '') + '>',
         '  <div class="timeline-dot">',
         '    <div class="timeline-dot-marker"></div>',
         '  </div>',
@@ -2472,7 +2615,7 @@ export function renderHomepage(data: HomepageData, lang: SiteLocale, integration
 
 export function renderEventPage(data: EventPageData, lang: SiteLocale, integrations?: SiteIntegrations): string {
   const event = data.event;
-  const isZh = lang === 'zh';
+  const copy = EVENT_DETAIL_COPY[lang];
 
   const title = eventPageHeadline(event, lang);
   const description = eventSummary(event, lang);
@@ -2480,7 +2623,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   const category = getCategoryLabel(event.category, lang);
   const sourceAccount = event.source_account
     ? (event.source_account === 'thsottiaux' ? 'Tibo (@thsottiaux)' : '@' + event.source_account)
-    : (isZh ? '未知' : 'Unknown');
+    : copy.unknown;
 
   const meta: SeoMeta = {
     lang,
@@ -2498,8 +2641,8 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
     modifiedAt: event.updated_at,
   };
 
-  const unavailable = isZh ? '未知' : 'Unknown';
-  const pendingVerification = isZh ? '待验证' : 'Pending verification';
+  const unavailable = copy.unknown;
+  const pendingVerification = copy.pending;
   const pubTime = event.published_at
     ? formatDateForLanguage(event.published_at, lang)
     : unavailable;
@@ -2523,7 +2666,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // What changed?
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '变更内容' : 'What Changed') + '</h2>',
+    '  <h2 class="modal-label">' + copy.whatChanged + '</h2>',
     '  <div class="modal-value">' + escapeHtml(title) + '</div>',
     '</section>',
   ].join('\n'));
@@ -2531,12 +2674,12 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // Evidence provenance is intentionally visible next to the event details.
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '验证' : 'Verification') + '</h2>',
+    '  <h2 class="modal-label">' + copy.verification + '</h2>',
     '  <dl class="event-facts">',
-    '    <div><dt>' + (isZh ? '来源类型' : 'Source type') + '</dt><dd><span class="source-quality-badge ' + sourceQualityClass(event) + '">' + escapeHtml(getSourceQualityLabel(event, lang)) + '</span></dd></div>',
-    '    <div><dt>' + (isZh ? '状态' : 'Status') + '</dt><dd><code>' + escapeHtml(getVerificationStatusCode(event)) + '</code> · ' + escapeHtml(getVerificationLabel(event, lang)) + '</dd></div>',
-    '    <div><dt>' + (isZh ? '发现方式' : 'Found via') + '</dt><dd>' + escapeHtml(event.first_discovered_via || unavailable) + '</dd></div>',
-    '    <div><dt>' + (isZh ? '验证方式' : 'Verified via') + '</dt><dd>' + escapeHtml(event.last_verified_via || pendingVerification) + '</dd></div>',
+    '    <div><dt>' + copy.sourceType + '</dt><dd><span class="source-quality-badge ' + sourceQualityClass(event) + '">' + escapeHtml(getSourceQualityLabel(event, lang)) + '</span></dd></div>',
+    '    <div><dt>' + copy.status + '</dt><dd><code>' + escapeHtml(getVerificationStatusCode(event)) + '</code> · ' + escapeHtml(getVerificationLabel(event, lang)) + '</dd></div>',
+    '    <div><dt>' + copy.foundVia + '</dt><dd>' + escapeHtml(event.first_discovered_via || unavailable) + '</dd></div>',
+    '    <div><dt>' + copy.verifiedVia + '</dt><dd>' + escapeHtml(event.last_verified_via || pendingVerification) + '</dd></div>',
     '  </dl>',
     '</section>',
   ].join('\n'));
@@ -2544,7 +2687,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // Summary
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '摘要' : 'Summary') + ' <span class="modal-tag ai">AI summary</span></h2>',
+    '  <h2 class="modal-label">' + copy.summary + ' <span class="modal-tag ai">' + copy.aiSummary + '</span></h2>',
     '  <div class="modal-value ai-summary">' + escapeHtml(description) + '</div>',
     '</section>',
   ].join('\n'));
@@ -2553,7 +2696,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // account-scope disclaimer on every event page.
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '这意味着什么？' : 'What does this mean?') + '</h2>',
+    '  <h2 class="modal-label">' + copy.meaning + '</h2>',
     '  <p class="modal-value">' + escapeHtml(eventInterpretation(event, lang)) + '</p>',
     '</section>',
   ].join('\n'));
@@ -2561,7 +2704,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // Category
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '类型' : 'Type') + '</h2>',
+    '  <h2 class="modal-label">' + copy.type + '</h2>',
     '  <div>',
     '    <span class="category-badge category-' + event.category + '">' + escapeHtml(category) + '</span>',
     '  </div>',
@@ -2572,14 +2715,14 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // time, and verified is the event-level verification timestamp.
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '时间' : 'Event dates') + '</h2>',
+    '  <h2 class="modal-label">' + copy.eventDates + '</h2>',
     '  <dl class="event-facts">',
-    '    <div><dt>' + (isZh ? '发布时间' : 'Published') + '</dt><dd>' + localPubTime + '</dd></div>',
-    '    <div><dt>' + (isZh ? '观察时间' : 'Observed') + '</dt><dd>' + observedTime + '</dd></div>',
-    '    <div><dt>' + (isZh ? '最近验证' : 'Last verified') + '</dt><dd>' + verifiedTime + '</dd></div>',
-    effectiveTime ? '    <div><dt>' + (isZh ? '生效时间' : 'Effective') + '</dt><dd>' + effectiveTime + '</dd></div>' : '',
-    resetTime ? '    <div><dt>' + (isZh ? '重置时间' : 'Reset time') + '</dt><dd>' + resetTime + '</dd></div>' : '',
-    event.updated_at ? '    <div><dt>' + (isZh ? '记录更新时间' : 'Record updated') + '</dt><dd>' + eventDateMarkup(event.updated_at, lang, 'event-detail-time') + '</dd></div>' : '',
+    '    <div><dt>' + copy.published + '</dt><dd>' + localPubTime + '</dd></div>',
+    '    <div><dt>' + copy.observed + '</dt><dd>' + observedTime + '</dd></div>',
+    '    <div><dt>' + copy.lastVerified + '</dt><dd>' + verifiedTime + '</dd></div>',
+    effectiveTime ? '    <div><dt>' + copy.effective + '</dt><dd>' + effectiveTime + '</dd></div>' : '',
+    resetTime ? '    <div><dt>' + copy.resetTime + '</dt><dd>' + resetTime + '</dd></div>' : '',
+    event.updated_at ? '    <div><dt>' + copy.recordUpdated + '</dt><dd>' + eventDateMarkup(event.updated_at, lang, 'event-detail-time') + '</dd></div>' : '',
     '</dl>',
     '</section>',
   ].join('\n'));
@@ -2591,7 +2734,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
       : event.source_text;
     sections.push([
       '<section class="modal-section">',
-      '  <h2 class="modal-label">' + (isZh ? '原始来源' : 'Original Source') + ' <span class="modal-tag source">' + (isZh ? '证据' : 'Evidence') + '</span></h2>',
+      '  <h2 class="modal-label">' + copy.originalSource + ' <span class="modal-tag source">' + copy.evidence + '</span></h2>',
       '  <div class="modal-value source-text">' + escapeHtml(excerpt) + '</div>',
       '</section>',
     ].join('\n'));
@@ -2600,7 +2743,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // Source account
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '来源' : 'Source') + '</h2>',
+    '  <h2 class="modal-label">' + copy.source + '</h2>',
     '  <div class="modal-value">' + escapeHtml(sourceAccount) + '</div>',
     '</section>',
   ].join('\n'));
@@ -2608,9 +2751,9 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // View original
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '查看原帖' : 'View Original') + '</h2>',
+    '  <h2 class="modal-label">' + copy.viewOriginal + '</h2>',
     event.source_url
-      ? '  <a class="modal-link" href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + (isZh ? '打开来源 →' : 'Open source →') + '</a>'
+      ? '  <a class="modal-link" href="' + escapeHtml(event.source_url) + '" target="_blank" rel="noopener noreferrer" data-analytics-link-type="source" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '">' + copy.openSource + ' →</a>'
       : '  <div class="modal-value">' + escapeHtml(unavailable) + '</div>',
     '</section>',
   ].join('\n'));
@@ -2619,7 +2762,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   const confidencePercent = Math.round(event.confidence * 100);
   sections.push([
     '<section class="modal-section">',
-    '  <h2 class="modal-label">' + (isZh ? '置信度' : 'Confidence') + '</h2>',
+    '  <h2 class="modal-label">' + copy.confidence + '</h2>',
     '  <div class="modal-value">' + confidencePercent + '%</div>',
     '</section>',
   ].join('\n'));
@@ -2649,7 +2792,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
   // Related events
   let relatedHtml = '';
   if (data.relatedEvents.length > 0) {
-    relatedHtml = '<section class="related-events"><h2>' + (isZh ? '同类型事件' : 'More events in this category') + '</h2><ol>';
+    relatedHtml = '<section class="related-events"><h2>' + copy.related + '</h2><ol>';
     for (const re of data.relatedEvents) {
       const reTitle = eventTitle(re, lang);
       const reDate = formatDateShort(re.published_at, lang);
@@ -2657,11 +2800,11 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
     }
     relatedHtml += '</ol></section>';
   }
-  const topicHtml = '<p class="event-topic-link">' + (isZh ? '主题入口：' : 'Topic: ') + '<a href="' + getTopicPath(event.category, lang) + '">' + escapeHtml(getTopicLabel(event.category, lang)) + '</a></p>';
+  const topicHtml = '<p class="event-topic-link">' + copy.topicPrefix + '<a href="' + getTopicPath(event.category, lang) + '">' + escapeHtml(getTopicLabel(event.category, lang)) + '</a></p>';
   const contextHtml = [
     '<section class="event-context">',
-    '  <h2>' + (isZh ? '历史上下文' : 'Historical context') + '</h2>',
-    '  <p>' + (isZh ? '查看前后事件或' : 'See the previous/next events or the ') + '<a href="' + getTopicPath(event.category, lang) + '">' + (isZh ? '主题时间线' : 'topic timeline') + '</a>。</p>',
+    '  <h2>' + copy.context + '</h2>',
+    '  <p>' + copy.contextLead + ' <a href="' + getTopicPath(event.category, lang) + '">' + copy.topicTimeline + '</a>。</p>',
     '</section>',
   ].join('\n');
 
@@ -2671,15 +2814,15 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
     renderSiteHeader(lang, { alternatePath: getEventUrl(event.id!, lang === 'en' ? 'zh' : 'en') }),
     '',
     '    <!-- Breadcrumb -->',
-    '    <nav class="breadcrumb" aria-label="' + (isZh ? '面包屑导航' : 'Breadcrumb') + '">',
-    '      <a href="' + getHomePath(lang) + '">' + (isZh ? '首页' : 'Home') + '</a>',
+    '    <nav class="breadcrumb" aria-label="' + escapeHtml(LANDING_UI_COPY[lang].breadcrumb) + '">',
+    '      <a href="' + getHomePath(lang) + '">' + escapeHtml(copy.home) + '</a>',
     '      <span class="breadcrumb-sep">/</span>',
     '      <span class="breadcrumb-current">' + escapeHtml(title) + '</span>',
     '    </nav>',
     '',
     '    <main>',
     '      <!-- Event Detail -->',
-    '      <article class="event-detail-page" data-analytics-page-type="event_detail" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '" data-analytics-verification-status="' + escapeHtml(getVerificationStatusCode(event)) + '">',
+    '      <article class="event-detail-page"' + (eventUsesLocaleFallback(event, lang) ? ' data-locale-fallback="en"' : '') + ' data-analytics-page-type="event_detail" data-analytics-event-id="' + escapeHtml(String(event.id)) + '" data-analytics-event-category="' + escapeHtml(event.category) + '" data-analytics-evidence-source="' + escapeHtml(analyticsEvidenceSource(event)) + '" data-analytics-verification-status="' + escapeHtml(getVerificationStatusCode(event)) + '">',
     '      <header class="event-detail-header">',
     '        <h1 class="event-detail-title">' + escapeHtml(title) + '</h1>',
     '        <div class="event-detail-meta">',
@@ -2697,7 +2840,7 @@ export function renderEventPage(data: EventPageData, lang: SiteLocale, integrati
     contextHtml,
     '',
     '      <!-- Event Navigation -->',
-    '      <nav class="event-navigation" aria-label="' + (isZh ? '事件时间顺序' : 'Event chronology') + '">',
+    '      <nav class="event-navigation" aria-label="' + escapeHtml(copy.eventChronology) + '">',
     navHtml,
     '      </nav>',
     '',
@@ -2768,24 +2911,54 @@ function rssDate(value: string | null | undefined): string {
 
 export function renderRssFeed(
   events: MonitorEvent[],
-  lang: SiteLocale = 'zh',
+  lang: SiteLocale = 'en',
   manualReset: ManualResetReportPublic | null = null,
   siteUrl?: string,
 ): string {
   const baseUrl = normalizeSiteUrl(siteUrl);
   const visibleEvents = events.filter(event => event.id !== undefined).slice(0, 20);
+  const rssCopy: {
+    channelDescription: string;
+    sourceText: string;
+    sourceLink: string;
+    language: string;
+    manualTitle: string;
+    manualReported: string;
+    automated: string;
+    note: string;
+    manualCategory: string;
+  } = {
+    en: {
+      channelDescription: 'Public Codex usage-limit reset, rate-limit and subscription policy events tracked by ModelYard.',
+      sourceText: 'Source text: ', sourceLink: 'Source: ', language: 'en', manualTitle: 'Server report: usage reset', manualReported: 'Server reported a usage reset. ', automated: 'Automated report.', note: 'Note: ', manualCategory: 'Server report',
+    },
+    zh: {
+      channelDescription: '追踪 ModelYard 记录的 Tibo（@thsottiaux）公开 Codex 额度重置、限额和订阅政策事件。',
+      sourceText: '原始来源：', sourceLink: '来源链接：', language: 'zh-CN', manualTitle: '服务器报告：额度已重置', manualReported: '服务器报告额度已重置。 ', automated: '系统自动报告。', note: '备注：', manualCategory: '服务器报告',
+    },
+    ja: {
+      channelDescription: 'ModelYard が追跡する Tibo（@thsottiaux）の公開 Codex 使用量リセット、制限、サブスクリプションポリシーのイベントです。',
+      sourceText: '原文ソース：', sourceLink: 'ソース：', language: 'ja', manualTitle: 'サーバー報告：使用量をリセット', manualReported: 'サーバーが使用量のリセットを報告しました。 ', automated: '自動報告です。', note: '注：', manualCategory: 'サーバー報告',
+    },
+    fr: {
+      channelDescription: 'Événements publics de réinitialisation, de limites et de politiques d’abonnement Codex suivis par ModelYard pour Tibo (@thsottiaux).',
+      sourceText: 'Texte source : ', sourceLink: 'Source : ', language: 'fr', manualTitle: 'Rapport serveur : réinitialisation d’utilisation', manualReported: 'Le serveur a signalé une réinitialisation de l’utilisation. ', automated: 'Rapport automatique.', note: 'Note : ', manualCategory: 'Rapport serveur',
+    },
+    es: {
+      channelDescription: 'Eventos públicos de restablecimientos, límites y políticas de suscripción de Codex que ModelYard sigue para Tibo (@thsottiaux).',
+      sourceText: 'Texto de la fuente: ', sourceLink: 'Fuente: ', language: 'es', manualTitle: 'Informe del servidor: restablecimiento de uso', manualReported: 'El servidor informó de un restablecimiento del uso. ', automated: 'Informe automático.', note: 'Nota: ', manualCategory: 'Informe del servidor',
+    },
+  }[lang];
   const channelTitle = MODELYARD_BRAND + ' · ' + SITE_BRAND_COPY[lang].monitor;
-  const channelDescription = lang === 'zh'
-    ? '追踪 Tibo（@thsottiaux）公开发布的 Codex 额度重置、限额和订阅政策事件。'
-    : 'Public Codex usage-limit reset, rate-limit and subscription policy events tracked by Tibo Monitor.';
+  const channelDescription = rssCopy.channelDescription;
   const eventItems = visibleEvents.map(event => {
     const title = eventTitle(event, lang);
     const summary = eventSummary(event, lang);
     const eventUrl = baseUrl + getEventUrl(event.id!, lang);
     const description = [
       summary,
-      event.source_text ? (lang === 'zh' ? '原始来源：' : 'Source text: ') + event.source_text : '',
-      event.source_url ? (lang === 'zh' ? '来源链接：' : 'Source: ') + event.source_url : '',
+      event.source_text ? rssCopy.sourceText + event.source_text : '',
+      event.source_url ? rssCopy.sourceLink + event.source_url : '',
     ].filter(Boolean).join('\n\n');
     return {
       date: event.published_at || event.created_at || new Date(0).toISOString(),
@@ -2804,15 +2977,13 @@ export function renderRssFeed(
 
   const feedItems = [...eventItems];
   if (manualReset) {
-    const manualTitle = lang === 'zh' ? '服务器报告：额度已重置' : 'Server report: usage reset';
+    const manualTitle = rssCopy.manualTitle;
     const manualDescription = [
-      lang === 'zh'
-        ? '服务器报告额度已重置。 ' + formatManualResetTime(manualReset.resetAt, lang)
-        : 'Server reported a usage reset. ' + formatManualResetTime(manualReset.resetAt, lang),
-      lang === 'zh' ? '系统自动报告。' : 'Automated report.',
-      manualReset.note ? (lang === 'zh' ? '备注：' : 'Note: ') + manualReset.note : '',
+      rssCopy.manualReported + formatManualResetTime(manualReset.resetAt, lang),
+      rssCopy.automated,
+      manualReset.note ? rssCopy.note + manualReset.note : '',
     ].filter(Boolean).join('\n\n');
-    const homepageUrl = baseUrl + (lang === 'zh' ? '/zh/' : '/');
+    const homepageUrl = baseUrl + localePath('/', lang);
     feedItems.push({
       date: manualReset.resetAt,
       markup: [
@@ -2822,7 +2993,7 @@ export function renderRssFeed(
         '      <link>' + escapeXml(homepageUrl) + '</link>',
         '      <guid isPermaLink="false">system-reset-report:' + manualReset.id + '</guid>',
         '      <pubDate>' + rssDate(manualReset.resetAt) + '</pubDate>',
-        '      <category>' + escapeXml(lang === 'zh' ? '服务器报告' : 'Server report') + '</category>',
+        '      <category>' + escapeXml(rssCopy.manualCategory) + '</category>',
         '    </item>',
       ].join('\n'),
     });
@@ -2840,11 +3011,11 @@ export function renderRssFeed(
     '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
     '  <channel>',
     '    <title>' + escapeXml(channelTitle) + '</title>',
-    '    <link>' + baseUrl + (lang === 'zh' ? '/zh/' : '/') + '</link>',
+    '    <link>' + baseUrl + localePath('/', lang) + '</link>',
     '    <description>' + escapeXml(channelDescription) + '</description>',
-    '    <language>' + (lang === 'zh' ? 'zh-CN' : 'en') + '</language>',
+    '    <language>' + rssCopy.language + '</language>',
     '    <lastBuildDate>' + rssDate(latestDate || new Date().toISOString()) + '</lastBuildDate>',
-    '    <atom:link href="' + baseUrl + '/feed.xml" rel="self" type="application/rss+xml" />',
+    '    <atom:link href="' + baseUrl + RSS_PATHS[lang] + '" rel="self" type="application/rss+xml" />',
     items.join('\n'),
     '  </channel>',
     '</rss>',
@@ -2920,20 +3091,33 @@ export function renderSitemap(events: MonitorEvent[], lastmod: string | null, la
 
   // Open Gambit has a substantive landing page even when it has no articles;
   // individual URLs are included only for published articles supplied by the
-  // caller. English and Chinese are the V1 locales for this domain.
-  urls.push(['en', 'zh'].map(locale => [
+  // caller. Every supported locale has a route; untranslated editorial
+  // content is served through the renderer's controlled fallback.
+  urls.push(SITE_LOCALES.map(locale => [
     '  <url>',
-    '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + '</loc>',
+    '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale] + '</loc>',
     sitemapLastmodMarkup(normalizedLastmod),
     '    <changefreq>daily</changefreq>',
     '    <priority>0.7</priority>',
     '  </url>',
   ].join('\n')).join('\n'));
+
+  // The AI explanation is a public methodology page, so each first-class
+  // locale receives its own discoverable sitemap URL as well.
+  urls.push(SITE_LOCALES.map(locale => [
+    '  <url>',
+    '    <loc>' + baseUrl + AI_DISCLOSURE_PATHS[locale] + '</loc>',
+    sitemapLastmodMarkup(normalizedLastmod),
+    '    <changefreq>monthly</changefreq>',
+    '    <priority>0.5</priority>',
+    '  </url>',
+  ].join('\n')).join('\n'));
+
   for (const article of gambitArticles) {
     const articleLastmod = normalizeSitemapDate(article.modifiedAt || lastmod);
-    urls.push(['en', 'zh'].map(locale => [
+    urls.push(SITE_LOCALES.map(locale => [
       '  <url>',
-      '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale as 'en' | 'zh'] + encodeURIComponent(article.slug) + '/</loc>',
+      '    <loc>' + baseUrl + OPEN_GAMBIT_PATHS[locale] + encodeURIComponent(article.slug) + '/</loc>',
       sitemapLastmodMarkup(articleLastmod),
       '    <changefreq>daily</changefreq>',
       '    <priority>0.7</priority>',

@@ -61,7 +61,7 @@ describe('SEO V2 renderer and index policy', () => {
 
   it('renders canonical locale timezones in SSR timestamp markup', () => {
     const current = event({ published_at: '2026-08-31T02:42:44.000Z' });
-    const rawZones = ['America/New_York', 'Asia/Shanghai', 'Asia/Tokyo', 'Europe/Paris', 'Europe/Madrid'];
+    const rawZones = ['America/New_York', 'Asia/Shanghai', 'Asia/Tokyo', 'Europe/Paris'];
 
     for (const locale of ['en', 'zh', 'ja', 'fr', 'es'] as const) {
       const html = renderHomepage({
@@ -247,7 +247,7 @@ describe('SEO V2 renderer and index policy', () => {
     expect(html).toContain(current.source_url);
   });
 
-  it('uses cached event translations and omits untranslated alternates from index signals', () => {
+  it('uses cached event translations and keeps untranslated locale routes visible through controlled fallback', () => {
     const localized = event({
       translations: {
         ja: {
@@ -290,11 +290,14 @@ describe('SEO V2 renderer and index policy', () => {
     expect(article?.inLanguage).toBe('ja');
 
     const missingSpanish = renderEventPage({ event: event(), prevEvent: null, nextEvent: null, relatedEvents: [] }, 'es');
-    expect(missingSpanish).toContain('<meta name="robots" content="noindex, follow">');
-    expect(missingSpanish).not.toContain('hreflang="es" href="https://tibo.modelyard.dev/es/events/25"');
+    expect(missingSpanish).toContain('<meta name="robots" content="index, follow">');
+    expect(missingSpanish).toContain('hreflang="es" href="https://tibo.modelyard.dev/es/events/25"');
+    expect(missingSpanish).toContain('data-locale-fallback="en"');
 
     const sitemapBeforeBackfill = renderSitemap([event()], '2026-08-31T01:00:00.000Z');
-    expect(sitemapBeforeBackfill).not.toContain('/ja/events/25');
+    expect(sitemapBeforeBackfill).toContain('/ja/events/25');
+    expect(sitemapBeforeBackfill).toContain('/es/events/25');
+    expect(sitemapBeforeBackfill).toContain('/fr/events/25');
     const sitemapAfterBackfill = renderSitemap([localized], '2026-08-31T01:00:00.000Z');
     expect(sitemapAfterBackfill).toContain('/ja/events/25');
     expect(sitemapAfterBackfill).toContain('/es/events/25');
