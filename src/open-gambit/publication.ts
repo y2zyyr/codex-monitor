@@ -94,7 +94,7 @@ export function normalizeGambitTranslation(value: GambitTranslationProviderPaylo
 }
 
 /** Privacy-safe schema diagnostics used by the staging provider probe. */
-export function gambitTranslationValidationErrors(value: unknown, _locale: GambitLocale, article: GambitPublicArticle): string[] {
+export function gambitTranslationValidationErrors(value: unknown, locale: GambitLocale, article: GambitPublicArticle): string[] {
   if (!value || typeof value !== 'object') return ['OBJECT_REQUIRED'];
   const record = value as GambitTranslationProviderPayload;
   const articleFacts = Array.isArray(article.facts) ? article.facts : [];
@@ -108,6 +108,7 @@ export function gambitTranslationValidationErrors(value: unknown, _locale: Gambi
   if (!textArray(record.facts, articleFacts.length)) errors.push('FACTS_COUNT_OR_TYPE');
   if (!textArray(record.beneficiaries, articleBeneficiaries.length)) errors.push('BENEFICIARIES_COUNT_OR_TYPE');
   if (!textArray(record.pressuredActors, articlePressuredActors.length)) errors.push('PRESSURED_ACTORS_COUNT_OR_TYPE');
+  errors.push(...nativeTranslationQualityErrors(record, locale));
   if (!Array.isArray(record.trajectories)) errors.push('TRAJECTORIES_NOT_ARRAY');
   else if (record.trajectories.length !== articleTrajectories.length) errors.push('TRAJECTORY_COUNT');
   else {
@@ -133,6 +134,35 @@ export function gambitTranslationValidationErrors(value: unknown, _locale: Gambi
     }
   }
   return errors;
+}
+
+function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload, locale: GambitLocale): string[] {
+  if (locale !== 'ja') return [];
+  const prose = [
+    value.headline,
+    value.surfaceEvent,
+    ...(value.facts ?? []),
+    value.obviousLogic,
+    value.thesis,
+    value.mechanism,
+    ...(value.beneficiaries ?? []),
+    ...(value.pressuredActors ?? []),
+    value.countercase,
+    value.falsifier,
+    value.uncertainty,
+    ...(value.trajectories ?? []).flatMap(trajectory => [
+      trajectory?.predictionStatement,
+      trajectory?.reasoning,
+      trajectory?.evidenceCriteria,
+      trajectory?.falsifier,
+    ]),
+  ].filter((item): item is string => typeof item === 'string').join('\n');
+  // These are generic English words that the Japanese prompt explicitly
+  // requires to be rendered as Japanese. Do not inspect canonical entity
+  // names, IDs, dates, or probabilities: those remain immutable by design.
+  return /\b(?:adopters?|commitments?|platform|too)\b/iu.test(prose)
+    ? ['JA_NATIVE_PROSE_LEAKAGE']
+    : [];
 }
 
 export async function translateGambit(

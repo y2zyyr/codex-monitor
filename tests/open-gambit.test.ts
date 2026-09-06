@@ -936,6 +936,26 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       status: 'WATCHING',
       predictionStatement: 'Localized prediction',
     });
+
+    expect(normalizeGambitTranslation({
+      headline: 'ローカライズされた見出し',
+      surfaceEvent: 'ローカライズされた出来事',
+      facts: ['ローカライズされた事実'],
+      obviousLogic: 'ローカライズされた論理',
+      thesis: 'ローカライズされた論旨',
+      mechanism: 'ローカライズされた仕組み',
+      beneficiaries: ['開発者'],
+      pressuredActors: ['既存企業'],
+      countercase: 'too を含む不自然な文章',
+      trajectories: [{
+        predictionStatement: 'ローカライズされた予測',
+        reasoning: 'ローカライズされた理由',
+        evidenceCriteria: 'ローカライズされた確認条件',
+        falsifier: 'ローカライズされた反証条件',
+      }],
+      falsifier: 'ローカライズされた反証条件',
+      uncertainty: 'ローカライズされた不確実性',
+    }, 'ja', article)).toBeNull();
   });
 });
 
