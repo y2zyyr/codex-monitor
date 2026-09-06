@@ -156,7 +156,35 @@ describe('Open Gambit Workflow and locale publication contracts', () => {
     };
     const provider = {
       name: 'TEST_ONLY_PROVIDER',
-      complete: async <T>(request: { user: string }) => ({ value: JSON.parse(request.user) as T, provider: 'TEST_ONLY_PROVIDER', modelId: 'TEST_ONLY_RUNTIME', latencyMs: 1 }),
+      complete: async <T>(request: { user: string }) => {
+        const record = JSON.parse(request.user) as Record<string, unknown>;
+        const value = record.locale === 'ja'
+          ? {
+            ...record,
+            headline: '日本語の見出し',
+            surfaceEvent: '日本語の出来事',
+            facts: ['日本語の事実'],
+            obviousLogic: '日本語の論理',
+            thesis: '日本語の論旨',
+            mechanism: '日本語の仕組み',
+            beneficiaries: ['開発者'],
+            pressuredActors: ['既存企業'],
+            countercase: '日本語の反対の見方',
+            falsifier: '日本語の反証条件',
+            uncertainty: '日本語の不確実性',
+            trajectories: Array.isArray(record.trajectories)
+              ? record.trajectories.map(item => ({
+                ...(item as Record<string, unknown>),
+                predictionStatement: '日本語の予測',
+                reasoning: '日本語の理由',
+                evidenceCriteria: '日本語の確認条件',
+                falsifier: '日本語の反証条件',
+              }))
+              : [],
+          }
+          : record;
+        return { value: value as T, provider: 'TEST_ONLY_PROVIDER', modelId: 'TEST_ONLY_RUNTIME', latencyMs: 1 };
+      },
     };
     const result = await translateGambit(repository as never, article, 13, provider, { role: 'translation', runtimeProvider: 'actual', runtimeModelId: 'actual-model', publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 1000, retryLimit: 0, tokenBudget: 100 }, new Date('2026-09-05T00:01:00.000Z'));
     expect(result.status).toBe('TRANSLATION_READY');

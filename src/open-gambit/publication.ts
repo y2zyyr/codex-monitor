@@ -27,6 +27,8 @@ type GambitTranslationProviderPayload = Partial<Omit<GambitTranslation, 'traject
   trajectories?: Array<Partial<GambitTrajectory>>;
 };
 
+const JAPANESE_TECHNICAL_ASCII_TERMS = new Set(['AI', 'API', 'D1', 'HTTP', 'JSON', 'LLM', 'R2', 'RSS', 'SDK', 'URL']);
+
 export function copyTranslation(
   article: GambitPublicArticle,
   locale: GambitLocale,
@@ -108,7 +110,7 @@ export function gambitTranslationValidationErrors(value: unknown, locale: Gambit
   if (!textArray(record.facts, articleFacts.length)) errors.push('FACTS_COUNT_OR_TYPE');
   if (!textArray(record.beneficiaries, articleBeneficiaries.length)) errors.push('BENEFICIARIES_COUNT_OR_TYPE');
   if (!textArray(record.pressuredActors, articlePressuredActors.length)) errors.push('PRESSURED_ACTORS_COUNT_OR_TYPE');
-  errors.push(...nativeTranslationQualityErrors(record, locale));
+  errors.push(...nativeTranslationQualityErrors(record, locale, article));
   if (!Array.isArray(record.trajectories)) errors.push('TRAJECTORIES_NOT_ARRAY');
   else if (record.trajectories.length !== articleTrajectories.length) errors.push('TRAJECTORY_COUNT');
   else {
@@ -136,7 +138,7 @@ export function gambitTranslationValidationErrors(value: unknown, locale: Gambit
   return errors;
 }
 
-function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload, locale: GambitLocale): string[] {
+function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload, locale: GambitLocale, article: GambitPublicArticle): string[] {
   const prose = [
     value.headline,
     value.surfaceEvent,
@@ -159,14 +161,40 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
   // These are generic English words that the Japanese prompt explicitly
   // requires to be rendered as Japanese. Do not inspect canonical entity
   // names, IDs, dates, or probabilities: those remain immutable by design.
-  if (locale === 'ja' && (/\b(?:adopters?|commitments?|platform|too|gameable|GA)\b/iu.test(prose)
-    || /(?:仍然是|以及|并且|加上)/u.test(prose))) {
-    return ['JA_NATIVE_PROSE_LEAKAGE'];
+  if (locale === 'ja') {
+    const canonicalAsciiTerms = new Set(asciiWords([
+      article.headline,
+      article.surfaceEvent,
+      ...article.facts,
+      article.obviousLogic,
+      article.thesis,
+      article.mechanism,
+      ...article.beneficiaries,
+      ...article.pressuredActors,
+      article.countercase,
+      article.falsifier,
+      article.uncertainty,
+      ...article.trajectories.flatMap(trajectory => [
+        trajectory.targetEntity,
+        trajectory.predictionStatement,
+        trajectory.reasoning,
+        trajectory.evidenceCriteria,
+        trajectory.falsifier,
+      ]),
+    ].join('\n')).filter(term => /^[A-Z]/u.test(term) || /^[A-Z0-9]{2,}$/u.test(term)));
+    const unexpectedAscii = asciiWords(prose).filter(term => !canonicalAsciiTerms.has(term) && !JAPANESE_TECHNICAL_ASCII_TERMS.has(term));
+    if (unexpectedAscii.length > 0 || /(?:仍然是|以及|并且|加上)/u.test(prose)) {
+      return ['JA_NATIVE_PROSE_LEAKAGE'];
+    }
   }
   if ((locale === 'fr' || locale === 'es') && /[\u3400-\u9fff]/u.test(prose)) {
     return [`${locale.toUpperCase()}_NATIVE_PROSE_LEAKAGE`];
   }
   return [];
+}
+
+function asciiWords(value: string): string[] {
+  return value.match(/[A-Za-z][A-Za-z_-]*/gu) ?? [];
 }
 
 export async function translateGambit(
