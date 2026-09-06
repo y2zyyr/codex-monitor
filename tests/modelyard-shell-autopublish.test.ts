@@ -155,7 +155,35 @@ function qualifyingProviders() {
       }],
       uncertainty: 'Execution and adoption remain uncertain.',
     })),
-    translation: new MockGambitProvider(async request => llm(JSON.parse(request.user))),
+    translation: new MockGambitProvider(async request => {
+      const record = JSON.parse(request.user) as Record<string, unknown>;
+      const value = record.locale === 'ja'
+        ? {
+          ...record,
+          headline: '日本語の見出し',
+          surfaceEvent: '日本語の出来事',
+          facts: ['日本語の事実'],
+          obviousLogic: '日本語の論理',
+          thesis: '日本語の論旨',
+          mechanism: '日本語の仕組み',
+          beneficiaries: ['開発者'],
+          pressuredActors: ['既存企業'],
+          countercase: '日本語の反対の見方',
+          falsifier: '日本語の反証条件',
+          uncertainty: '日本語の不確実性',
+          trajectories: Array.isArray(record.trajectories)
+            ? record.trajectories.map(item => ({
+              ...(item as Record<string, unknown>),
+              predictionStatement: '日本語の予測',
+              reasoning: '日本語の理由',
+              evidenceCriteria: '日本語の確認条件',
+              falsifier: '日本語の反証条件',
+            }))
+            : [],
+        }
+        : record;
+      return llm(value);
+    }),
   };
 }
 
