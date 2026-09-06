@@ -46,6 +46,7 @@ import { GambitRepository } from '../src/open-gambit/repository';
 import { GambitRunBudget } from '../src/open-gambit/budget';
 import openGambitApi from '../src/routes/open-gambit';
 import { normalizeGambitTranslation, runGambitDiscovery } from '../src/open-gambit/service';
+import { translationRequest } from '../src/open-gambit/publication';
 
 const source: GambitSourceDefinition = {
   id: 'test-official',
@@ -370,7 +371,7 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     expect(AI_OPERATION_SHORT_EN).not.toContain('human approval');
     expect(AI_OPERATION_DISCLOSURE_ZH).toContain('网站向访客呈现的 AI 身份');
     expect(AI_OPERATION_DISCLOSURE_ZH).toContain('底层模型与服务商');
-    expect(GAMBIT_PROMPT_VERSION).toBe('gambit-prompts-v1');
+  expect(GAMBIT_PROMPT_VERSION).toBe('gambit-prompts-v2');
   });
 
   it('does not fall back to the existing Tibo LLM namespace', async () => {
@@ -926,8 +927,8 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       }],
       falsifier: 'Localized falsifier',
       uncertainty: 'Localized uncertainty',
-    }, 'ja', article);
-    expect(normalized).toMatchObject({ locale: 'ja', headline: 'Localized headline' });
+    }, 'zh', article);
+    expect(normalized).toMatchObject({ locale: 'zh', headline: 'Localized headline' });
     expect(normalized?.trajectories[0]).toMatchObject({
       id: 'trajectory-1',
       targetEntity: 'TEST_ONLY Example compatibility layer',
@@ -956,6 +957,23 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       falsifier: 'ローカライズされた反証条件',
       uncertainty: 'ローカライズされた不確実性',
     }, 'ja', article)).toBeNull();
+  });
+
+  it('sends only writable trajectory prose to the locale provider', () => {
+    const article = {
+      ...({ trajectories: [trajectory()] } as GambitPublicArticle),
+      evidence: [evidence()],
+    } as GambitPublicArticle;
+    const request = translationRequest(article, 'ja');
+    const payload = JSON.parse(request.user) as { trajectories: Array<Record<string, unknown>> };
+    expect(Object.keys(payload.trajectories[0]).sort()).toEqual([
+      'evidenceCriteria',
+      'falsifier',
+      'predictionStatement',
+      'reasoning',
+    ]);
+    expect(request.system).toContain('すべての文章フィールドは日本語の文');
+    expect(request.system).toContain('英語の一般語');
   });
 });
 

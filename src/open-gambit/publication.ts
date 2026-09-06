@@ -364,7 +364,7 @@ export async function publishQualifiedGambit(
 export function translationRequest(article: GambitPublicArticle, locale: typeof TRANSLATION_LOCALES[number], role?: GambitModelRoleConfig) {
   const languageInstruction = {
     zh: '用自然、简洁的简体中文撰写，保持科技产品编辑风格。',
-    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調や中国語の漢字置換を避け、固有名詞・製品名・識別子以外は日本語だけで書く。adopter、commitments、platform、too、gameable、GA などの英字の一般英単語・略語は一切使わず、「採用者」「採用表明」「プラットフォーム」「過度に」「一般公開」などの日本語に置き換える。「too permissive」は必ず「過度に寛容」、「gameable」は「操作される可能性がある」、「GA milestone」は「一般公開の節目」と訳す。中国語の接続表現「仍然是」「以及」「并且」「加上」は使わず、日本語の表現にする。',
+    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調や中国語の漢字置換を避ける。すべての文章フィールドは日本語の文として書き、固有名詞・製品名・識別子（ModelYard、BridgeSpec、AI、API、SDK など）以外のラテン文字の英単語を残さない。adopter、commitments、platform、too、gameable、GA、pass、fail、third-party、registry、standard、deadline、suite、conformance、adoption、maintenance、viability、public、official、release などの一般英語は一切使わず、日本語に置き換える。「too permissive」は必ず「過度に寛容」、「gameable」は「操作される可能性がある」、「GA milestone」は「一般公開の節目」と訳す。各文章を返す前に、英語の一般語や中国語の接続表現が残っていないか自己確認する。「仍然是」「以及」「并且」「加上」は使わず、日本語の表現にする。',
     fr: 'Rédiger dans un français naturel et concis de produit technologique, sans calque de l’anglais ni caractères chinois ou japonais dans la prose.',
     es: 'Redactar en un español internacional, natural y conciso para un producto tecnológico, sin calcar el inglés ni introducir caracteres chinos o japoneses en la prosa.',
   }[locale];
@@ -381,7 +381,16 @@ export function translationRequest(article: GambitPublicArticle, locale: typeof 
     beneficiaries: article.beneficiaries,
     pressuredActors: article.pressuredActors,
     countercase: article.countercase,
-    trajectories: article.trajectories,
+    // Immutable prediction identity is merged locally after translation. Do
+    // not send those fields as part of the provider's writable payload: this
+    // prevents a model from echoing a localized entity or altering canonical
+    // IDs, probabilities, deadlines, and statuses.
+    trajectories: article.trajectories.map(trajectory => ({
+      predictionStatement: trajectory.predictionStatement,
+      reasoning: trajectory.reasoning,
+      evidenceCriteria: trajectory.evidenceCriteria,
+      falsifier: trajectory.falsifier,
+    })),
     falsifier: article.falsifier,
     uncertainty: article.uncertainty,
   };

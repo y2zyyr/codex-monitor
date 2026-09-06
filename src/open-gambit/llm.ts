@@ -9,7 +9,7 @@ import type {
 } from './types';
 import { GAMBIT_PUBLIC_AI_IDENTITIES } from './types';
 
-export const GAMBIT_PROMPT_VERSION = 'gambit-prompts-v1';
+export const GAMBIT_PROMPT_VERSION = 'gambit-prompts-v2';
 /** Compatibility export; these are presentation identities, not model IDs. */
 export const GAMBIT_PUBLIC_MODEL_NAMES = GAMBIT_PUBLIC_AI_IDENTITIES;
 
