@@ -154,35 +154,59 @@ describe('Open Gambit Workflow and locale publication contracts', () => {
       saveTranslation: async (input: { translation: { locale: string; translationState?: string } }) => saved.push(input.translation),
       recordLLMAttempt: async () => 1,
     };
+    const translationCalls: Record<string, number> = {};
     const provider = {
       name: 'TEST_ONLY_PROVIDER',
       complete: async <T>(request: { user: string }) => {
         const record = JSON.parse(request.user) as Record<string, unknown>;
-        const value = record.locale === 'ja'
-          ? {
-            ...record,
-            headline: '日本語の見出し',
-            surfaceEvent: '日本語の出来事',
-            facts: ['日本語の事実'],
-            obviousLogic: '日本語の論理',
-            thesis: '日本語の論旨',
-            mechanism: '日本語の仕組み',
-            beneficiaries: ['開発者'],
-            pressuredActors: ['既存企業'],
-            countercase: '日本語の反対の見方',
-            falsifier: '日本語の反証条件',
-            uncertainty: '日本語の不確実性',
-            trajectories: Array.isArray(record.trajectories)
-              ? record.trajectories.map(item => ({
-                ...(item as Record<string, unknown>),
-                predictionStatement: '日本語の予測',
-                reasoning: '日本語の理由',
-                evidenceCriteria: '日本語の確認条件',
-                falsifier: '日本語の反証条件',
-              }))
-              : [],
-          }
-          : record;
+        const labels: Record<string, Record<string, unknown>> = {
+          ja: {
+            headline: '日本語の見出し', surfaceEvent: '日本語の出来事', facts: ['日本語の事実'],
+            obviousLogic: '日本語の論理', thesis: '日本語の論旨', mechanism: '日本語の仕組み',
+            beneficiaries: ['開発者'], pressuredActors: ['既存企業'], countercase: '日本語の反対の見方',
+            falsifier: '日本語の反証条件', uncertainty: '日本語の不確実性',
+          },
+          zh: {
+            headline: '中文标题', surfaceEvent: '中文事件', facts: ['中文事实'],
+            obviousLogic: '中文逻辑', thesis: '中文论点', mechanism: '中文机制',
+            beneficiaries: ['开发者'], pressuredActors: ['现有平台'], countercase: '中文反方观点',
+            falsifier: '中文反证条件', uncertainty: '中文不确定性',
+          },
+          fr: {
+            headline: 'Titre localisé', surfaceEvent: 'Événement localisé', facts: ['Fait localisé'],
+            obviousLogic: 'La logique est documentée.', thesis: 'La thèse concerne la distribution.', mechanism: 'Le mécanisme réduit les coûts.',
+            beneficiaries: ['Développeurs'], pressuredActors: ['Plateformes établies'], countercase: 'L’adoption peut rester limitée.',
+            falsifier: 'La version est annulée.', uncertainty: 'L’exécution reste incertaine.',
+          },
+          es: {
+            headline: 'Título localizado', surfaceEvent: 'Acontecimiento localizado', facts: ['Hecho localizado'],
+            obviousLogic: 'La lógica está documentada.', thesis: 'La tesis afecta a la distribución.', mechanism: 'El mecanismo reduce los costes.',
+            beneficiaries: ['Desarrolladores'], pressuredActors: ['Plataformas establecidas'], countercase: 'La adopción puede seguir limitada.',
+            falsifier: 'La versión se cancela.', uncertainty: 'La ejecución sigue siendo incierta.',
+          },
+        };
+        const label = labels[String(record.locale)] ?? {};
+        const locale = String(record.locale);
+        translationCalls[locale] = (translationCalls[locale] ?? 0) + 1;
+        const value = {
+          ...record,
+          ...label,
+          trajectories: Array.isArray(record.trajectories)
+            ? record.trajectories.map(item => ({
+              ...(item as Record<string, unknown>),
+              ...(String(record.locale) === 'ja'
+                ? { predictionStatement: '日本語の予測', reasoning: '日本語の理由', evidenceCriteria: '日本語の確認条件', falsifier: '日本語の反証条件' }
+                : String(record.locale) === 'zh'
+                  ? { predictionStatement: '中文预测', reasoning: '中文理由', evidenceCriteria: '中文验证条件', falsifier: '中文反证条件' }
+                  : String(record.locale) === 'fr'
+                    ? { predictionStatement: 'La prévision est vérifiable.', reasoning: 'La raison est documentée.', evidenceCriteria: 'Une intégration est publiée.', falsifier: 'Aucune intégration n’est publiée.' }
+                    : { predictionStatement: 'La previsión es verificable.', reasoning: 'La razón está documentada.', evidenceCriteria: 'Se publica una integración.', falsifier: 'No se publica ninguna integración.' }),
+            }))
+            : [],
+        };
+        if (locale === 'ja' && translationCalls[locale] === 1) {
+          value.countercase = '日本語の文に完全な英語の節が混在しています。 The platform will expand adoption.';
+        }
         return { value: value as T, provider: 'TEST_ONLY_PROVIDER', modelId: 'TEST_ONLY_RUNTIME', latencyMs: 1 };
       },
     };
@@ -191,5 +215,6 @@ describe('Open Gambit Workflow and locale publication contracts', () => {
     expect(Object.keys(result.localeStates)).toEqual(['en', 'zh', 'ja', 'fr', 'es']);
     expect(saved).toHaveLength(5);
     expect(saved.every(item => item.translationState === 'TRANSLATION_READY')).toBe(true);
+    expect(translationCalls).toEqual({ zh: 1, ja: 2, fr: 1, es: 1 });
   });
 });

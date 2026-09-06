@@ -27,100 +27,22 @@ type GambitTranslationProviderPayload = Partial<Omit<GambitTranslation, 'traject
   trajectories?: Array<Partial<GambitTrajectory>>;
 };
 
-const JAPANESE_TECHNICAL_ASCII_TERMS = new Set(['AI', 'API', 'D1', 'HTTP', 'JSON', 'LLM', 'R2', 'RSS', 'SDK', 'URL']);
-const JAPANESE_PROSE_REPAIRS = [
-  ['too permissive', '過度に寛容'],
-  ['too', '過度に'],
-  ["ModelYard's", 'ModelYardの'],
-  ['general availability', '一般公開'],
-  ['third-party', '第三者'],
-  ['pass/fail', '合否'],
-  ['gameable', '操作される可能性がある'],
-  ['commitments', '確約'],
-  ['compatibility', '互換性'],
-  ['conformance', '適合性'],
-  ['specification', '仕様'],
-  ['coordination', '調整'],
-  ['integration', '統合'],
-  ['adoption', '採用'],
-  ['maintenance', '保守'],
-  ['viability', '実現可能性'],
-  ['operational', '運用可能'],
-  ['versioned', 'バージョン管理された'],
-  ['developers', '開発者'],
-  ['developer', '開発者'],
-  ['platforms', 'プラットフォーム'],
-  ['platform', 'プラットフォーム'],
-  ['standard', '標準'],
-  ['registry', 'レジストリ'],
-  ['conformance', '適合性'],
-  ['evidence', '証拠'],
-  ['falsifier', '反証条件'],
-  ['deadline', '期限'],
-  ['milestone', '節目'],
-  ['external', '外部'],
-  ['official', '公式'],
-  ['release', 'リリース'],
-  ['launch', '開始'],
-  ['software', 'ソフトウェア'],
-  ['schema', 'スキーマ'],
-  ['request', 'リクエスト'],
-  ['tools', 'ツール'],
-  ['tool', 'ツール'],
-  ['suite', 'スイート'],
-  ['adapters', 'アダプター'],
-  ['adapter', 'アダプター'],
-  ['ecosystem', 'エコシステム'],
-  ['testable', '検証可能'],
-  ['public', '公開'],
-  ['paper', '紙面'],
-  ['empty', '空'],
-  ['independently', '独立して'],
-  ['choose', '選択する'],
-  ['historical', '過去の'],
-  ['revision', '改訂'],
-  ['follow-up', '後続'],
-  ['active', '積極的'],
-  ['rigor', '厳密さ'],
-  ['savings', '削減効果'],
-  ['costs', 'コスト'],
-  ['cost', 'コスト'],
-  ['reduce', '減らす'],
-  ['reducing', '減らす'],
-  ['shared', '共有された'],
-  ['share', '共有'],
-  ['same', '同じ'],
-  ['single', '単一'],
-  ['multiple', '複数'],
-  ['remain', '残る'],
-  ['remains', '残る'],
-  ['could', '可能性がある'],
-  ['may', '可能性がある'],
-  ['and', 'および'],
-  ['or', 'または'],
-  ['within', '以内に'],
-  ['after', '後'],
-  ['before', '前'],
-  ['the', 'その'],
-  ['this', 'この'],
-  ['that', 'その'],
-  ['with', 'とともに'],
-  ['from', 'から'],
-  ['for', 'のための'],
-  ['into', 'へ'],
-  ['through', 'を通じて'],
-  ['about', 'について'],
-  ['as', 'として'],
-  ['if', 'もし'],
-  ['is', 'である'],
-  ['are', 'である'],
-  ['will', 'する'],
-  ['can', 'できる'],
-  ['not', 'ない'],
-  ['no', 'ない'],
-  ['s', 'の'],
-  ['GA', '一般公開'],
-] as const;
+/**
+ * These are structural language checks, not a vocabulary repair list.  A
+ * technical token is allowed to remain in any locale when it is part of the
+ * canonical record or a conventional identifier/acronym.
+ */
+const TECHNICAL_ASCII_TERMS = new Set([
+  'AI', 'API', 'D1', 'GA', 'GitHub', 'HTTP', 'JSON', 'LLM', 'OpenAI', 'R2', 'RSS', 'SDK', 'URL',
+]);
+
+export interface GambitTranslationLanguageQuality {
+  targetLanguageDominance: 'PASS' | 'FAIL';
+  crossLanguageSentenceContamination: 'PASS' | 'FAIL';
+  naturalness: 'PASS' | 'FAIL';
+  canonicalEntityPreservation: 'PASS' | 'FAIL';
+  errors: string[];
+}
 
 export function copyTranslation(
   article: GambitPublicArticle,
@@ -151,24 +73,23 @@ export function copyTranslation(
 }
 
 export function normalizeGambitTranslation(value: GambitTranslationProviderPayload, locale: GambitLocale, article: GambitPublicArticle): GambitTranslation | null {
-  const localizedValue = locale === 'ja' ? repairJapaneseTranslation(value) : value;
-  if (gambitTranslationValidationErrors(localizedValue, locale, article).length > 0) return null;
+  if (gambitTranslationValidationErrors(value, locale, article).length > 0) return null;
   const canonical = copyTranslation(article, locale, 'TRANSLATION_READY');
-  const trajectories = localizedValue.trajectories ?? [];
+  const trajectories = value.trajectories ?? [];
   return {
     ...canonical,
     locale,
-    headline: String(localizedValue.headline),
-    surfaceEvent: String(localizedValue.surfaceEvent),
-    facts: (localizedValue.facts ?? []).map(String),
-    obviousLogic: String(localizedValue.obviousLogic),
-    thesis: String(localizedValue.thesis),
-    mechanism: String(localizedValue.mechanism),
-    beneficiaries: (localizedValue.beneficiaries ?? []).map(String),
-    pressuredActors: (localizedValue.pressuredActors ?? []).map(String),
-    countercase: String(localizedValue.countercase),
-    falsifier: String(localizedValue.falsifier),
-    uncertainty: String(localizedValue.uncertainty),
+    headline: String(value.headline),
+    surfaceEvent: String(value.surfaceEvent),
+    facts: (value.facts ?? []).map(String),
+    obviousLogic: String(value.obviousLogic),
+    thesis: String(value.thesis),
+    mechanism: String(value.mechanism),
+    beneficiaries: (value.beneficiaries ?? []).map(String),
+    pressuredActors: (value.pressuredActors ?? []).map(String),
+    countercase: String(value.countercase),
+    falsifier: String(value.falsifier),
+    uncertainty: String(value.uncertainty),
     sourceIds: canonical.sourceIds,
     evidenceIds: canonical.evidenceIds,
     trajectories: trajectories.map((trajectory, index) => ({
@@ -192,7 +113,7 @@ export function normalizeGambitTranslation(value: GambitTranslationProviderPaylo
 /** Privacy-safe schema diagnostics used by the staging provider probe. */
 export function gambitTranslationValidationErrors(value: unknown, locale: GambitLocale, article: GambitPublicArticle): string[] {
   if (!value || typeof value !== 'object') return ['OBJECT_REQUIRED'];
-  const record = (locale === 'ja' ? repairJapaneseTranslation(value as GambitTranslationProviderPayload) : value) as GambitTranslationProviderPayload;
+  const record = value as GambitTranslationProviderPayload;
   const articleFacts = Array.isArray(article.facts) ? article.facts : [];
   const articleBeneficiaries = Array.isArray(article.beneficiaries) ? article.beneficiaries : [];
   const articlePressuredActors = Array.isArray(article.pressuredActors) ? article.pressuredActors : [];
@@ -232,8 +153,41 @@ export function gambitTranslationValidationErrors(value: unknown, locale: Gambit
   return errors;
 }
 
+export function evaluateGambitTranslationLanguageQuality(
+  value: GambitTranslationProviderPayload,
+  locale: GambitLocale,
+  article: GambitPublicArticle,
+): GambitTranslationLanguageQuality {
+  const prose = translationProse(value);
+  const sentences = splitTranslationSentences(prose);
+  const canonicalAsciiTerms = new Set([...TECHNICAL_ASCII_TERMS, ...canonicalEntityAsciiTerms(article)]);
+  const canonicalNonLatinTerms = canonicalEntityNonLatinTerms(article);
+  const comparableProse = removeExactTerms(prose, canonicalNonLatinTerms);
+  const targetLanguageDominance = hasTargetLanguageDominance(comparableProse, locale);
+  const crossLanguageSentenceContamination = hasSentenceContamination(sentences, locale, canonicalAsciiTerms, canonicalNonLatinTerms);
+  const naturalness = targetLanguageDominance && !crossLanguageSentenceContamination;
+  const canonicalEntityPreservation = hasCanonicalEntityPreservation(value, article);
+  const errors: string[] = [];
+  const prefix = locale.toUpperCase();
+  if (!targetLanguageDominance) errors.push(`${prefix}_TARGET_LANGUAGE_DOMINANCE`);
+  if (crossLanguageSentenceContamination) errors.push(`${prefix}_CROSS_LANGUAGE_SENTENCE_CONTAMINATION`);
+  if (!naturalness) errors.push(`${prefix}_NATURALNESS`);
+  if (!canonicalEntityPreservation) errors.push('CANONICAL_ENTITY_PRESERVATION');
+  return {
+    targetLanguageDominance: targetLanguageDominance ? 'PASS' : 'FAIL',
+    crossLanguageSentenceContamination: crossLanguageSentenceContamination ? 'FAIL' : 'PASS',
+    naturalness: naturalness ? 'PASS' : 'FAIL',
+    canonicalEntityPreservation: canonicalEntityPreservation ? 'PASS' : 'FAIL',
+    errors,
+  };
+}
+
 function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload, locale: GambitLocale, article: GambitPublicArticle): string[] {
-  const prose = [
+  return evaluateGambitTranslationLanguageQuality(value, locale, article).errors;
+}
+
+function translationProse(value: GambitTranslationProviderPayload): string {
+  return [
     value.headline,
     value.surfaceEvent,
     ...(value.facts ?? []),
@@ -252,78 +206,113 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
       trajectory?.falsifier,
     ]),
   ].filter((item): item is string => typeof item === 'string').join('\n');
-  // These are generic English words that the Japanese prompt explicitly
-  // requires to be rendered as Japanese. Do not inspect canonical entity
-  // names, IDs, dates, or probabilities: those remain immutable by design.
-  if (locale === 'ja') {
-    const canonicalAsciiTerms = new Set(japaneseCanonicalAsciiTerms(article));
-    const unexpectedAscii = asciiWords(prose).filter(term => !canonicalAsciiTerms.has(term) && !JAPANESE_TECHNICAL_ASCII_TERMS.has(term));
-    if (unexpectedAscii.length > 0 || /(?:仍然是|以及|并且|加上)/u.test(prose)) {
-      return ['JA_NATIVE_PROSE_LEAKAGE'];
+}
+
+function splitTranslationSentences(value: string): string[] {
+  return value.split(/[.!?。！？]+/u).map(sentence => sentence.trim()).filter(Boolean);
+}
+
+function hasTargetLanguageDominance(value: string, locale: GambitLocale): boolean {
+  if (locale === 'ja') return countMatches(value, /[\u3040-\u30ff\u3400-\u9fff]/gu) >= Math.max(8, Math.ceil(value.length * 0.04));
+  if (locale === 'zh') return countMatches(value, /[\u3400-\u9fff]/gu) >= Math.max(8, Math.ceil(value.length * 0.04));
+  if (locale === 'fr' || locale === 'es') {
+    const letters = countMatches(value, /\p{Letter}/gu);
+    const signals = languageSignalScore(value, locale);
+    const diacritics = countMatches(value, /[À-ÖØ-öø-ÿÑñ¿¡]/gu);
+    return letters >= 12 && (signals >= 2 || diacritics >= 1);
+  }
+  return true;
+}
+
+function hasSentenceContamination(
+  sentences: string[],
+  locale: GambitLocale,
+  canonicalAsciiTerms: Set<string>,
+  canonicalNonLatinTerms: string[],
+): boolean {
+  const nonLatinPattern = /[\u3040-\u30ff\u3400-\u9fff]/gu;
+  for (const sentence of sentences) {
+    const withoutCanonicalNames = removeExactTerms(sentence, canonicalNonLatinTerms);
+    if (locale === 'fr' || locale === 'es') {
+      if (nonLatinPattern.test(withoutCanonicalNames)) return true;
+      nonLatinPattern.lastIndex = 0;
+      continue;
     }
+    const targetChars = locale === 'ja'
+      ? countMatches(sentence, /[\u3040-\u30ff\u3400-\u9fff]/gu)
+      : countMatches(sentence, /[\u3400-\u9fff]/gu);
+    const foreignWords = asciiWords(sentence).filter(term => !canonicalAsciiTerms.has(term));
+    const foreignChars = foreignWords.join('').length;
+    // A single conventional identifier or an occasional residual token is
+    // not contamination. Require a sentence-level foreign-language signal.
+    if (foreignWords.length >= 3 && foreignChars >= 12 && targetChars < foreignChars) return true;
+    if (foreignChars >= 24 && targetChars < 8) return true;
   }
-  if ((locale === 'fr' || locale === 'es') && /[\u3400-\u9fff]/u.test(prose)) {
-    return [`${locale.toUpperCase()}_NATIVE_PROSE_LEAKAGE`];
-  }
-  return [];
+  return false;
+}
+
+function hasCanonicalEntityPreservation(value: GambitTranslationProviderPayload, article: GambitPublicArticle): boolean {
+  if (value.sourceIds !== undefined && !sameStringArray(value.sourceIds, canonicalSourceIds(article))) return false;
+  if (value.evidenceIds !== undefined && !sameNumberArray(value.evidenceIds, canonicalEvidenceIds(article))) return false;
+  if (!Array.isArray(value.trajectories)) return true;
+  return value.trajectories.every((trajectory, index) => {
+    const original = article.trajectories[index];
+    if (!original || !trajectory) return false;
+    return (trajectory.targetEntity === undefined || trajectory.targetEntity === original.targetEntity)
+      && (trajectory.probability === undefined || trajectory.probability === original.probability)
+      && (trajectory.deadline === undefined || trajectory.deadline === original.deadline)
+      && (trajectory.id === undefined || trajectory.id === original.id)
+      && (trajectory.status === undefined || trajectory.status === original.status);
+  });
+}
+
+function canonicalEntityAsciiTerms(article: GambitPublicArticle): string[] {
+  const source = [
+    article.headline,
+    article.surfaceEvent,
+    ...article.trajectories.map(trajectory => trajectory.targetEntity),
+  ].join('\n');
+  return [...new Set(asciiWords(source).filter(term => /^[A-Z0-9_]+$/u.test(term) || /[a-z][A-Z]/u.test(term)))];
+}
+
+function canonicalEntityNonLatinTerms(article: GambitPublicArticle): string[] {
+  const source = [
+    article.headline,
+    article.surfaceEvent,
+    ...article.trajectories.map(trajectory => trajectory.targetEntity),
+  ].join('\n');
+  return [...new Set(source.match(/[\u3040-\u30ff\u3400-\u9fff]{2,}/gu) ?? [])];
 }
 
 function asciiWords(value: string): string[] {
   return value.match(/[A-Za-z][A-Za-z_-]*/gu) ?? [];
 }
 
-function repairJapaneseTranslation(value: GambitTranslationProviderPayload): GambitTranslationProviderPayload {
-  const record: GambitTranslationProviderPayload = { ...value };
-  for (const field of ['headline', 'surfaceEvent', 'obviousLogic', 'thesis', 'mechanism', 'countercase', 'falsifier', 'uncertainty'] as const) {
-    if (typeof record[field] === 'string') record[field] = repairJapaneseProse(record[field]);
-  }
-  for (const field of ['facts', 'beneficiaries', 'pressuredActors'] as const) {
-    if (Array.isArray(record[field])) record[field] = record[field].map(item => typeof item === 'string' ? repairJapaneseProse(item) : item);
-  }
-  if (Array.isArray(record.trajectories)) {
-    record.trajectories = record.trajectories.map(trajectory => {
-      if (!trajectory || typeof trajectory !== 'object') return trajectory;
-      const repaired = { ...trajectory };
-      for (const field of ['predictionStatement', 'reasoning', 'evidenceCriteria', 'falsifier'] as const) {
-        if (typeof repaired[field] === 'string') repaired[field] = repairJapaneseProse(repaired[field]);
-      }
-      return repaired;
-    });
-  }
-  return record;
+function languageSignalScore(value: string, locale: 'fr' | 'es'): number {
+  const signals = locale === 'fr'
+    ? new Set(['avec', 'dans', 'des', 'du', 'est', 'et', 'les', 'pour', 'sur', 'une'])
+    : new Set(['con', 'del', 'el', 'en', 'es', 'la', 'las', 'los', 'para', 'por', 'una', 'y']);
+  return asciiWords(value.toLocaleLowerCase()).filter(word => signals.has(word)).length;
 }
 
-function repairJapaneseProse(value: string): string {
-  let repaired = value;
-  for (const [source, target] of [...JAPANESE_PROSE_REPAIRS].sort(([left], [right]) => right.length - left.length)) {
-    const escaped = source.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-    repaired = repaired.replace(new RegExp(`(^|[^A-Za-z])${escaped}(?=$|[^A-Za-z])`, 'giu'), `$1${target}`);
-  }
-  return repaired;
+function countMatches(value: string, pattern: RegExp): number {
+  return value.match(pattern)?.length ?? 0;
 }
 
-function japaneseCanonicalAsciiTerms(article: GambitPublicArticle): string[] {
-  const terms = asciiWords([
-    article.headline,
-    article.surfaceEvent,
-    ...article.facts,
-    article.obviousLogic,
-    article.thesis,
-    article.mechanism,
-    ...article.beneficiaries,
-    ...article.pressuredActors,
-    article.countercase,
-    article.falsifier,
-    article.uncertainty,
-    ...article.trajectories.flatMap(trajectory => [
-      trajectory.targetEntity,
-      trajectory.predictionStatement,
-      trajectory.reasoning,
-      trajectory.evidenceCriteria,
-      trajectory.falsifier,
-    ]),
-  ].join('\n')).filter(term => /^[A-Z]/u.test(term) || /^[A-Z0-9]{2,}$/u.test(term));
-  return [...new Set(terms)].sort();
+function removeExactTerms(value: string, terms: string[]): string {
+  return terms.reduce((result, term) => result.split(term).join(''), value);
+}
+
+function sameStringArray(left: unknown, right: string[]): boolean {
+  return Array.isArray(left) && left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameNumberArray(left: unknown, right: number[]): boolean {
+  return Array.isArray(left) && left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isTranslationLanguageQualityError(error: string): boolean {
+  return /^(?:ZH|JA|FR|ES)_(?:TARGET_LANGUAGE_DOMINANCE|CROSS_LANGUAGE_SENTENCE_CONTAMINATION|NATURALNESS)$/u.test(error);
 }
 
 export async function translateGambit(
@@ -365,74 +354,103 @@ export async function translateGambit(
       errors[locale] = 'TRANSLATION_PROVIDER_UNAVAILABLE';
       continue;
     }
-    const request = translationRequest(article, locale, translationRole);
-    const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
-    if (options.budget && !options.budget.consume('gambit_llm', request.tokenBudget)) {
-      await repository.recordLLMAttempt({
-        runId: options.runId,
-        candidateId: article.candidateId,
-        articleId: article.articleId,
-        stage: 'TRANSLATION',
-        role: request.role,
-        response: null,
-        publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-        promptVersion: GAMBIT_PROMPT_VERSION,
-        requestHash,
-        status: 'SKIPPED',
-        errorCode: 'GAMBIT_LLM_BUDGET_EXCEEDED',
-        createdAt: nowIso,
-      });
-      await saveFallback(repository, article, revisionId, locale, 'GAMBIT_LLM_BUDGET_EXCEEDED', nowIso);
-      localeStates[locale] = 'TRANSLATION_FAILED';
-      errors[locale] = 'GAMBIT_LLM_BUDGET_EXCEEDED';
-      continue;
+    let readyTranslation: GambitTranslation | null = null;
+    let readyProvider: string | null = null;
+    let failureCode = 'TRANSLATION_SCHEMA_INVALID';
+    for (let attempt = 0; attempt < 2 && !readyTranslation; attempt += 1) {
+      const request = translationRequest(article, locale, translationRole, { corrective: attempt === 1 });
+      const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
+      if (options.budget && !options.budget.consume('gambit_llm', request.tokenBudget)) {
+        await repository.recordLLMAttempt({
+          runId: options.runId,
+          candidateId: article.candidateId,
+          articleId: article.articleId,
+          stage: 'TRANSLATION',
+          role: request.role,
+          response: null,
+          publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
+          promptVersion: GAMBIT_PROMPT_VERSION,
+          requestHash,
+          status: 'SKIPPED',
+          errorCode: 'GAMBIT_LLM_BUDGET_EXCEEDED',
+          createdAt: nowIso,
+        });
+        failureCode = 'GAMBIT_LLM_BUDGET_EXCEEDED';
+        break;
+      }
+      try {
+        const response = await translationProvider.complete<GambitTranslationProviderPayload>(request);
+        const validationErrors = gambitTranslationValidationErrors(response.value, locale, article);
+        const translation = normalizeGambitTranslation(response.value, locale, article);
+        if (translation && validationErrors.length === 0) {
+          readyTranslation = translation;
+          readyProvider = response.provider;
+          await repository.recordLLMAttempt({
+            runId: options.runId,
+            candidateId: article.candidateId,
+            articleId: article.articleId,
+            stage: 'TRANSLATION',
+            role: request.role,
+            response,
+            publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
+            promptVersion: GAMBIT_PROMPT_VERSION,
+            requestHash,
+            status: 'SUCCESS',
+            createdAt: nowIso,
+          });
+          break;
+        }
+        const languageQualityOnly = validationErrors.length > 0 && validationErrors.every(isTranslationLanguageQualityError);
+        failureCode = languageQualityOnly ? 'TRANSLATION_LANGUAGE_QUALITY_FAILED' : 'TRANSLATION_SCHEMA_INVALID';
+        await repository.recordLLMAttempt({
+          runId: options.runId,
+          candidateId: article.candidateId,
+          articleId: article.articleId,
+          stage: 'TRANSLATION',
+          role: request.role,
+          response,
+          publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
+          promptVersion: GAMBIT_PROMPT_VERSION,
+          requestHash,
+          status: 'ERROR',
+          errorCode: failureCode,
+          createdAt: nowIso,
+        });
+        if (!languageQualityOnly || attempt === 1) break;
+      } catch (error) {
+        failureCode = error instanceof GambitProviderError ? error.code : 'translation_failed';
+        await repository.recordLLMAttempt({
+          runId: options.runId,
+          candidateId: article.candidateId,
+          articleId: article.articleId,
+          stage: 'TRANSLATION',
+          role: request.role,
+          response: null,
+          publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
+          promptVersion: GAMBIT_PROMPT_VERSION,
+          requestHash,
+          status: 'ERROR',
+          errorCode: failureCode,
+          createdAt: nowIso,
+        });
+        break;
+      }
     }
-    try {
-      const response = await translationProvider.complete<GambitTranslation>(request);
-      const translation = normalizeGambitTranslation(response.value, locale, article);
-      if (!translation) throw new GambitProviderError('TRANSLATION_SCHEMA_INVALID');
-      const ready = { ...translation, provider: response.provider, translatedAt: nowIso };
-      await repository.recordLLMAttempt({
-        runId: options.runId,
-        candidateId: article.candidateId,
-        articleId: article.articleId,
-        stage: 'TRANSLATION',
-        role: request.role,
-        response,
-        publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-        promptVersion: GAMBIT_PROMPT_VERSION,
-        requestHash,
-        status: 'SUCCESS',
-        createdAt: nowIso,
-      });
+    if (readyTranslation && readyProvider) {
+      const ready = { ...readyTranslation, provider: readyProvider, translatedAt: nowIso };
       await repository.saveTranslation({
         articleId: article.articleId,
         revisionId,
         translation: ready,
-        provider: response.provider,
+        provider: readyProvider,
         status: 'TRANSLATED',
         now: nowIso,
       });
       localeStates[locale] = 'TRANSLATION_READY';
-    } catch (error) {
-      const code = error instanceof GambitProviderError ? error.code : 'translation_failed';
-      await repository.recordLLMAttempt({
-        runId: options.runId,
-        candidateId: article.candidateId,
-        articleId: article.articleId,
-        stage: 'TRANSLATION',
-        role: request.role,
-        response: null,
-        publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-        promptVersion: GAMBIT_PROMPT_VERSION,
-        requestHash,
-        status: 'ERROR',
-        errorCode: code,
-        createdAt: nowIso,
-      });
-      await saveFallback(repository, article, revisionId, locale, code, nowIso);
+    } else {
+      await saveFallback(repository, article, revisionId, locale, failureCode, nowIso);
       localeStates[locale] = 'TRANSLATION_FAILED';
-      errors[locale] = code;
+      errors[locale] = failureCode;
     }
   }
   const targetStates = TRANSLATION_LOCALES.map(locale => localeStates[locale]);
@@ -490,12 +508,17 @@ export async function publishQualifiedGambit(
  * used by the staging-only provider diagnostic so request size and provider
  * behavior can be compared without exposing article content in diagnostics.
  */
-export function translationRequest(article: GambitPublicArticle, locale: typeof TRANSLATION_LOCALES[number], role?: GambitModelRoleConfig) {
+export function translationRequest(
+  article: GambitPublicArticle,
+  locale: typeof TRANSLATION_LOCALES[number],
+  role?: GambitModelRoleConfig,
+  options: { corrective?: boolean } = {},
+) {
   const languageInstruction = {
-    zh: '用自然、简洁的简体中文撰写，保持科技产品编辑风格。',
-    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調や中国語の漢字置換を避ける。すべての文章フィールドは日本語の文として書き、固有名詞・製品名・識別子（ModelYard、BridgeSpec、AI、API、SDK など）以外のラテン文字の英単語を残さない。adopter、commitments、platform、too、gameable、GA、pass、fail、third-party、registry、standard、deadline、suite、conformance、adoption、maintenance、viability、public、official、release などの一般英語は一切使わず、日本語に置き換える。「too permissive」は必ず「過度に寛容」、「gameable」は「操作される可能性がある」、「GA milestone」は「一般公開の節目」と訳す。各文章を返す前に、英語の一般語や中国語の接続表現が残っていないか自己確認する。「仍然是」「以及」「并且」「加上」は使わず、日本語の表現にする。',
-    fr: 'Rédiger dans un français naturel et concis de produit technologique, sans calque de l’anglais ni caractères chinois ou japonais dans la prose.',
-    es: 'Redactar en un español internacional, natural y conciso para un producto tecnológico, sin calcar el inglés ni introducir caracteres chinos o japoneses en la prosa.',
+    zh: '用自然、简洁的简体中文撰写，保持科技产品编辑风格。不要插入完整的其他语言句子。',
+    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調を避け、固有名詞・製品名・技術略語・識別子は必要に応じて原表記を保つ。完全な英語や中国語の文章を挿入しない。',
+    fr: 'Rédiger dans un français naturel et concis de produit technologique, avec une syntaxe française idiomatique. Conserver les noms propres, produits, acronymes et identifiants nécessaires, sans insérer de phrase complète en anglais, chinois ou japonais.',
+    es: 'Redactar en un español internacional, natural y conciso para un producto tecnológico, con una sintaxis idiomática en español. Conservar nombres propios, productos, siglas e identificadores necesarios, sin insertar frases completas en inglés, chino o japonés.',
   }[locale];
   const canonicalRecord = {
     locale,
@@ -523,13 +546,13 @@ export function translationRequest(article: GambitPublicArticle, locale: typeof 
     falsifier: article.falsifier,
     uncertainty: article.uncertainty,
   };
-  const japaneseOutputContract = locale === 'ja'
-    ? ` 許可されるラテン文字は、元の固有名詞・製品名・識別子だけ（${japaneseCanonicalAsciiTerms(article).join(', ') || 'なし'}）と、一般的な技術略語 AI/API/SDK/JSON/HTTP/URL/LLM/D1/R2/RSS だけ。これ以外の英字語は一語も残さず日本語にする。出力前に全フィールドを再確認し、許可リスト外の英単語があれば必ず書き直す。`
+  const correctiveInstruction = options.corrective
+    ? ' The previous response failed the language-quality check. Regenerate the complete JSON in native target-language prose, preserve the schema and canonical entities, and remove any complete sentence written in another language. Do not explain the correction.'
     : '';
   return {
     role: 'translation',
     schemaName: 'GambitTranslationV1',
-    system: `${languageInstruction}${japaneseOutputContract} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. The trajectories value must be an array with the same number and order as the input; every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, labels, or any prose outside the JSON object.`,
+    system: `${languageInstruction}${correctiveInstruction} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. The trajectories value must be an array with the same number and order as the input; every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, labels, or any prose outside the JSON object.`,
     user: JSON.stringify(canonicalRecord),
     tokenBudget: role?.tokenBudget ?? 2_000,
     timeoutMs: role?.timeoutMs ?? 60_000,

@@ -910,32 +910,32 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       evidence: [evidence()],
     } as GambitPublicArticle;
     const normalized = normalizeGambitTranslation({
-      headline: 'Localized headline',
-      surfaceEvent: 'Localized event',
-      facts: ['Localized fact'],
-      obviousLogic: 'Localized logic',
-      thesis: 'Localized thesis',
-      mechanism: 'Localized mechanism',
-      beneficiaries: ['Developers'],
-      pressuredActors: ['Incumbents'],
-      countercase: 'Localized countercase',
+      headline: '本地化标题',
+      surfaceEvent: '本地化事件',
+      facts: ['本地化事实'],
+      obviousLogic: '本地化逻辑',
+      thesis: '本地化论点',
+      mechanism: '本地化机制',
+      beneficiaries: ['开发者'],
+      pressuredActors: ['现有平台'],
+      countercase: '本地化反方观点',
       trajectories: [{
-        predictionStatement: 'Localized prediction',
-        reasoning: 'Localized reasoning',
-        evidenceCriteria: 'Localized evidence condition',
-        falsifier: 'Localized falsifier',
+        predictionStatement: '本地化预测',
+        reasoning: '本地化理由',
+        evidenceCriteria: '本地化验证条件',
+        falsifier: '本地化反证条件',
       }],
-      falsifier: 'Localized falsifier',
-      uncertainty: 'Localized uncertainty',
+      falsifier: '本地化反证条件',
+      uncertainty: '本地化不确定性',
     }, 'zh', article);
-    expect(normalized).toMatchObject({ locale: 'zh', headline: 'Localized headline' });
+    expect(normalized).toMatchObject({ locale: 'zh', headline: '本地化标题' });
     expect(normalized?.trajectories[0]).toMatchObject({
       id: 'trajectory-1',
       targetEntity: 'TEST_ONLY Example compatibility layer',
       probability: 70,
       deadline: '2026-12-31',
       status: 'WATCHING',
-      predictionStatement: 'Localized prediction',
+      predictionStatement: '本地化预测',
     });
 
     const japaneseValue = {
@@ -947,7 +947,7 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       mechanism: 'ローカライズされた仕組み',
       beneficiaries: ['開発者'],
       pressuredActors: ['既存企業'],
-      countercase: 'too を含む不自然な文章',
+      countercase: '日本語の文に完全な英語の節が混在しています。 The platform will expand adoption.',
       trajectories: [{
         predictionStatement: 'ローカライズされた予測',
         reasoning: 'ローカライズされた理由',
@@ -957,8 +957,8 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       falsifier: 'ローカライズされた反証条件',
       uncertainty: 'ローカライズされた不確実性',
     };
-    expect(gambitTranslationValidationErrors(japaneseValue, 'ja', article)).toEqual([]);
-    expect(normalizeGambitTranslation(japaneseValue, 'ja', article)).toMatchObject({ locale: 'ja', countercase: expect.stringContaining('過度に') });
+    expect(gambitTranslationValidationErrors(japaneseValue, 'ja', article)).toContain('JA_CROSS_LANGUAGE_SENTENCE_CONTAMINATION');
+    expect(normalizeGambitTranslation(japaneseValue, 'ja', article)).toBeNull();
   });
 
   it('sends only writable trajectory prose to the locale provider', () => {
@@ -985,8 +985,10 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       'predictionStatement',
       'reasoning',
     ]);
-    expect(request.system).toContain('すべての文章フィールドは日本語の文');
-    expect(request.system).toContain('英語の一般語');
+    expect(request.system).toContain('自然で簡潔な日本語');
+    expect(request.system).toContain('完全な英語や中国語の文章');
+    expect(request.system).not.toContain('gameable');
+    expect(request.system).not.toContain('仍然是');
   });
 });
 
