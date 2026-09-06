@@ -137,7 +137,6 @@ export function gambitTranslationValidationErrors(value: unknown, locale: Gambit
 }
 
 function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload, locale: GambitLocale): string[] {
-  if (locale !== 'ja') return [];
   const prose = [
     value.headline,
     value.surfaceEvent,
@@ -160,9 +159,13 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
   // These are generic English words that the Japanese prompt explicitly
   // requires to be rendered as Japanese. Do not inspect canonical entity
   // names, IDs, dates, or probabilities: those remain immutable by design.
-  return /\b(?:adopters?|commitments?|platform|too)\b/iu.test(prose)
-    ? ['JA_NATIVE_PROSE_LEAKAGE']
-    : [];
+  if (locale === 'ja' && /\b(?:adopters?|commitments?|platform|too|gameable|GA)\b/iu.test(prose)) {
+    return ['JA_NATIVE_PROSE_LEAKAGE'];
+  }
+  if ((locale === 'fr' || locale === 'es') && /[\u3400-\u9fff]/u.test(prose)) {
+    return [`${locale.toUpperCase()}_NATIVE_PROSE_LEAKAGE`];
+  }
+  return [];
 }
 
 export async function translateGambit(
@@ -332,7 +335,7 @@ export async function publishQualifiedGambit(
 export function translationRequest(article: GambitPublicArticle, locale: typeof TRANSLATION_LOCALES[number], role?: GambitModelRoleConfig) {
   const languageInstruction = {
     zh: '用自然、简洁的简体中文撰写，保持科技产品编辑风格。',
-    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調や中国語の漢字置換を避け、固有名詞・製品名・識別子以外は日本語だけで書く。adopter、commitments、platform、too などの英字の一般英単語は一切使わず、「採用者」「採用表明」「プラットフォーム」「過度に」などの日本語に置き換える。「too permissive」は必ず「過度に寛容」と訳す。',
+    ja: '自然で簡潔な日本語のテクノロジー編集文として書く。直訳調や中国語の漢字置換を避け、固有名詞・製品名・識別子以外は日本語だけで書く。adopter、commitments、platform、too、gameable、GA などの英字の一般英単語・略語は一切使わず、「採用者」「採用表明」「プラットフォーム」「過度に」「一般公開」などの日本語に置き換える。「too permissive」は必ず「過度に寛容」、「gameable」は「操作される可能性がある」、「GA milestone」は「一般公開の節目」と訳す。',
     fr: 'Rédiger dans un français naturel et concis de produit technologique, sans calque de l’anglais ni caractères chinois ou japonais dans la prose.',
     es: 'Redactar en un español internacional, natural y conciso para un producto tecnológico, sin calcar el inglés ni introducir caracteres chinos o japoneses en la prosa.',
   }[locale];
