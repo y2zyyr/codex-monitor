@@ -961,7 +961,18 @@ describe('Open Gambit public rendering and append-only resolution', () => {
 
   it('sends only writable trajectory prose to the locale provider', () => {
     const article = {
-      ...({ trajectories: [trajectory()] } as GambitPublicArticle),
+      headline: 'Canonical headline',
+      surfaceEvent: 'Canonical event',
+      facts: ['Canonical fact'],
+      obviousLogic: 'Canonical logic',
+      thesis: 'Canonical thesis',
+      mechanism: 'Canonical mechanism',
+      beneficiaries: ['Developers'],
+      pressuredActors: ['Incumbents'],
+      countercase: 'Canonical countercase',
+      falsifier: 'Canonical falsifier',
+      uncertainty: 'Canonical uncertainty',
+      trajectories: [trajectory()],
       evidence: [evidence()],
     } as GambitPublicArticle;
     const request = translationRequest(article, 'ja');

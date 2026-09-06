@@ -162,26 +162,7 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
   // requires to be rendered as Japanese. Do not inspect canonical entity
   // names, IDs, dates, or probabilities: those remain immutable by design.
   if (locale === 'ja') {
-    const canonicalAsciiTerms = new Set(asciiWords([
-      article.headline,
-      article.surfaceEvent,
-      ...article.facts,
-      article.obviousLogic,
-      article.thesis,
-      article.mechanism,
-      ...article.beneficiaries,
-      ...article.pressuredActors,
-      article.countercase,
-      article.falsifier,
-      article.uncertainty,
-      ...article.trajectories.flatMap(trajectory => [
-        trajectory.targetEntity,
-        trajectory.predictionStatement,
-        trajectory.reasoning,
-        trajectory.evidenceCriteria,
-        trajectory.falsifier,
-      ]),
-    ].join('\n')).filter(term => /^[A-Z]/u.test(term) || /^[A-Z0-9]{2,}$/u.test(term)));
+    const canonicalAsciiTerms = new Set(japaneseCanonicalAsciiTerms(article));
     const unexpectedAscii = asciiWords(prose).filter(term => !canonicalAsciiTerms.has(term) && !JAPANESE_TECHNICAL_ASCII_TERMS.has(term));
     if (unexpectedAscii.length > 0 || /(?:仍然是|以及|并且|加上)/u.test(prose)) {
       return ['JA_NATIVE_PROSE_LEAKAGE'];
@@ -195,6 +176,30 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
 
 function asciiWords(value: string): string[] {
   return value.match(/[A-Za-z][A-Za-z_-]*/gu) ?? [];
+}
+
+function japaneseCanonicalAsciiTerms(article: GambitPublicArticle): string[] {
+  const terms = asciiWords([
+    article.headline,
+    article.surfaceEvent,
+    ...article.facts,
+    article.obviousLogic,
+    article.thesis,
+    article.mechanism,
+    ...article.beneficiaries,
+    ...article.pressuredActors,
+    article.countercase,
+    article.falsifier,
+    article.uncertainty,
+    ...article.trajectories.flatMap(trajectory => [
+      trajectory.targetEntity,
+      trajectory.predictionStatement,
+      trajectory.reasoning,
+      trajectory.evidenceCriteria,
+      trajectory.falsifier,
+    ]),
+  ].join('\n')).filter(term => /^[A-Z]/u.test(term) || /^[A-Z0-9]{2,}$/u.test(term));
+  return [...new Set(terms)].sort();
 }
 
 export async function translateGambit(
@@ -394,10 +399,13 @@ export function translationRequest(article: GambitPublicArticle, locale: typeof 
     falsifier: article.falsifier,
     uncertainty: article.uncertainty,
   };
+  const japaneseOutputContract = locale === 'ja'
+    ? ` 許可されるラテン文字は、元の固有名詞・製品名・識別子だけ（${japaneseCanonicalAsciiTerms(article).join(', ') || 'なし'}）と、一般的な技術略語 AI/API/SDK/JSON/HTTP/URL/LLM/D1/R2/RSS だけ。これ以外の英字語は一語も残さず日本語にする。出力前に全フィールドを再確認し、許可リスト外の英単語があれば必ず書き直す。`
+    : '';
   return {
     role: 'translation',
     schemaName: 'GambitTranslationV1',
-    system: `${languageInstruction} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. The trajectories value must be an array with the same number and order as the input; every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not need to repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, or any prose outside the JSON object.`,
+    system: `${languageInstruction}${japaneseOutputContract} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. The trajectories value must be an array with the same number and order as the input; every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, labels, or any prose outside the JSON object.`,
     user: JSON.stringify(canonicalRecord),
     tokenBudget: role?.tokenBudget ?? 2_000,
     timeoutMs: role?.timeoutMs ?? 60_000,
