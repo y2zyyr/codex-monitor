@@ -164,7 +164,10 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
         { role: 'user', content: request.user },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.1,
+      // Native-language publication must be reproducible at the validation
+      // boundary; keep the translation response deterministic while leaving
+      // the broader analysis roles at the existing low temperature.
+      temperature: request.role === 'translation' ? 0 : 0.1,
       max_tokens: request.tokenBudget,
       // The configured OpenAI-compatible gateway reliably returns SSE for
       // analysis roles; translation can opt into a normal JSON response when
