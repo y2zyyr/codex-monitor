@@ -8,7 +8,7 @@ import { Repository } from '../db/repository';
 import { GambitRepository } from '../open-gambit/repository';
 import { appendResolution } from '../open-gambit/resolution';
 import { publishApprovedGambit, runGambitDiscovery } from '../open-gambit/service';
-import { GambitProviderError, type GambitProviderDiagnostic, getGambitModelRoleConfig } from '../open-gambit/llm';
+import { GambitProviderError, providerForRole, type GambitProviderDiagnostic, getGambitModelRoleConfig } from '../open-gambit/llm';
 import { gambitTranslationValidationErrors, translationRequest } from '../open-gambit/publication';
 import { createConfiguredProviders, dispatchQualifiedGambit, workflowIdForCandidate } from '../open-gambit/workflow';
 import {
@@ -204,6 +204,15 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
   const diagnosticLocale = ['zh', 'ja', 'fr', 'es'].includes(String(parsedBody.locale))
     ? String(parsedBody.locale) as 'zh' | 'ja' | 'fr' | 'es'
     : 'ja';
+  // Staging-only model override for the bounded capability benchmark. The
+  // value is an actual runtime model identifier and never a public AI
+  // identity; it only affects the provider built for this probe.
+  const diagnosticModelId = typeof parsedBody.modelId === 'string' && /^[A-Za-z0-9._-]{1,80}$/u.test(parsedBody.modelId)
+    ? parsedBody.modelId
+    : undefined;
+  // Staging-only prose sampling for the fixed TEST_ONLY fixture so the audit
+  // can evaluate native editorial quality. Never enabled outside staging.
+  const includeProse = c.env.BUILD_ENVIRONMENT === 'staging' && parsedBody.prose === true;
   const diagnosticTranslationTimeoutMs = boundedDiagnosticNumber(parsedBody.translationTimeoutMs, 60_000, 5_000, 60_000);
   const diagnosticTranslationRetryLimit = boundedDiagnosticNumber(parsedBody.translationRetryLimit, 0, 0, 1);
   const diagnosticTranslationTokenBudget = boundedDiagnosticNumber(parsedBody.translationTokenBudget, 2_000, 400, 5_000);
@@ -216,6 +225,7 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
     const translationProbeRole = translationRole
       ? {
         ...translationRole,
+        ...(diagnosticModelId ? { runtimeModelId: diagnosticModelId } : {}),
         timeoutMs: diagnosticTranslationTimeoutMs,
         retryLimit: diagnosticTranslationRetryLimit,
         tokenBudget: diagnosticTranslationTokenBudget,
@@ -263,7 +273,13 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
     const diagnostics: GambitProviderDiagnostic[] = [];
     const workflowFetch: typeof fetch = (input, init) => globalThis.fetch(input, init ? { ...init, signal: undefined } : init);
     const providers = createConfiguredProviders(c.env, transport === 'workflow' ? workflowFetch : undefined, diagnostic => diagnostics.push(diagnostic));
-    const provider = providers.translation ?? providers.triage;
+    // When a benchmark model override is present, build a dedicated probe
+    // provider for the translation request so the same contract is exercised
+    // against the candidate model without touching the configured role.
+    const translationProbeProvider = diagnosticModelId && translationProbeRole
+      ? providerForRole(translationProbeRole, c.env, transport === 'workflow' ? workflowFetch : undefined, diagnostic => diagnostics.push(diagnostic))
+      : providers.translation;
+    const provider = translationProbeProvider ?? providers.translation ?? providers.triage;
     if (!provider) return errorResponse(c, 503, 'PROVIDER_UNAVAILABLE', 'No staged Gambit provider is configured.', id);
 
     const probes: Array<{ name: string; request: GambitLLMRequest }> = [
@@ -303,11 +319,12 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
     const results = [];
     for (const probe of probes) {
       results.push(await runProviderDiagnosticProbe(
-        provider,
+        probe.name === 'translation_shaped' ? (translationProbeProvider ?? provider) : provider,
         probe.name,
         probe.request,
         diagnostics,
         probe.name === 'translation_shaped' ? value => gambitTranslationValidationErrors(value, diagnosticLocale, article) : undefined,
+        includeProse,
       ));
     }
     return c.json({
@@ -316,7 +333,7 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
         transport,
         locale: diagnosticLocale,
         provider: provider.name,
-        modelId: translationRole?.runtimeModelId ?? triageRole?.runtimeModelId ?? null,
+        modelId: translationProbeRole?.runtimeModelId ?? translationRole?.runtimeModelId ?? triageRole?.runtimeModelId ?? null,
         probes: results,
         diagnostics: diagnostics.map(safeProviderDiagnostic),
       },
@@ -465,6 +482,7 @@ async function runProviderDiagnosticProbe(
   request: GambitLLMRequest,
   diagnostics: GambitProviderDiagnostic[],
   validate?: (value: unknown) => string[],
+  includeProse?: boolean,
 ): Promise<Record<string, unknown>> {
   const before = diagnostics.length;
   const started = Date.now();
@@ -480,6 +498,10 @@ async function runProviderDiagnosticProbe(
       inputTokens: response.inputTokens ?? null,
       outputTokens: response.outputTokens ?? null,
       validationErrors: validate ? validate(response.value) : undefined,
+      // Staging-only prose sampling for the fixed TEST_ONLY fixture. The
+      // diagnostic remains silent on production and never returns prompts,
+      // credentials, or any non-fixture article body.
+      prose: includeProse ? diagnosticProseSample(response.value) : undefined,
       jsonShape: safeJsonShape(response.value),
       request: diagnosticRequestSummary(request),
       diagnostics: diagnostics.slice(before).map(safeProviderDiagnostic),
@@ -494,6 +516,25 @@ async function runProviderDiagnosticProbe(
       diagnostics: diagnostics.slice(before).map(safeProviderDiagnostic),
     };
   }
+}
+
+function diagnosticProseSample(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const sample: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === 'string') sample[key] = entry.slice(0, 1_200);
+    else if (Array.isArray(entry) && entry.every(item => typeof item === 'string')) sample[key] = entry.map(item => item.slice(0, 300)).slice(0, 8);
+    else if (Array.isArray(entry) && entry.every(item => item && typeof item === 'object')) {
+      sample[key] = entry.map(item => {
+        const nested = item as Record<string, unknown>;
+        return Object.fromEntries(Object.entries(nested)
+          .filter(([, nestedValue]) => typeof nestedValue === 'string')
+          .map(([nestedKey, nestedValue]) => [nestedKey, String(nestedValue).slice(0, 300)]));
+      }).slice(0, 3);
+    }
+  }
+  return Object.keys(sample).length > 0 ? sample : null;
 }
 
 function diagnosticRequestSummary(request: GambitLLMRequest): Record<string, unknown> {

@@ -3,6 +3,7 @@ import { GambitRunBudget } from './budget';
 import { evidenceForModel } from './evidence';
 import { getGambitModelRoleConfig, GAMBIT_PROMPT_VERSION } from './llm';
 import {
+  canonicalRejectionReason,
   deterministicPublicationGate,
   normalizePoliticalDecisionSource,
   politicalDecisionFromDeterministicPolicy,
@@ -338,7 +339,12 @@ export async function runQualifiedGambitWorkflow(
     if (stageResult.politicalDecision) {
       await repository.recordPoliticalDecision(input.candidateId, stageResult.politicalDecision);
     }
-    await repository.setCandidateStatus(input.candidateId, 'REJECTED', stageResult.reason || 'NO_GAMBIT_WORTH_PUBLISHING');
+    // The gambit_candidates.rejection_reason column is restricted to the
+    // publication taxonomy. The canonical decision is persisted there --
+    // never model free text or joined gate-error codes -- while the
+    // descriptive reason stays in the workflow result and attempt rows.
+    const rejectionReason = canonicalRejectionReason(stageResult.reason, stageResult.publicationDecision);
+    await repository.setCandidateStatus(input.candidateId, 'REJECTED', rejectionReason);
     const result: GambitWorkflowResult = { workflowId: input.workflowId, status: 'NO_GAMBIT', candidateId: input.candidateId, reason: stageResult.reason, publicationDecision: stageResult.publicationDecision ?? publicationDecisionForReason(stageResult.reason) };
     await repository.recordWorkflowResult({ workflowId: input.workflowId, candidateId: input.candidateId, result, resultHash: await sha256Hex(canonicalJson(result)) });
     return result;

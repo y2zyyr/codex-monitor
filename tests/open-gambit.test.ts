@@ -22,6 +22,7 @@ import {
   type GambitProviderDiagnostic,
 } from '../src/open-gambit/llm';
 import {
+  canonicalRejectionReason,
   detectPoliticalTopic,
   isProbabilityBucket,
   politicalReasonIsConsistent,
@@ -260,6 +261,16 @@ describe('Open Gambit policy and evidence boundaries', () => {
       candidatePoliticalTopic: false,
       politicalDecision: { excluded: true, reasons: ['political_topic_detected'], confidence: 0.8, decisionSource: 'LLM_TRIAGE' },
     })).toBe(true);
+  });
+
+  it('persists only taxonomy-valid rejection reasons regardless of the explanatory string', () => {
+    expect(canonicalRejectionReason('CRITIC_POLITICAL_FRAMING', 'POLITICAL_TOPIC_EXCLUDED')).toBe('POLITICAL_TOPIC_EXCLUDED');
+    expect(canonicalRejectionReason('POLITICAL_TOPIC_EXCLUDED', undefined)).toBe('POLITICAL_TOPIC_EXCLUDED');
+    expect(canonicalRejectionReason('CRITIC_WEAK_CAUSALITY', 'LOW_STRATEGIC_VALUE')).toBe('LOW_STRATEGIC_VALUE');
+    expect(canonicalRejectionReason('CRITIC_REJECTED,CRITIC_SENSATIONALISM', 'NEEDS_HUMAN_REVIEW')).toBe('NEEDS_HUMAN_REVIEW');
+    expect(canonicalRejectionReason('The model found no publishable Gambit.', undefined)).toBe('NO_GAMBIT_WORTH_PUBLISHING');
+    expect(canonicalRejectionReason(undefined, undefined)).toBe('NO_GAMBIT_WORTH_PUBLISHING');
+    expect(canonicalRejectionReason('NO_GAMBIT_WORTH_PUBLISHING', 'NON_FALSIFIABLE')).toBe('NO_GAMBIT_WORTH_PUBLISHING');
   });
 
   it('rejects weak evidence and non-falsifiable candidates deterministically', () => {
@@ -985,6 +996,10 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       'predictionStatement',
       'reasoning',
     ]);
+    // Canonical identity fields are merged locally after generation; the
+    // provider payload must not carry them as writable data.
+    expect(Object.keys(payload).sort()).not.toContain('sourceIds');
+    expect(Object.keys(payload).sort()).not.toContain('evidenceIds');
     expect(request.system).toContain('自然で簡潔な日本語');
     expect(request.system).toContain('完全な英語や中国語の文章');
     expect(request.system).not.toContain('gameable');

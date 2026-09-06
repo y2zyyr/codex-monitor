@@ -520,10 +520,14 @@ export function translationRequest(
     fr: 'Rédiger dans un français naturel et concis de produit technologique, avec une syntaxe française idiomatique. Conserver les noms propres, produits, acronymes et identifiants nécessaires, sans insérer de phrase complète en anglais, chinois ou japonais.',
     es: 'Redactar en un español internacional, natural y conciso para un producto tecnológico, con una sintaxis idiomática en español. Conservar nombres propios, productos, siglas e identificadores necesarios, sin insertar frases completas en inglés, chino o japonés.',
   }[locale];
+  // Canonical identity data (source IDs, evidence IDs, and every immutable
+  // trajectory field) never leaves this module in a writable position: the
+  // provider payload carries only natural-language prose, and
+  // normalizeGambitTranslation merges the read-only semantic record back
+  // locally after generation. The model therefore cannot echo, truncate, or
+  // mutate the canonical forecast shape.
   const canonicalRecord = {
     locale,
-    sourceIds: canonicalSourceIds(article),
-    evidenceIds: canonicalEvidenceIds(article),
     headline: article.headline,
     surfaceEvent: article.surfaceEvent,
     facts: article.facts,

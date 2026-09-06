@@ -332,3 +332,20 @@ export function politicalReasonIsConsistent(input: {
 export function normalizePoliticalDecisionSource(value: unknown, fallback: GambitPoliticalDecisionSource): GambitPoliticalDecisionSource {
   return value === 'DETERMINISTIC_POLICY' || value === 'LLM_TRIAGE' || value === 'HYBRID' ? value : fallback;
 }
+
+/**
+ * The persisted rejection_reason column is restricted to the publication
+ * taxonomy. Model free text, joined gate-error codes (for example
+ * CRITIC_POLITICAL_FRAMING), or analysis-level NO_GAMBIT prose must never be
+ * written into it raw. The canonical decision value (or its taxonomy mapping)
+ * is persisted instead; descriptive detail belongs in the workflow result and
+ * LLM attempt rows.
+ */
+export function canonicalRejectionReason(
+  reason: string | null | undefined,
+  decision: GambitPublicationDecision | null | undefined,
+): GambitRejectionReason {
+  if (reason && rejectionReasonIsKnown(reason)) return reason;
+  if (decision && decision !== 'AUTO_PUBLISH_ELIGIBLE' && rejectionReasonIsKnown(decision)) return decision;
+  return 'NO_GAMBIT_WORTH_PUBLISHING';
+}
