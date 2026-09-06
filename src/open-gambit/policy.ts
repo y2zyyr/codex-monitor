@@ -5,6 +5,8 @@ import {
   type GambitEvidence,
   type GambitProbability,
   type GambitPublicationDecision,
+  type GambitPoliticalDecision,
+  type GambitPoliticalDecisionSource,
   type GambitRejectionReason,
   type GambitTriageResult,
 } from './types';
@@ -277,6 +279,8 @@ export function makeCandidateFromDecision(input: {
     sourceIds: input.sourceIds,
     politicalTopic: input.decision.politicalTopic,
     politicalReasons: input.decision.politicalReasons,
+    politicalDecisionSource: input.decision.politicalTopic ? 'DETERMINISTIC_POLICY' : null,
+    politicalDecisionConfidence: null,
     evidenceSufficient: input.decision.evidenceSufficient,
     strategicValue: input.decision.strategicValue,
     falsifiable: input.decision.falsifiable,
@@ -289,7 +293,42 @@ export function makeCandidateFromDecision(input: {
 export function triageAllowsDeepAnalysis(result: GambitTriageResult): boolean {
   return result.shouldDeepAnalysisRun
     && result.aiTechRelevance
-    && !result.politicsExcluded
+    && !(result.political?.excluded ?? result.politicsExcluded)
     && result.evidenceSufficient
     && result.eventImportance >= 0.45;
+}
+
+export function politicalDecisionFromDeterministicPolicy(input: {
+  excluded: boolean;
+  reasons: string[];
+}): GambitPoliticalDecision {
+  return {
+    excluded: input.excluded,
+    reasons: input.reasons.filter(reason => reason.trim()).slice(0, 8),
+    confidence: null,
+    decisionSource: 'DETERMINISTIC_POLICY',
+  };
+}
+
+/**
+ * A political rejection must have an auditable source. This invariant is
+ * deliberately strict: a stale/default/shape-mismatched boolean must fail
+ * closed as POLICY_STATE_INCONSISTENT rather than silently hiding an item
+ * behind a political reason.
+ */
+export function politicalReasonIsConsistent(input: {
+  finalReason: string | null | undefined;
+  candidatePoliticalTopic: boolean;
+  politicalDecision?: GambitPoliticalDecision | null;
+}): boolean {
+  if (input.finalReason !== 'POLITICAL_TOPIC_EXCLUDED') return true;
+  return Boolean(
+    input.politicalDecision?.excluded
+      && input.politicalDecision.reasons.some(reason => typeof reason === 'string' && reason.trim().length > 0)
+      && ['DETERMINISTIC_POLICY', 'LLM_TRIAGE', 'HYBRID'].includes(input.politicalDecision.decisionSource),
+  );
+}
+
+export function normalizePoliticalDecisionSource(value: unknown, fallback: GambitPoliticalDecisionSource): GambitPoliticalDecisionSource {
+  return value === 'DETERMINISTIC_POLICY' || value === 'LLM_TRIAGE' || value === 'HYBRID' ? value : fallback;
 }

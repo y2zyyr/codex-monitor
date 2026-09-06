@@ -1,7 +1,7 @@
 import type { Env } from '../types';
 import { gambitBudgetFromEnv, GambitRunBudget } from './budget';
 import { canonicalJson, sha256Hex } from './canonical';
-import { getGambitModelRoleConfig, providerForRole } from './llm';
+import { getGambitModelRoleConfig, providerForRole, type GambitProviderDiagnostic } from './llm';
 import { GambitRepository } from './repository';
 import { runQualifiedGambitWorkflow } from './pipeline';
 import type { GambitLLMProvider, GambitWorkflowInput, GambitWorkflowResult } from './types';
@@ -132,13 +132,18 @@ export async function runLocalGambitWorkflow(
   return step ? step.do('qualified-analysis-critic-and-publication-gate', execute) : execute();
 }
 
-export function createConfiguredProviders(env: Env, fetchImpl?: typeof fetch): Partial<Record<string, GambitLLMProvider>> {
+export function createConfiguredProviders(
+  env: Env,
+  fetchImpl?: typeof fetch,
+  onDiagnostic?: (diagnostic: GambitProviderDiagnostic) => void,
+): Partial<Record<string, GambitLLMProvider>> {
   const providers: Partial<Record<string, GambitLLMProvider>> = {};
   for (const role of getGambitModelRoleConfig(env)) {
     const provider = providerForRole(role, env, fetchImpl, diagnostic => {
       // This is deliberately limited to operational metadata. Never log
       // credentials, prompts, response bodies, or model reasoning.
       console.info('[Open Gambit] provider_diagnostic', diagnostic);
+      onDiagnostic?.(diagnostic);
     });
     if (provider) providers[role.role] = provider;
   }

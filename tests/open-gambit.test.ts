@@ -19,10 +19,12 @@ import {
   GAMBIT_PUBLIC_MODEL_NAMES,
   MockGambitProvider,
   OpenAICompatibleGambitProvider,
+  type GambitProviderDiagnostic,
 } from '../src/open-gambit/llm';
 import {
   detectPoliticalTopic,
   isProbabilityBucket,
+  politicalReasonIsConsistent,
   qualificationGate,
   validateTrajectoryCount,
   validatePublicForecast,
@@ -192,6 +194,71 @@ describe('Open Gambit policy and evidence boundaries', () => {
     });
     expect(decision.qualified).toBe(false);
     expect(decision.reason).toBe('POLITICAL_TOPIC_EXCLUDED');
+  });
+
+  it('keeps an ordinary SDK release out of the political rejection path', async () => {
+    const triage = new MockGambitProvider(async () => response({
+      eventImportance: 0.48,
+      aiTechRelevance: true,
+      political: { excluded: false, reasons: [], confidence: 0.01 },
+      politicsExcluded: false,
+      evidenceSufficient: true,
+      strategicMechanism: 'The SDK exposes an API capability to developers.',
+      shouldDeepAnalysisRun: false,
+      reason: 'The item is ordinary SDK release material.',
+    }));
+    const sdkCandidate = candidate({
+      headline: 'google genai SDK v2.21.0 adds developer API capabilities',
+      summary: 'The release adds file download streaming, MIME support, and SDK configuration before the next version.',
+    });
+    const result = await runGambitStages(sdkCandidate, [evidence({
+      quote: '2.21.0 Features: add destination parameter to client.files.download, support audio/webm MIME, and expose SDK configuration for developers.',
+    })], { providers: { triage } });
+    expect(result.status).toBe('NO_GAMBIT');
+    expect(result.reason).toBe('NO_GAMBIT_WORTH_PUBLISHING');
+    expect(result.reason).not.toBe('POLITICAL_TOPIC_EXCLUDED');
+    expect(result.politicalDecision).toMatchObject({ excluded: false, decisionSource: 'LLM_TRIAGE' });
+  });
+
+  it('fails closed when a political triage boolean has no structured reason', async () => {
+    const triage = new MockGambitProvider(async () => response({
+      eventImportance: 0.8,
+      aiTechRelevance: true,
+      politicsExcluded: true,
+      evidenceSufficient: true,
+      strategicMechanism: 'TEST_ONLY',
+      shouldDeepAnalysisRun: false,
+      reason: 'A legacy boolean was set.',
+    }));
+    const result = await runGambitStages(candidate(), [evidence()], { providers: { triage } });
+    expect(result.status).toBe('FAILED');
+    expect(result.reason).toBe('POLICY_STATE_INCONSISTENT');
+    expect(result.reason).not.toBe('POLITICAL_TOPIC_EXCLUDED');
+  });
+
+  it('accepts a deterministic political exclusion only with its policy provenance', async () => {
+    const result = await runGambitStages(candidate({
+      headline: 'Minister announces an election platform for AI regulation',
+      summary: 'A political campaign sets out a legislative technology plan.',
+    }), [evidence({ quote: 'A minister and party leader campaign before an election.' })]);
+    expect(result.status).toBe('NO_GAMBIT');
+    expect(result.reason).toBe('POLITICAL_TOPIC_EXCLUDED');
+    expect(result.politicalDecision).toMatchObject({ decisionSource: 'DETERMINISTIC_POLICY', excluded: true });
+  });
+
+  it('enforces the political reason taxonomy invariant', () => {
+    expect(politicalReasonIsConsistent({ finalReason: 'NO_GAMBIT_WORTH_PUBLISHING', candidatePoliticalTopic: false })).toBe(true);
+    expect(politicalReasonIsConsistent({ finalReason: 'POLITICAL_TOPIC_EXCLUDED', candidatePoliticalTopic: true })).toBe(false);
+    expect(politicalReasonIsConsistent({
+      finalReason: 'POLITICAL_TOPIC_EXCLUDED',
+      candidatePoliticalTopic: false,
+      politicalDecision: { excluded: true, reasons: [], confidence: null, decisionSource: 'LLM_TRIAGE' },
+    })).toBe(false);
+    expect(politicalReasonIsConsistent({
+      finalReason: 'POLITICAL_TOPIC_EXCLUDED',
+      candidatePoliticalTopic: false,
+      politicalDecision: { excluded: true, reasons: ['political_topic_detected'], confidence: 0.8, decisionSource: 'LLM_TRIAGE' },
+    })).toBe(true);
   });
 
   it('rejects weak evidence and non-falsifiable candidates deterministically', () => {
@@ -439,6 +506,47 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     await expect(failing.complete({ role: 'triage', system: 'x', user: 'y', schemaName: 'Test', tokenBudget: 100, timeoutMs: 500, retryLimit: 0 })).rejects.toMatchObject({ code: 'http_401' });
   });
 
+  it('distinguishes transport failure from response-body failure and bounds retries', async () => {
+    const streamDiagnostics: GambitProviderDiagnostic[] = [];
+    let streamCalls = 0;
+    const streamFailure = new OpenAICompatibleGambitProvider({
+      apiKey: 'TEST_ONLY_KEY',
+      baseUrl: 'https://llm.example/v1',
+      modelId: 'TEST_ONLY_MODEL',
+      onDiagnostic: diagnostic => streamDiagnostics.push(diagnostic),
+      fetchImpl: async () => {
+        streamCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/event-stream' }),
+          text: async () => { throw new Error('TEST_ONLY_BODY_READ_FAILURE'); },
+        } as unknown as Response;
+      },
+    });
+    await expect(streamFailure.complete({ role: 'translation', system: 'system', user: 'user', schemaName: 'Test', tokenBudget: 100, timeoutMs: 500, retryLimit: 2 })).rejects.toMatchObject({ code: 'stream_read_error' });
+    expect(streamCalls).toBe(2);
+    expect(streamDiagnostics.some(diagnostic => diagnostic.errorCode === 'stream_read_error' && diagnostic.responseReceived)).toBe(true);
+    expect(streamDiagnostics.every(diagnostic => diagnostic.requestBytes > 0 && diagnostic.schemaBytes > 0)).toBe(true);
+    expect(streamDiagnostics.some(diagnostic => diagnostic.errorCode === 'network_error')).toBe(false);
+
+    const networkDiagnostics: GambitProviderDiagnostic[] = [];
+    let networkCalls = 0;
+    const networkFailure = new OpenAICompatibleGambitProvider({
+      apiKey: 'TEST_ONLY_KEY',
+      baseUrl: 'https://llm.example/v1',
+      modelId: 'TEST_ONLY_MODEL',
+      onDiagnostic: diagnostic => networkDiagnostics.push(diagnostic),
+      fetchImpl: async () => {
+        networkCalls += 1;
+        throw new Error('TEST_ONLY_NETWORK_FAILURE');
+      },
+    });
+    await expect(networkFailure.complete({ role: 'triage', system: 'system', user: 'user', schemaName: 'Test', tokenBudget: 100, timeoutMs: 500, retryLimit: 2 })).rejects.toMatchObject({ code: 'network_error' });
+    expect(networkCalls).toBe(2);
+    expect(networkDiagnostics.some(diagnostic => diagnostic.errorCode === 'network_error' && !diagnostic.responseReceived)).toBe(true);
+  });
+
   it('parses OpenAI-compatible streaming responses and usage metadata', async () => {
     const events = [
       { choices: [{ delta: { role: 'assistant', content: '{"ok":' } }] },
@@ -455,6 +563,30 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     expect(result.value).toEqual({ ok: true });
     expect(result.inputTokens).toBe(11);
     expect(result.outputTokens).toBe(3);
+  });
+
+  it('waits for the outer structured object instead of accepting a nested trajectory object', async () => {
+    const events = [
+      { choices: [{ delta: { content: '{"headline":"translated","trajectories":[' } }] },
+      { choices: [{ delta: { content: '{"id":"trajectory-1"}' } }] },
+      { choices: [{ delta: { content: '],"falsifier":"translated"}' } }] },
+    ].map(event => `data: ${JSON.stringify(event)}`).join('\n') + '\ndata: [DONE]\n';
+    const provider = new OpenAICompatibleGambitProvider({
+      apiKey: 'TEST_ONLY_KEY',
+      baseUrl: 'https://llm.example/v1',
+      modelId: 'TEST_ONLY_MODEL',
+      fetchImpl: async () => new Response(events, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    });
+    const result = await provider.complete<{ headline: string; trajectories: Array<{ id: string }> }>({
+      role: 'translation',
+      system: 'TEST_ONLY',
+      user: 'TEST_ONLY',
+      schemaName: 'GambitTranslationV1',
+      tokenBudget: 100,
+      timeoutMs: 500,
+      retryLimit: 0,
+    });
+    expect(result.value).toEqual({ headline: 'translated', trajectories: [{ id: 'trajectory-1' }], falsifier: 'translated' });
   });
 
   it('fails closed when an isolated provider namespace reaches its run budget', () => {
@@ -758,6 +890,52 @@ describe('Open Gambit public rendering and append-only resolution', () => {
     const article = { trajectories: [trajectory()] } as GambitPublicArticle;
     const invalid = { trajectories: [trajectory({ probability: 60, deadline: '2027-01-01' })] } as never;
     expect(normalizeGambitTranslation(invalid, 'zh', article)).toBeNull();
+  });
+
+  it('merges compact translated prose with canonical immutable trajectory fields', () => {
+    const article = {
+      ...({ trajectories: [trajectory()] } as GambitPublicArticle),
+      headline: 'Canonical headline',
+      surfaceEvent: 'Canonical event',
+      facts: ['Canonical fact'],
+      obviousLogic: 'Canonical logic',
+      thesis: 'Canonical thesis',
+      mechanism: 'Canonical mechanism',
+      beneficiaries: ['Developers'],
+      pressuredActors: ['Incumbents'],
+      countercase: 'Canonical countercase',
+      falsifier: 'Canonical falsifier',
+      uncertainty: 'Canonical uncertainty',
+      evidence: [evidence()],
+    } as GambitPublicArticle;
+    const normalized = normalizeGambitTranslation({
+      headline: 'Localized headline',
+      surfaceEvent: 'Localized event',
+      facts: ['Localized fact'],
+      obviousLogic: 'Localized logic',
+      thesis: 'Localized thesis',
+      mechanism: 'Localized mechanism',
+      beneficiaries: ['Developers'],
+      pressuredActors: ['Incumbents'],
+      countercase: 'Localized countercase',
+      trajectories: [{
+        predictionStatement: 'Localized prediction',
+        reasoning: 'Localized reasoning',
+        evidenceCriteria: 'Localized evidence condition',
+        falsifier: 'Localized falsifier',
+      }],
+      falsifier: 'Localized falsifier',
+      uncertainty: 'Localized uncertainty',
+    }, 'ja', article);
+    expect(normalized).toMatchObject({ locale: 'ja', headline: 'Localized headline' });
+    expect(normalized?.trajectories[0]).toMatchObject({
+      id: 'trajectory-1',
+      targetEntity: 'TEST_ONLY Example compatibility layer',
+      probability: 70,
+      deadline: '2026-12-31',
+      status: 'WATCHING',
+      predictionStatement: 'Localized prediction',
+    });
   });
 });
 

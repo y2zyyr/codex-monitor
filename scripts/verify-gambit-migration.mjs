@@ -123,13 +123,16 @@ try {
   const migrationFiles = readFileSync(join(root, 'migrations', '0021_open_gambit.sql'), 'utf8');
   const localeRows = query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'gambit_translations'")[0]?.sql ?? '';
   const localeMigration = readFileSync(join(root, 'migrations', '0023_gambit_translation_locales.sql'), 'utf8');
+  const provenanceMigration = readFileSync(join(root, 'migrations', '0024_gambit_political_provenance.sql'), 'utf8');
+  const candidateColumns = query("PRAGMA table_info(gambit_candidates)").map(row => row.name);
   const result = {
-    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && migrationRows.some(row => row.name === '0023_gambit_translation_locales.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && localeMigration.includes("'ja','fr','es'") && localeRows.includes("'ja','fr','es'") && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
+    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && migrationRows.some(row => row.name === '0023_gambit_translation_locales.sql') && migrationRows.some(row => row.name === '0024_gambit_political_provenance.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && localeMigration.includes("'ja','fr','es'") && localeRows.includes("'ja','fr','es'") && provenanceMigration.includes('political_decision_source') && candidateColumns.includes('political_decision_source') && candidateColumns.includes('political_decision_confidence') && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
     latestMigration: migrationRows.at(-1)?.name ?? null,
     migrationCount: migrationRows.length,
     gambitTableCount: gambitTables.length,
     gambitIndexCount: indexes.length,
     foreignKeyViolations: foreignKeys.length,
+    politicalProvenanceColumns: candidateColumns.filter(name => name === 'political_decision_source' || name === 'political_decision_confidence'),
     translationLocales: ['en', 'zh', 'ja', 'fr', 'es'],
     immutability,
   };

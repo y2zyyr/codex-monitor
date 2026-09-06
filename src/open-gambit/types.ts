@@ -111,6 +111,25 @@ export const GAMBIT_LOCALES = ['en', 'zh', 'ja', 'fr', 'es'] as const;
 export type GambitLocale = typeof GAMBIT_LOCALES[number];
 export type GambitTranslationState = 'TRANSLATION_READY' | 'TRANSLATION_FAILED' | 'CANONICAL_FALLBACK';
 
+export const GAMBIT_POLITICAL_DECISION_SOURCES = [
+  'DETERMINISTIC_POLICY',
+  'LLM_TRIAGE',
+  'HYBRID',
+] as const;
+export type GambitPoliticalDecisionSource = typeof GAMBIT_POLITICAL_DECISION_SOURCES[number];
+
+/**
+ * The only political decision shape allowed to cross the triage/gate
+ * boundary.  `reasons` is deliberately a short taxonomy, never model
+ * chain-of-thought, and `decisionSource` records which layer made the call.
+ */
+export interface GambitPoliticalDecision {
+  excluded: boolean;
+  reasons: string[];
+  confidence: number | null;
+  decisionSource: GambitPoliticalDecisionSource;
+}
+
 export interface GambitSourceDefinition {
   id: string;
   name: string;
@@ -154,6 +173,8 @@ export interface GambitCandidate {
   sourceIds: string[];
   politicalTopic: boolean;
   politicalReasons: string[];
+  politicalDecisionSource?: GambitPoliticalDecisionSource | null;
+  politicalDecisionConfidence?: number | null;
   evidenceSufficient: boolean;
   strategicValue: number;
   falsifiable: boolean;
@@ -181,7 +202,10 @@ export interface GambitEvidence {
 export interface GambitTriageResult {
   eventImportance: number;
   aiTechRelevance: boolean;
+  /** Legacy wire field retained for compatibility with older providers. */
   politicsExcluded: boolean;
+  /** Canonical political policy contract for new provider responses. */
+  political?: GambitPoliticalDecision;
   evidenceSufficient: boolean;
   strategicMechanism: string | null;
   shouldDeepAnalysisRun: boolean;
@@ -346,6 +370,8 @@ export interface GambitLLMRequest {
   tokenBudget: number;
   timeoutMs: number;
   retryLimit: number;
+  /** Streaming is the default for analysis; translation may opt into a bounded JSON response. */
+  stream?: boolean;
 }
 
 export interface GambitLLMResponse<T> {

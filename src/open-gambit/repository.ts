@@ -11,6 +11,7 @@ import type {
   GambitLLMResponse,
   GambitMetrics,
   GambitModelRoleProvenance,
+  GambitPoliticalDecision,
   GambitPublicArticle,
   GambitPublicCorrection,
   GambitPublicResolutionEvent,
@@ -181,9 +182,10 @@ export class GambitRepository {
       INSERT OR IGNORE INTO gambit_candidates (
         fingerprint, headline, summary, canonical_url, snapshot_ids_json,
         source_ids_json, political_topic, political_reasons_json,
+        political_decision_source, political_decision_confidence,
         evidence_sufficient, strategic_value, falsifiable, status,
         rejection_reason, discovered_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       candidate.fingerprint,
       candidate.headline,
@@ -193,6 +195,8 @@ export class GambitRepository {
       JSON.stringify(candidate.sourceIds),
       candidate.politicalTopic ? 1 : 0,
       JSON.stringify(candidate.politicalReasons),
+      candidate.politicalDecisionSource ?? (candidate.politicalTopic ? 'DETERMINISTIC_POLICY' : null),
+      candidate.politicalDecisionConfidence ?? null,
       candidate.evidenceSufficient ? 1 : 0,
       candidate.strategicValue,
       candidate.falsifiable ? 1 : 0,
@@ -221,6 +225,23 @@ export class GambitRepository {
   async setCandidateStatus(id: number, status: GambitCandidateStatus, rejectionReason: string | null = null, now = new Date().toISOString()): Promise<void> {
     await this.db.prepare('UPDATE gambit_candidates SET status = ?, rejection_reason = ?, updated_at = ? WHERE id = ?')
       .bind(status, rejectionReason, now, id).run();
+  }
+
+  /** Persist the policy decision that accompanied a triage/gate outcome. */
+  async recordPoliticalDecision(id: number, decision: GambitPoliticalDecision, now = new Date().toISOString()): Promise<void> {
+    await this.db.prepare(`
+      UPDATE gambit_candidates
+      SET political_topic = ?, political_reasons_json = ?,
+          political_decision_source = ?, political_decision_confidence = ?, updated_at = ?
+      WHERE id = ?
+    `).bind(
+      decision.excluded ? 1 : 0,
+      JSON.stringify(decision.reasons.slice(0, 8)),
+      decision.decisionSource,
+      decision.confidence,
+      now,
+      id,
+    ).run();
   }
 
   async listCandidates(status: GambitCandidateStatus | null = null, limit = 50): Promise<GambitCandidate[]> {
@@ -1051,6 +1072,14 @@ function mapCandidate(row: Row): GambitCandidate {
     sourceIds: arrayValue(row.source_ids_json),
     politicalTopic: numberValue(row.political_topic) === 1,
     politicalReasons: arrayValue(row.political_reasons_json),
+    politicalDecisionSource: row.political_decision_source === 'DETERMINISTIC_POLICY'
+      || row.political_decision_source === 'LLM_TRIAGE'
+      || row.political_decision_source === 'HYBRID'
+      ? row.political_decision_source
+      : null,
+    politicalDecisionConfidence: row.political_decision_confidence === null || row.political_decision_confidence === undefined
+      ? null
+      : Math.max(0, Math.min(1, numberValue(row.political_decision_confidence))),
     evidenceSufficient: numberValue(row.evidence_sufficient) === 1,
     strategicValue: numberValue(row.strategic_value),
     falsifiable: numberValue(row.falsifiable) === 1,

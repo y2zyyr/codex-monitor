@@ -8,11 +8,15 @@ import { Repository } from '../db/repository';
 import { GambitRepository } from '../open-gambit/repository';
 import { appendResolution } from '../open-gambit/resolution';
 import { publishApprovedGambit, runGambitDiscovery } from '../open-gambit/service';
+import { GambitProviderError, type GambitProviderDiagnostic, getGambitModelRoleConfig } from '../open-gambit/llm';
+import { gambitTranslationValidationErrors, translationRequest } from '../open-gambit/publication';
 import { createConfiguredProviders, dispatchQualifiedGambit, workflowIdForCandidate } from '../open-gambit/workflow';
 import {
   GAMBIT_APPROVAL_ACTIONS,
   GAMBIT_RESOLUTION_STATES,
   type GambitApprovalAction,
+  type GambitLLMProvider,
+  type GambitLLMRequest,
   type GambitResolutionInput,
   type GambitResolutionState,
 } from '../open-gambit/types';
@@ -180,6 +184,150 @@ openGambitApi.post('/discovery/run', async (c) => {
   }
 });
 
+/**
+ * Bounded staging-only provider probe. It exercises the same configured
+ * compatible endpoint with a minimal request, a triage-shaped request, and
+ * the exact translation request for one supplied TEST_ONLY article. Only
+ * transport metadata is returned; prompts, responses, and credentials never
+ * leave the Worker.
+ */
+openGambitApi.post('/provider-diagnostic', async (c) => {
+  const denied = await requireAdmin(c);
+  if (denied) return denied;
+  const id = requestId();
+  if (c.env.BUILD_ENVIRONMENT !== 'staging') return errorResponse(c, 404, 'NOT_AVAILABLE', 'This diagnostic is staging-only.', id);
+  const parsedBody = await boundedJsonBody(c, 4_000, id, 'Please submit a valid provider diagnostic request.');
+  if (parsedBody instanceof Response) return parsedBody;
+  const articleId = positiveInteger(String(parsedBody.articleId ?? ''));
+  if (!articleId) return errorResponse(c, 400, 'INVALID_ARTICLE_ID', 'A staging article id is required.', id);
+  const transport = parsedBody.transport === 'workflow' ? 'workflow' : 'worker';
+  const diagnosticLocale = ['zh', 'ja', 'fr', 'es'].includes(String(parsedBody.locale))
+    ? String(parsedBody.locale) as 'zh' | 'ja' | 'fr' | 'es'
+    : 'ja';
+  const diagnosticTranslationTimeoutMs = boundedDiagnosticNumber(parsedBody.translationTimeoutMs, 60_000, 5_000, 60_000);
+  const diagnosticTranslationRetryLimit = boundedDiagnosticNumber(parsedBody.translationRetryLimit, 0, 0, 1);
+  const diagnosticTranslationTokenBudget = boundedDiagnosticNumber(parsedBody.translationTokenBudget, 2_000, 400, 5_000);
+  try {
+    const repository = new GambitRepository(c.env.DB);
+    const article = await repository.getArticleById(articleId);
+    if (!article) return errorResponse(c, 404, 'ARTICLE_NOT_FOUND', 'The staging article was not found.', id);
+    const roles = getGambitModelRoleConfig(c.env);
+    const translationRole = roles.find(role => role.role === 'translation');
+    const translationProbeRole = translationRole
+      ? {
+        ...translationRole,
+        timeoutMs: diagnosticTranslationTimeoutMs,
+        retryLimit: diagnosticTranslationRetryLimit,
+        tokenBudget: diagnosticTranslationTokenBudget,
+      }
+      : undefined;
+    const translationProbeRequest = {
+      ...translationRequest(article, diagnosticLocale, translationProbeRole),
+    };
+    if (Object.prototype.hasOwnProperty.call(parsedBody, 'translationStream')) {
+      translationProbeRequest.stream = parsedBody.translationStream !== false;
+    }
+    if (parsedBody.translationFixture === 'minimal') {
+      translationProbeRequest.user = JSON.stringify({
+        locale: 'ja',
+        sourceIds: ['staging-diagnostic-source'],
+        evidenceIds: [1],
+        headline: 'An SDK adds a compatibility API',
+        surfaceEvent: 'An official release adds a bounded developer API.',
+        facts: ['The release adds a compatibility API.'],
+        obviousLogic: 'The API lowers integration friction.',
+        thesis: 'A compatibility layer can influence developer defaults.',
+        mechanism: 'Lower switching costs make adoption easier.',
+        beneficiaries: ['Developers'],
+        pressuredActors: ['Incumbent platforms'],
+        countercase: 'Adoption may remain limited.',
+        trajectories: [{
+          id: 'diagnostic-trajectory',
+          predictionStatement: 'The API will receive a documented integration by the deadline.',
+          targetEntity: 'The compatibility API',
+          probability: 70,
+          deadline: '2026-12-31',
+          reasoning: 'The interface is available to developers.',
+          evidenceCriteria: 'An official integration is documented.',
+          falsifier: 'No integration is documented by the deadline.',
+          status: 'WATCHING',
+        }],
+        falsifier: 'No integration is documented by the deadline.',
+        uncertainty: 'Adoption remains uncertain.',
+      });
+    }
+    if (parsedBody.translationFixture === 'tiny') {
+      translationProbeRequest.user = JSON.stringify({ locale: 'ja', headline: 'An API update', facts: ['The release adds an API.'] });
+    }
+    const triageRole = roles.find(role => role.role === 'triage');
+    const diagnostics: GambitProviderDiagnostic[] = [];
+    const workflowFetch: typeof fetch = (input, init) => globalThis.fetch(input, init ? { ...init, signal: undefined } : init);
+    const providers = createConfiguredProviders(c.env, transport === 'workflow' ? workflowFetch : undefined, diagnostic => diagnostics.push(diagnostic));
+    const provider = providers.translation ?? providers.triage;
+    if (!provider) return errorResponse(c, 503, 'PROVIDER_UNAVAILABLE', 'No staged Gambit provider is configured.', id);
+
+    const probes: Array<{ name: string; request: GambitLLMRequest }> = [
+      {
+        name: 'minimal_structured',
+        request: {
+          role: 'provider_diagnostic',
+          schemaName: 'ProviderDiagnosticV1',
+          system: 'Return exactly one JSON object with the boolean field ok set to true.',
+          user: '{"ok":true}',
+          tokenBudget: 64,
+          timeoutMs: 8_000,
+          retryLimit: 0,
+        },
+      },
+      {
+        name: 'triage_shaped',
+        request: {
+          role: 'triage',
+          schemaName: 'GambitTriageV1',
+          system: 'Return one JSON object with eventImportance, aiTechRelevance, political, evidenceSufficient, strategicMechanism, shouldDeepAnalysisRun, and reason. The supplied item is a non-political official SDK release.',
+          user: JSON.stringify({
+            headline: 'Official SDK adds a bounded file-download API',
+            summary: 'The release adds a developer-facing API capability and a dated version identifier.',
+            evidence: 'Primary release notes from the official repository. No political or government subject is present.',
+          }),
+          tokenBudget: triageRole?.tokenBudget ?? 900,
+          timeoutMs: triageRole?.timeoutMs ?? 8_000,
+          retryLimit: 0,
+        },
+      },
+      {
+        name: 'translation_shaped',
+        request: translationProbeRequest,
+      },
+    ];
+    const results = [];
+    for (const probe of probes) {
+      results.push(await runProviderDiagnosticProbe(
+        provider,
+        probe.name,
+        probe.request,
+        diagnostics,
+        probe.name === 'translation_shaped' ? value => gambitTranslationValidationErrors(value, diagnosticLocale, article) : undefined,
+      ));
+    }
+    return c.json({
+      data: {
+        articleId,
+        transport,
+        locale: diagnosticLocale,
+        provider: provider.name,
+        modelId: translationRole?.runtimeModelId ?? triageRole?.runtimeModelId ?? null,
+        probes: results,
+        diagnostics: diagnostics.map(safeProviderDiagnostic),
+      },
+      requestId: id,
+    }, 200);
+  } catch (error) {
+    console.error('[Open Gambit] provider_diagnostic_failed', { requestId: id, error: error instanceof Error ? error.message.slice(0, 160) : 'unknown' });
+    return errorResponse(c, 500, 'PROVIDER_DIAGNOSTIC_FAILED', 'The bounded provider diagnostic failed safely.', id);
+  }
+});
+
 openGambitApi.post('/candidates/:id/workflow', async (c) => {
   const denied = await requireAdmin(c);
   if (denied) return denied;
@@ -310,6 +458,117 @@ openGambitApi.post('/articles/:id/corrections', async (c) => {
     return errorResponse(c, 500, 'CORRECTION_FAILED', 'The append-only correction could not be recorded.', request);
   }
 });
+
+async function runProviderDiagnosticProbe(
+  provider: GambitLLMProvider,
+  name: string,
+  request: GambitLLMRequest,
+  diagnostics: GambitProviderDiagnostic[],
+  validate?: (value: unknown) => string[],
+): Promise<Record<string, unknown>> {
+  const before = diagnostics.length;
+  const started = Date.now();
+  try {
+    const response = await provider.complete<unknown>(request);
+    return {
+      name,
+      ok: true,
+      structuredJson: Boolean(response.value && typeof response.value === 'object' && !Array.isArray(response.value)),
+      provider: response.provider,
+      modelId: response.modelId,
+      latencyMs: response.latencyMs ?? Date.now() - started,
+      inputTokens: response.inputTokens ?? null,
+      outputTokens: response.outputTokens ?? null,
+      validationErrors: validate ? validate(response.value) : undefined,
+      jsonShape: safeJsonShape(response.value),
+      request: diagnosticRequestSummary(request),
+      diagnostics: diagnostics.slice(before).map(safeProviderDiagnostic),
+    };
+  } catch (error) {
+    return {
+      name,
+      ok: false,
+      errorCode: error instanceof GambitProviderError ? error.code : 'provider_error',
+      latencyMs: Date.now() - started,
+      request: diagnosticRequestSummary(request),
+      diagnostics: diagnostics.slice(before).map(safeProviderDiagnostic),
+    };
+  }
+}
+
+function diagnosticRequestSummary(request: GambitLLMRequest): Record<string, unknown> {
+  return {
+    role: request.role,
+    schemaName: request.schemaName,
+    tokenBudget: request.tokenBudget,
+    timeoutMs: request.timeoutMs,
+    retryLimit: request.retryLimit,
+    systemBytes: utf8Bytes(request.system),
+    userBytes: utf8Bytes(request.user),
+    requestBytes: utf8Bytes(JSON.stringify({
+      model: 'redacted',
+      messages: [
+        { role: 'system', content: request.system },
+        { role: 'user', content: request.user },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.1,
+      max_tokens: request.tokenBudget,
+      stream: request.stream !== false,
+      ...(request.stream === false ? {} : { stream_options: { include_usage: true } }),
+    })),
+  };
+}
+
+function safeJsonShape(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { type: Array.isArray(value) ? 'array' : typeof value };
+  const record = value as Record<string, unknown>;
+  const nested = Object.fromEntries(Object.entries(record)
+    .filter(([, entry]) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .slice(0, 6)
+    .map(([key, entry]) => [key, Object.keys(entry as Record<string, unknown>).slice(0, 24)]));
+  return { type: 'object', keys: Object.keys(record).slice(0, 32), nested };
+}
+
+function safeProviderDiagnostic(diagnostic: GambitProviderDiagnostic): Record<string, unknown> {
+  return {
+    phase: diagnostic.phase,
+    endpointHost: diagnostic.endpointHost,
+    role: diagnostic.role,
+    provider: diagnostic.provider,
+    modelId: diagnostic.modelId,
+    attempt: diagnostic.attempt,
+    latencyMs: diagnostic.latencyMs,
+    status: diagnostic.status ?? null,
+    errorCode: diagnostic.errorCode ?? null,
+    retryable: diagnostic.retryable,
+    startedAt: diagnostic.startedAt,
+    responseReceived: diagnostic.responseReceived,
+    timeoutMs: diagnostic.timeoutMs,
+    requestBytes: diagnostic.requestBytes,
+    systemBytes: diagnostic.systemBytes,
+    userBytes: diagnostic.userBytes,
+    schemaBytes: diagnostic.schemaBytes,
+    stream: diagnostic.stream,
+    contentType: diagnostic.contentType ?? null,
+    errorClass: diagnostic.errorClass ?? null,
+    responseBytes: diagnostic.responseBytes ?? null,
+    streamChunks: diagnostic.streamChunks ?? null,
+    contentBytes: diagnostic.contentBytes ?? null,
+    bodyReadCompleted: diagnostic.bodyReadCompleted ?? null,
+    structuredJsonComplete: diagnostic.structuredJsonComplete ?? null,
+    contentShape: diagnostic.contentShape ?? null,
+  };
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function boundedDiagnosticNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.floor(parsed))) : fallback;
+}
 
 function positiveInteger(value: string): number | null {
   const parsed = Number(value);
