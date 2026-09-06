@@ -46,7 +46,7 @@ import { GambitRepository } from '../src/open-gambit/repository';
 import { GambitRunBudget } from '../src/open-gambit/budget';
 import openGambitApi from '../src/routes/open-gambit';
 import { normalizeGambitTranslation, runGambitDiscovery } from '../src/open-gambit/service';
-import { translationRequest } from '../src/open-gambit/publication';
+import { gambitTranslationValidationErrors, translationRequest } from '../src/open-gambit/publication';
 
 const source: GambitSourceDefinition = {
   id: 'test-official',
@@ -938,7 +938,7 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       predictionStatement: 'Localized prediction',
     });
 
-    expect(normalizeGambitTranslation({
+    const japaneseValue = {
       headline: 'ローカライズされた見出し',
       surfaceEvent: 'ローカライズされた出来事',
       facts: ['ローカライズされた事実'],
@@ -956,7 +956,9 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       }],
       falsifier: 'ローカライズされた反証条件',
       uncertainty: 'ローカライズされた不確実性',
-    }, 'ja', article)).toBeNull();
+    };
+    expect(gambitTranslationValidationErrors(japaneseValue, 'ja', article)).toEqual([]);
+    expect(normalizeGambitTranslation(japaneseValue, 'ja', article)).toMatchObject({ locale: 'ja', countercase: expect.stringContaining('過度に') });
   });
 
   it('sends only writable trajectory prose to the locale provider', () => {

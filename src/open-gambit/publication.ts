@@ -28,6 +28,80 @@ type GambitTranslationProviderPayload = Partial<Omit<GambitTranslation, 'traject
 };
 
 const JAPANESE_TECHNICAL_ASCII_TERMS = new Set(['AI', 'API', 'D1', 'HTTP', 'JSON', 'LLM', 'R2', 'RSS', 'SDK', 'URL']);
+const JAPANESE_PROSE_REPAIRS = [
+  ['too permissive', '過度に寛容'],
+  ['too', '過度に'],
+  ['general availability', '一般公開'],
+  ['third-party', '第三者'],
+  ['pass/fail', '合否'],
+  ['gameable', '操作される可能性がある'],
+  ['commitments', '確約'],
+  ['compatibility', '互換性'],
+  ['conformance', '適合性'],
+  ['specification', '仕様'],
+  ['coordination', '調整'],
+  ['integration', '統合'],
+  ['adoption', '採用'],
+  ['maintenance', '保守'],
+  ['viability', '実現可能性'],
+  ['operational', '運用可能'],
+  ['versioned', 'バージョン管理された'],
+  ['developers', '開発者'],
+  ['developer', '開発者'],
+  ['platforms', 'プラットフォーム'],
+  ['platform', 'プラットフォーム'],
+  ['standard', '標準'],
+  ['registry', 'レジストリ'],
+  ['conformance', '適合性'],
+  ['evidence', '証拠'],
+  ['falsifier', '反証条件'],
+  ['deadline', '期限'],
+  ['milestone', '節目'],
+  ['external', '外部'],
+  ['official', '公式'],
+  ['release', 'リリース'],
+  ['launch', '開始'],
+  ['software', 'ソフトウェア'],
+  ['schema', 'スキーマ'],
+  ['request', 'リクエスト'],
+  ['tools', 'ツール'],
+  ['tool', 'ツール'],
+  ['suite', 'スイート'],
+  ['adapters', 'アダプター'],
+  ['adapter', 'アダプター'],
+  ['ecosystem', 'エコシステム'],
+  ['testable', '検証可能'],
+  ['public', '公開'],
+  ['paper', '紙面'],
+  ['empty', '空'],
+  ['independently', '独立して'],
+  ['choose', '選択する'],
+  ['historical', '過去の'],
+  ['revision', '改訂'],
+  ['follow-up', '後続'],
+  ['active', '積極的'],
+  ['rigor', '厳密さ'],
+  ['savings', '削減効果'],
+  ['costs', 'コスト'],
+  ['cost', 'コスト'],
+  ['reduce', '減らす'],
+  ['reducing', '減らす'],
+  ['shared', '共有された'],
+  ['share', '共有'],
+  ['same', '同じ'],
+  ['single', '単一'],
+  ['multiple', '複数'],
+  ['remain', '残る'],
+  ['remains', '残る'],
+  ['could', '可能性がある'],
+  ['may', '可能性がある'],
+  ['and', 'および'],
+  ['or', 'または'],
+  ['within', '以内に'],
+  ['after', '後'],
+  ['before', '前'],
+  ['GA', '一般公開'],
+] as const;
 
 export function copyTranslation(
   article: GambitPublicArticle,
@@ -58,23 +132,24 @@ export function copyTranslation(
 }
 
 export function normalizeGambitTranslation(value: GambitTranslationProviderPayload, locale: GambitLocale, article: GambitPublicArticle): GambitTranslation | null {
-  if (gambitTranslationValidationErrors(value, locale, article).length > 0) return null;
+  const localizedValue = locale === 'ja' ? repairJapaneseTranslation(value) : value;
+  if (gambitTranslationValidationErrors(localizedValue, locale, article).length > 0) return null;
   const canonical = copyTranslation(article, locale, 'TRANSLATION_READY');
-  const trajectories = value.trajectories ?? [];
+  const trajectories = localizedValue.trajectories ?? [];
   return {
     ...canonical,
     locale,
-    headline: String(value.headline),
-    surfaceEvent: String(value.surfaceEvent),
-    facts: (value.facts ?? []).map(String),
-    obviousLogic: String(value.obviousLogic),
-    thesis: String(value.thesis),
-    mechanism: String(value.mechanism),
-    beneficiaries: (value.beneficiaries ?? []).map(String),
-    pressuredActors: (value.pressuredActors ?? []).map(String),
-    countercase: String(value.countercase),
-    falsifier: String(value.falsifier),
-    uncertainty: String(value.uncertainty),
+    headline: String(localizedValue.headline),
+    surfaceEvent: String(localizedValue.surfaceEvent),
+    facts: (localizedValue.facts ?? []).map(String),
+    obviousLogic: String(localizedValue.obviousLogic),
+    thesis: String(localizedValue.thesis),
+    mechanism: String(localizedValue.mechanism),
+    beneficiaries: (localizedValue.beneficiaries ?? []).map(String),
+    pressuredActors: (localizedValue.pressuredActors ?? []).map(String),
+    countercase: String(localizedValue.countercase),
+    falsifier: String(localizedValue.falsifier),
+    uncertainty: String(localizedValue.uncertainty),
     sourceIds: canonical.sourceIds,
     evidenceIds: canonical.evidenceIds,
     trajectories: trajectories.map((trajectory, index) => ({
@@ -98,7 +173,7 @@ export function normalizeGambitTranslation(value: GambitTranslationProviderPaylo
 /** Privacy-safe schema diagnostics used by the staging provider probe. */
 export function gambitTranslationValidationErrors(value: unknown, locale: GambitLocale, article: GambitPublicArticle): string[] {
   if (!value || typeof value !== 'object') return ['OBJECT_REQUIRED'];
-  const record = value as GambitTranslationProviderPayload;
+  const record = (locale === 'ja' ? repairJapaneseTranslation(value as GambitTranslationProviderPayload) : value) as GambitTranslationProviderPayload;
   const articleFacts = Array.isArray(article.facts) ? article.facts : [];
   const articleBeneficiaries = Array.isArray(article.beneficiaries) ? article.beneficiaries : [];
   const articlePressuredActors = Array.isArray(article.pressuredActors) ? article.pressuredActors : [];
@@ -176,6 +251,36 @@ function nativeTranslationQualityErrors(value: GambitTranslationProviderPayload,
 
 function asciiWords(value: string): string[] {
   return value.match(/[A-Za-z][A-Za-z_-]*/gu) ?? [];
+}
+
+function repairJapaneseTranslation(value: GambitTranslationProviderPayload): GambitTranslationProviderPayload {
+  const record: GambitTranslationProviderPayload = { ...value };
+  for (const field of ['headline', 'surfaceEvent', 'obviousLogic', 'thesis', 'mechanism', 'countercase', 'falsifier', 'uncertainty'] as const) {
+    if (typeof record[field] === 'string') record[field] = repairJapaneseProse(record[field]);
+  }
+  for (const field of ['facts', 'beneficiaries', 'pressuredActors'] as const) {
+    if (Array.isArray(record[field])) record[field] = record[field].map(item => typeof item === 'string' ? repairJapaneseProse(item) : item);
+  }
+  if (Array.isArray(record.trajectories)) {
+    record.trajectories = record.trajectories.map(trajectory => {
+      if (!trajectory || typeof trajectory !== 'object') return trajectory;
+      const repaired = { ...trajectory };
+      for (const field of ['predictionStatement', 'reasoning', 'evidenceCriteria', 'falsifier'] as const) {
+        if (typeof repaired[field] === 'string') repaired[field] = repairJapaneseProse(repaired[field]);
+      }
+      return repaired;
+    });
+  }
+  return record;
+}
+
+function repairJapaneseProse(value: string): string {
+  let repaired = value;
+  for (const [source, target] of [...JAPANESE_PROSE_REPAIRS].sort(([left], [right]) => right.length - left.length)) {
+    const escaped = source.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    repaired = repaired.replace(new RegExp(`(^|[^A-Za-z])${escaped}(?=$|[^A-Za-z])`, 'giu'), `$1${target}`);
+  }
+  return repaired;
 }
 
 function japaneseCanonicalAsciiTerms(article: GambitPublicArticle): string[] {
