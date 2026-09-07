@@ -1,0 +1,17 @@
+[
+  {
+    "id": 4,
+    "title": "v0.2.152",
+    "normalized_content": "Internal/Other Changes \n\nUpdated bundled Claude CLI to version 2.1.259 \n\nPyPI: https://pypi.org/project/claude-agent-sdk/0.2.152/ \npip install claude-agent-sdk==0.2.152"
+  },
+  {
+    "id": 5,
+    "title": "v0.2.151",
+    "normalized_content": "Internal/Other Changes \n\nUpdated bundled Claude CLI to version 2.1.258 \n\nPyPI: https://pypi.org/project/claude-agent-sdk/0.2.151/ \npip install claude-agent-sdk==0.2.151"
+  },
+  {
+    "id": 6,
+    "title": "v0.2.150",
+    "normalized_content": "Internal/Other Changes \n\nUpdated bundled Claude CLI to version 2.1.257 \n\nPyPI: https://pypi.org/project/claude-agent-sdk/0.2.150/ \npip install claude-agent-sdk==0.2.150"
+  }
+]

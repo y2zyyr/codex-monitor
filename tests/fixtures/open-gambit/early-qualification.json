@@ -1,0 +1,142 @@
+[
+  {
+    "name": "typo fix",
+    "text": "Fix typo in API documentation.",
+    "eligible": false,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "dependency bump",
+    "text": "chore: update dependencies for the Agent SDK.",
+    "eligible": false,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "routine SDK patch",
+    "text": "SDK patch release fixes a low-impact retry bug.",
+    "eligible": false,
+    "currentResult": "QUALIFIED",
+    "currentScore": 0.48
+  },
+  {
+    "name": "small SDK feature",
+    "text": "Add a minor helper method for API response formatting.",
+    "eligible": false,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "major new model",
+    "text": "Company launches a new flagship model for developers.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "major capability jump",
+    "text": "Company introduces real-time video understanding in its model.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "80% API price reduction",
+    "text": "Company cuts API prices by 80%.",
+    "eligible": true,
+    "currentResult": "QUALIFIED",
+    "currentScore": 0.48
+  },
+  {
+    "name": "paid becomes free",
+    "text": "Previously paid Agent capability is now free.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "free-tier expansion",
+    "text": "Company expands the API free tier from 100 to 10000 requests.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "open-weight release",
+    "text": "Company releases an open-weight model.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "closed to open",
+    "text": "Closed model is released as open weights.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "acquisition",
+    "text": "Company acquires a developer platform.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.76
+  },
+  {
+    "name": "default distribution",
+    "text": "Cloud platform makes Model X the default model.",
+    "eligible": true,
+    "currentResult": "QUALIFIED",
+    "currentScore": 0.76
+  },
+  {
+    "name": "interoperability protocol",
+    "text": "Company releases an interoperability protocol.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "compute subsidy",
+    "text": "Cloud company provides $1 billion in compute credits for developers.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "forced migration",
+    "text": "Company deprecates its API and requires migration to the new platform.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  },
+  {
+    "name": "enterprise bundling",
+    "text": "Company bundles its Agent into the enterprise suite.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.76
+  },
+  {
+    "name": "cloud partnership",
+    "text": "Company signs a cloud partnership to distribute its model.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "context-window jump",
+    "text": "Company increases the model context window from 128K to 1M tokens.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.2
+  },
+  {
+    "name": "compatibility layer",
+    "text": "Company launches a compatibility layer for developer platforms.",
+    "eligible": true,
+    "currentResult": "NON_FALSIFIABLE",
+    "currentScore": 0.48
+  }
+]

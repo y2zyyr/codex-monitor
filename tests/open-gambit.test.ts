@@ -217,9 +217,10 @@ describe('Open Gambit policy and evidence boundaries', () => {
       quote: '2.21.0 Features: add destination parameter to client.files.download, support audio/webm MIME, and expose SDK configuration for developers.',
     })], { providers: { triage } });
     expect(result.status).toBe('NO_GAMBIT');
-    expect(result.reason).toBe('NO_GAMBIT_WORTH_PUBLISHING');
+    expect(result.reason).toBe('LOW_STRATEGIC_VALUE');
     expect(result.reason).not.toBe('POLITICAL_TOPIC_EXCLUDED');
-    expect(result.politicalDecision).toMatchObject({ excluded: false, decisionSource: 'LLM_TRIAGE' });
+    expect(result.politicalDecision).toMatchObject({ excluded: false, decisionSource: 'DETERMINISTIC_POLICY' });
+    expect(triage.requests).toHaveLength(0);
   });
 
   it('fails closed when a political triage boolean has no structured reason', async () => {
@@ -273,7 +274,7 @@ describe('Open Gambit policy and evidence boundaries', () => {
     expect(canonicalRejectionReason('NO_GAMBIT_WORTH_PUBLISHING', 'NON_FALSIFIABLE')).toBe('NO_GAMBIT_WORTH_PUBLISHING');
   });
 
-  it('rejects weak evidence and non-falsifiable candidates deterministically', () => {
+  it('rejects weak evidence and generic marketing deterministically', () => {
     const insufficient = qualificationGate({
       headline: 'A vague product rumour',
       summary: 'Something may happen.',
@@ -288,17 +289,17 @@ describe('Open Gambit policy and evidence boundaries', () => {
       headline: 'A strategic platform direction',
       summary: 'This will change everything forever.',
       content: 'The ecosystem will inevitably transform.',
-      evidence: [evidence()],
+      evidence: [evidence({ quote: 'The ecosystem will inevitably transform.' })],
       strategicValue: 0.8,
       falsifiable: false,
     });
-    expect(unfalsifiable.reason).toBe('NON_FALSIFIABLE');
+    expect(unfalsifiable.reason).toBe('LOW_STRATEGIC_VALUE');
   });
 
   it('enforces tens-only probability buckets, absolute deadlines, and at most three trajectories', () => {
     expect(isProbabilityBucket(70)).toBe(true);
     expect(isProbabilityBucket(72)).toBe(false);
-    expect(validateTrajectoryCount([])).toBe(true);
+    expect(validateTrajectoryCount([])).toBe(false);
     expect(validateTrajectoryCount([1, 2, 3])).toBe(true);
     expect(validateTrajectoryCount([1, 2, 3, 4])).toBe(false);
     expect(validatePublicForecast(trajectory())).toEqual([]);
@@ -446,12 +447,12 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
         uncertainty: 'Adoption and execution remain uncertain.',
       }));
       const result = await runGambitStages(candidate(), [evidence()], {
-        providers: { triage: triageProvider, gambit_analysis: analysisProvider },
+        providers: { triage: triageProvider, gambit_analysis: analysisProvider, critic: new MockGambitProvider(() => response({ accepted: true, politicalFraming: false })) },
         now: new Date('2026-09-04T00:00:00.000Z'),
       });
-      expect(result.status).toBe('AUTO_PUBLISH_ELIGIBLE');
-      expect(result.publicationDecision).toBe('AUTO_PUBLISH_ELIGIBLE');
-      expect(result.draft?.trajectories).toHaveLength(count);
+      expect(result.status).toBe(count === 0 ? 'NO_GAMBIT' : 'AUTO_PUBLISH_ELIGIBLE');
+      expect(result.publicationDecision).toBe(count === 0 ? 'NON_FALSIFIABLE' : 'AUTO_PUBLISH_ELIGIBLE');
+      if (count > 0) expect(result.draft?.trajectories).toHaveLength(count);
     }
     expect(triageProvider.requests).toHaveLength(3);
   });

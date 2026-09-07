@@ -1,3 +1,4 @@
+import { runQualificationCheck } from '../open-gambit/qualification-check';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { ClassificationProvider, Env } from '../types';
@@ -53,6 +54,13 @@ async function requireAdmin(c: Context<{ Bindings: Env }>): Promise<Response | n
   c.header('Cache-Control', 'no-store');
   return null;
 }
+
+// Fixed read-only acceptance, unavailable in production and accepts no inputs.
+openGambitApi.get('/qualification-check', async (c) => {
+  if (c.env.BUILD_ENVIRONMENT !== 'staging') return c.notFound();
+  c.header('Cache-Control', 'no-store');
+  return c.json({ buildSha: c.env.BUILD_SHA, ...await runQualificationCheck() });
+});
 
 openGambitApi.get('/articles', async (c) => {
   const rawLimit = c.req.query('limit');

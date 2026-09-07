@@ -1,3 +1,4 @@
+import { strategicSubstance, type StrategicSubstance } from './eligibility';
 import {
   GAMBIT_PROBABILITY_BUCKETS,
   GAMBIT_REJECTION_REASONS,
@@ -75,7 +76,9 @@ export function normalizeProbabilityBucket(value: number): GambitProbability {
 
 export function isAbsoluteDeadline(value: string): boolean {
   const parsed = new Date(value);
-  return value.trim().length > 0 && Number.isFinite(parsed.getTime()) && /\d{4}/.test(value);
+  return /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/u.test(value)
+    && Number.isFinite(parsed.getTime())
+    && new Date(`${value.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === value.slice(0, 10);
 }
 
 export interface QualificationInput {
@@ -83,6 +86,7 @@ export interface QualificationInput {
   summary: string;
   content: string;
   evidence: GambitEvidence[];
+  /** Legacy caller hint; eligibility is recomputed from evidence. */
   strategicValue?: number;
   falsifiable?: boolean;
   politicalTopic?: boolean;
@@ -95,7 +99,9 @@ export interface QualificationDecision {
   politicalReasons: string[];
   evidenceSufficient: boolean;
   strategicValue: number;
+  /** Legacy source-language diagnostic; never analysis eligibility. */
   falsifiable: boolean;
+  substance: StrategicSubstance;
   scores: {
     strategicLeverage: number;
     ecosystemEffect: number;
@@ -123,7 +129,8 @@ export function qualificationGate(input: QualificationInput): QualificationDecis
           : evidence.sourceTier === 'PRIMARY_DOCUMENTATION' ? 0.85
             : evidence.sourceTier === 'SECONDARY_HIGH_QUALITY' ? 0.65 : 0.25
     ), 0) / input.evidence.length);
-  const strategicValue = Math.max(0, Math.min(1, input.strategicValue ?? inferStrategicValue(input)));
+  const substance = strategicSubstance(input.evidence);
+  const strategicValue = substance.score;
   const falsifiable = input.falsifiable ?? inferFalsifiability(input);
   const scores = {
     strategicLeverage: strategicValue,
@@ -141,7 +148,6 @@ export function qualificationGate(input: QualificationInput): QualificationDecis
   let reason: GambitRejectionReason | null = null;
   if (politicalTopic) reason = 'POLITICAL_TOPIC_EXCLUDED';
   else if (!evidenceSufficient) reason = 'INSUFFICIENT_EVIDENCE';
-  else if (!falsifiable) reason = 'NON_FALSIFIABLE';
   else if (strategicValue < 0.45) reason = 'LOW_STRATEGIC_VALUE';
 
   return {
@@ -152,17 +158,9 @@ export function qualificationGate(input: QualificationInput): QualificationDecis
     evidenceSufficient,
     strategicValue,
     falsifiable,
+    substance,
     scores,
   };
-}
-
-function inferStrategicValue(input: QualificationInput): number {
-  const text = `${input.headline} ${input.summary} ${input.content}`;
-  const signals = [
-    /\b(?:protocol|standard|api|platform|distribution|ecosystem|dependency|switching|pricing|acquisition|open\s*source|compute|agent)\b/iu,
-    /\b(?:competitor|developer|enterprise|adoption|compatible|default|deprecate|launch|release)\b/iu,
-  ];
-  return Math.min(1, signals.reduce((score, pattern) => score + (pattern.test(text) ? 0.28 : 0), 0.2));
 }
 
 function inferFalsifiability(input: QualificationInput): boolean {
@@ -172,7 +170,7 @@ function inferFalsifiability(input: QualificationInput): boolean {
 }
 
 export function validateTrajectoryCount(trajectories: unknown): trajectories is unknown[] {
-  return Array.isArray(trajectories) && trajectories.length <= 3;
+  return Array.isArray(trajectories) && trajectories.length >= 1 && trajectories.length <= 3;
 }
 
 export function validatePublicForecast(
@@ -184,13 +182,16 @@ export function validatePublicForecast(
   for (const field of ['predictionStatement', 'targetEntity', 'reasoning', 'evidenceCriteria', 'falsifier'] as const) {
     if (typeof trajectory[field] !== 'string' || trajectory[field]!.trim().length < 3) errors.push(`${field.toUpperCase()}_MISSING`);
   }
+  if (/^\s*(?:this|it)\s+(?:could|may|might)\s+(?:strengthen|transform|improve)\s+(?:the\s+)?ecosystem[.!]?\s*$/iu.test(trajectory.predictionStatement ?? '')) errors.push('FALSIFIABILITY_VAGUE_CONSEQUENCE');
+  if (trajectory.evidenceCriteria?.trim().toLowerCase() === trajectory.falsifier?.trim().toLowerCase()) errors.push('FALSIFIABILITY_IDENTICAL_CRITERIA');
   return errors;
 }
 
 export function validateAnalysisForPublication(
   candidate: Pick<GambitCandidate, 'politicalTopic'>,
-  analysis: { trajectories: Array<{ probability: unknown; deadline: string; predictionStatement?: string; targetEntity?: string; reasoning?: string; evidenceCriteria?: string; falsifier?: string }>; thesis: string; facts: string[] },
+  analysis: { trajectories: Array<{ probability: unknown; deadline: string; predictionStatement?: string; targetEntity?: string; reasoning?: string; evidenceCriteria?: string; falsifier?: string }>; thesis: string; facts: string[]; mechanism?: string; countercase?: string },
   critic: { accepted: boolean; politicalFraming: boolean; motiveConcern?: boolean; causalConcern?: boolean; sensationalismConcern?: boolean; falsifiabilityConcern?: boolean },
+  now?: Date,
 ): string[] {
   const errors: string[] = [];
   if (candidate.politicalTopic) errors.push('POLITICAL_TOPIC_EXCLUDED');
@@ -199,10 +200,15 @@ export function validateAnalysisForPublication(
   if (critic.causalConcern) errors.push('CRITIC_WEAK_CAUSALITY');
   if (critic.sensationalismConcern) errors.push('CRITIC_SENSATIONALISM');
   if (critic.falsifiabilityConcern) errors.push('CRITIC_FALSIFIABILITY');
+  if (!analysis.mechanism || analysis.mechanism.trim().length < 10) errors.push('STRATEGIC_MECHANISM_MISSING');
+  if (!analysis.countercase || analysis.countercase.trim().length < 10) errors.push('CRITIC_COUNTERCASE_MISSING');
   if (!analysis.thesis.trim()) errors.push('THESIS_MISSING');
   if (!Array.isArray(analysis.facts) || analysis.facts.length === 0) errors.push('FACTS_MISSING');
   if (!validateTrajectoryCount(analysis.trajectories)) errors.push('TRAJECTORY_COUNT_OUT_OF_RANGE');
-  for (const trajectory of analysis.trajectories) errors.push(...validatePublicForecast(trajectory));
+  for (const trajectory of analysis.trajectories) {
+    errors.push(...validatePublicForecast(trajectory));
+    if (now && new Date(trajectory.deadline).getTime() <= now.getTime()) errors.push('DEADLINE_NOT_FUTURE');
+  }
   if (!critic.accepted) errors.push('CRITIC_REJECTED');
   return [...new Set(errors)];
 }
@@ -216,7 +222,7 @@ export function publicationDecisionForErrors(errors: readonly string[]): GambitP
   if (errors.includes('POLITICAL_TOPIC_EXCLUDED') || errors.includes('CRITIC_POLITICAL_FRAMING')) return 'POLITICAL_TOPIC_EXCLUDED';
   if (errors.some(error => error.includes('EVIDENCE'))) return 'INSUFFICIENT_EVIDENCE';
   if (errors.some(error => error.includes('MOTIVE'))) return 'UNSUPPORTED_MOTIVE';
-  if (errors.some(error => error.includes('FALSIF') || error.includes('DEADLINE') || error.includes('TRAJECTORY'))) return 'NON_FALSIFIABLE';
+  if (errors.some(error => error.includes('FALSIF') || error.includes('DEADLINE') || error.includes('TRAJECTORY') || error.includes('PROBABILITY') || error.includes('PREDICTIONSTATEMENT') || error.includes('TARGETENTITY'))) return 'NON_FALSIFIABLE';
   if (errors.some(error => error.startsWith('CRITIC_'))) return 'NEEDS_HUMAN_REVIEW';
   if (errors.some(error => error.includes('STRATEGIC') || error.includes('CAUSAL'))) return 'LOW_STRATEGIC_VALUE';
   return 'NEEDS_HUMAN_REVIEW';
@@ -244,10 +250,11 @@ export function publicationDecisionForReason(reason: string | null | undefined):
 
 export function deterministicPublicationGate(
   candidate: Pick<GambitCandidate, 'politicalTopic'>,
-  analysis: { trajectories: Array<{ probability: unknown; deadline: string; predictionStatement?: string; targetEntity?: string; reasoning?: string; evidenceCriteria?: string; falsifier?: string }>; thesis: string; facts: string[] },
+  analysis: { trajectories: Array<{ probability: unknown; deadline: string; predictionStatement?: string; targetEntity?: string; reasoning?: string; evidenceCriteria?: string; falsifier?: string }>; thesis: string; facts: string[]; mechanism?: string; countercase?: string },
   critic: { accepted: boolean; politicalFraming: boolean; motiveConcern?: boolean; causalConcern?: boolean; sensationalismConcern?: boolean; falsifiabilityConcern?: boolean },
+  now?: Date,
 ): AutomaticPublicationGate {
-  const errors = validateAnalysisForPublication(candidate, analysis, critic);
+  const errors = validateAnalysisForPublication(candidate, analysis, critic, now);
   return {
     errors,
     decision: errors.length === 0 ? 'AUTO_PUBLISH_ELIGIBLE' : publicationDecisionForErrors(errors),

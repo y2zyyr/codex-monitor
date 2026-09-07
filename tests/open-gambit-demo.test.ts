@@ -182,7 +182,7 @@ describe('Open Gambit V1 local end-to-end demo', () => {
       uncertainty: 'Execution and adoption remain uncertain.',
     }));
     const staged = await runGambitStages(qualified, evidence, {
-      providers: { triage, gambit_analysis: analysis },
+      providers: { triage, gambit_analysis: analysis, critic: new MockGambitProvider(() => llmResponse({ accepted: true, politicalFraming: false })) },
       now: new Date('2026-09-04T00:00:00.000Z'),
     });
     expect(staged.status).toBe('AUTO_PUBLISH_ELIGIBLE');

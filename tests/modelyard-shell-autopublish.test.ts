@@ -155,6 +155,7 @@ function qualifyingProviders() {
       }],
       uncertainty: 'Execution and adoption remain uncertain.',
     })),
+    critic: new MockGambitProvider(async () => llm({ accepted: true, politicalFraming: false })),
     translation: new MockGambitProvider(async request => {
       const record = JSON.parse(request.user) as Record<string, unknown>;
       const labels: Record<string, Record<string, unknown>> = {
@@ -341,7 +342,7 @@ describe('ModelYard shell and Open Gambit automatic publication', () => {
       title: fixtureSnapshot.title,
       publisher: fixtureSnapshot.publisher,
       publishedAt: fixtureSnapshot.publishedAt,
-      quote: fixtureSnapshot.normalizedContent,
+      quote: 'Routine patch release updates bundled SDK dependencies.',
       role: 'FACT',
       contentHash: fixtureSnapshot.contentHash,
     };
