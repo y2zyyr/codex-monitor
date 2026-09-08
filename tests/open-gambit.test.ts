@@ -849,7 +849,7 @@ describe('Open Gambit public rendering and append-only resolution', () => {
 
   it('does not publish a political article or show an empty homepage module', () => {
     const political = { ...({ articleId: 2, status: 'PUBLISHED', politicalTopic: true } as unknown as GambitPublicArticle) };
-    expect(renderOpenGambitLanding([political], 'en')).toContain('No published Open Gambit analyses');
+    expect(renderOpenGambitLanding([political], 'en')).toContain('No published analyses yet');
   });
 
   it('writes resolution events without updating immutable prediction originals', async () => {

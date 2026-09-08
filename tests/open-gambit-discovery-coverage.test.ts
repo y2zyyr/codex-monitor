@@ -22,7 +22,7 @@ import { renderOpenGambitLanding } from '../src/open-gambit/renderer';
 import { discoverConfiguredSources, selectSourcesForRun } from '../src/open-gambit/sources';
 import { runGambitDiscovery } from '../src/open-gambit/service';
 import { GambitRunBudget } from '../src/open-gambit/budget';
-import type { GambitCandidate, GambitEvidence, GambitLatestScan, GambitSourceDefinition, GambitPublicArticle } from '../src/open-gambit/types';
+import type { GambitCandidate, GambitEvidence, GambitSourceDefinition, GambitPublicArticle } from '../src/open-gambit/types';
 import { GAMBIT_LOCALES } from '../src/open-gambit/types';
 
 // ---------------------------------------------------------------------------
@@ -347,34 +347,18 @@ describe('global Top-K selection', () => {
 // 6. Latest Scan public UI
 // ---------------------------------------------------------------------------
 
-describe('latest scan public UI', () => {
-  it('renders STATE A (no run) with awaiting text and no hardcoded counts', () => {
-    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev', null);
-    expect(html).toContain('Open Gambit is watching');
-    expect(html).toContain('first scan has not completed');
-    expect(html).not.toContain('0 sources checked');
-    expect(html).not.toContain('0 published');
+describe('editorial empty state', () => {
+  it('shows natural editorial copy when no articles exist', () => {
+    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev');
+    expect(html).toContain('No published analyses yet');
+    expect(html).toContain('We continuously monitor');
+    expect(html).not.toContain('sources checked');
+    expect(html).not.toContain('items reviewed');
+    expect(html).not.toContain('candidates selected');
+    expect(html).not.toContain('gambit-watching');
   });
 
-  it('renders STATE B (healthy scan, zero publication) with real data counts', () => {
-    const scan: GambitLatestScan = {
-      hasRun: true, completedAt: '2026-09-07T02:30:00.000Z', status: 'COMPLETED',
-      sourcesChecked: 14, itemsReviewed: 126, candidatesReviewed: 3, published: 0,
-      partialSourceFailure: false,
-    };
-    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev', scan);
-    expect(html).toContain('14');
-    expect(html).toContain('126');
-    expect(html).toContain('3');
-    expect(html).toContain('0');
-    expect(html).toContain('sources checked');
-    expect(html).toContain('items reviewed');
-    expect(html).toContain('candidates selected for deeper review');
-    expect(html).toContain('published');
-    expect(html).toContain('No move cleared the strategic and verification threshold');
-  });
-
-  it('renders STATE C (published articles) with articles primary and compact scan', () => {
+  it('shows published articles when they exist', () => {
     const article: GambitPublicArticle = {
       articleId: 1, candidateId: 1, slug: 'test-article', headline: 'Test Article',
       surfaceEvent: 'Published event', facts: ['Fact'], obviousLogic: 'Logic',
@@ -386,47 +370,17 @@ describe('latest scan public UI', () => {
       publishedAt: '2026-09-07T00:00:00.000Z', modifiedAt: '2026-09-07T00:00:00.000Z',
       translations: {},
     };
-    const scan: GambitLatestScan = {
-      hasRun: true, completedAt: '2026-09-07T02:30:00.000Z', status: 'COMPLETED',
-      sourcesChecked: 14, itemsReviewed: 126, candidatesReviewed: 3, published: 1,
-      partialSourceFailure: false,
-    };
-    const html = renderOpenGambitLanding([article], 'en', 'https://tibo.modelyard.dev', scan);
-    // Article is primary
+    const html = renderOpenGambitLanding([article], 'en', 'https://tibo.modelyard.dev');
     expect(html).toContain('Test Article');
-    // Scan panel still present (compact)
-    expect(html).toContain('14');
-    expect(html).toContain('sources checked');
-    // No-move-cleared is NOT shown when published > 0
-    expect(html).not.toContain('No move cleared');
-    // Internal identifiers are NOT exposed
+    expect(html).not.toContain('gambit-watching');
+    expect(html).not.toContain('sources checked');
     expect(html).not.toContain('candidateId');
     expect(html).not.toContain('workflowId');
     expect(html).not.toContain('score');
-    expect(html).not.toContain('0.437');
-  });
-
-  it('renders STATE D (partial failure) with limited coverage wording', () => {
-    const scan: GambitLatestScan = {
-      hasRun: true, completedAt: '2026-09-07T02:30:00.000Z', status: 'COMPLETED',
-      sourcesChecked: 13, itemsReviewed: 100, candidatesReviewed: 2, published: 0,
-      partialSourceFailure: true,
-    };
-    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev', scan);
-    expect(html).toContain('limited source coverage');
-    // No-move-cleared is NOT shown when partial failure (limited coverage takes precedence)
-    // Actually the code shows limitedCoverage text when partial is true, regardless of published count
-    expect(html).toContain('limited source coverage');
-    expect(html).not.toContain('No move cleared');
   });
 
   it('protects internal identifiers from public rendering', () => {
-    const scan: GambitLatestScan = {
-      hasRun: true, completedAt: '2026-09-07T02:30:00.000Z', status: 'COMPLETED',
-      sourcesChecked: 14, itemsReviewed: 42, candidatesReviewed: 0, published: 0,
-      partialSourceFailure: false,
-    };
-    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev', scan);
+    const html = renderOpenGambitLanding([], 'en', 'https://tibo.modelyard.dev');
     expect(html).not.toContain('candidateId');
     expect(html).not.toContain('workflowId');
     expect(html).not.toContain('token');
@@ -437,37 +391,29 @@ describe('latest scan public UI', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. Five-locale parity for the watching panel
+// 7. Five-locale editorial empty state
 // ---------------------------------------------------------------------------
 
-describe('five-locale watching panel parity', () => {
-  const scan: GambitLatestScan = {
-    hasRun: true, completedAt: '2026-09-07T02:30:00.000Z', status: 'COMPLETED',
-    sourcesChecked: 14, itemsReviewed: 126, candidatesReviewed: 3, published: 0,
-    partialSourceFailure: false,
-  };
-
+describe('five-locale editorial empty state', () => {
   for (const locale of GAMBIT_LOCALES) {
-    it(`renders watching panel in ${locale} with locale-specific strings`, () => {
-      const html = renderOpenGambitLanding([], locale, 'https://tibo.modelyard.dev', scan);
-      expect(html).toContain('14');
-      expect(html).toContain('126');
-      expect(html).toContain('3');
-      expect(html).toContain('0');
-      // Every locale must have the watching section
-      expect(html).toContain('gambit-watching');
-      // No fallback marker for the landing page itself
-      expect(html).toContain('class="gambit-watching"');
-      // No English-only strings in non-English locales (the copy is locale-specific)
-      // The no-move-cleared message should be present (published === 0)
-      const copyKeys = {
-        en: 'No move cleared',
-        zh: '战略与验证门槛',
-        ja: '基準を満たした',
-        fr: 'seuil stratégique',
-        es: 'umbral estratégico',
+    it(`renders locale-specific editorial copy in ${locale}`, () => {
+      const html = renderOpenGambitLanding([], locale, 'https://tibo.modelyard.dev');
+      // No pipeline telemetry in any locale
+      expect(html).not.toContain('sources checked');
+      expect(html).not.toContain('items reviewed');
+      expect(html).not.toContain('candidates selected');
+      expect(html).not.toContain('gambit-watching');
+      // Every locale must have the editorial empty state with natural language
+      expect(html).toContain('gambit-empty');
+      // No English-only fallback confusion
+      const localeMarkers = {
+        en: 'monitor first-party',
+        zh: '持续关注',
+        ja: '継続的',
+        fr: 'en continu',
+        es: 'continua',
       };
-      expect(html).toContain(copyKeys[locale]);
+      expect(html).toContain(localeMarkers[locale]);
     });
   }
 });
