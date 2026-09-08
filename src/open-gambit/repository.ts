@@ -6,8 +6,10 @@ import type {
   GambitArticleStatus,
   GambitCandidate,
   GambitCandidateStatus,
+  GambitDiscoveryStats,
   GambitDraft,
   GambitEvidence,
+  GambitLatestScan,
   GambitLLMResponse,
   GambitMetrics,
   GambitModelRoleProvenance,
@@ -873,6 +875,136 @@ export class GambitRepository {
         ${names.map(name => `${name} = gambit_metrics_daily.${name} + excluded.${name}`).join(', ')},
         updated_at = excluded.updated_at
     `).bind(metricDate, ...values, now).run();
+  }
+
+  // -------------------------------------------------------------------------
+  // Discovery funnel observability (migration 0025 — additive)
+  // -------------------------------------------------------------------------
+
+  async insertDiscoveryStats(stats: GambitDiscoveryStats, now = new Date().toISOString()): Promise<void> {
+    await this.db.prepare(`
+      INSERT INTO gambit_discovery_stats (
+        run_id, sources_attempted, sources_succeeded, sources_failed,
+        raw_items_observed, stale_items, malformed_items, admitted_items,
+        exact_duplicates, routine_noise_rejects, strategic_eligible,
+        event_duplicates, global_pool_size, global_top_k_selected,
+        workflow_dispatches, workflow_failures, partial_source_failure,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(run_id) DO UPDATE SET
+        sources_attempted = excluded.sources_attempted,
+        sources_succeeded = excluded.sources_succeeded,
+        sources_failed = excluded.sources_failed,
+        raw_items_observed = excluded.raw_items_observed,
+        stale_items = excluded.stale_items,
+        malformed_items = excluded.malformed_items,
+        admitted_items = excluded.admitted_items,
+        exact_duplicates = excluded.exact_duplicates,
+        routine_noise_rejects = excluded.routine_noise_rejects,
+        strategic_eligible = excluded.strategic_eligible,
+        event_duplicates = excluded.event_duplicates,
+        global_pool_size = excluded.global_pool_size,
+        global_top_k_selected = excluded.global_top_k_selected,
+        workflow_dispatches = excluded.workflow_dispatches,
+        workflow_failures = excluded.workflow_failures,
+        partial_source_failure = excluded.partial_source_failure,
+        updated_at = excluded.updated_at
+    `).bind(
+      stats.runId,
+      stats.sourcesAttempted,
+      stats.sourcesSucceeded,
+      stats.sourcesFailed,
+      stats.rawItemsObserved,
+      stats.staleItems,
+      stats.malformedItems,
+      stats.admittedItems,
+      stats.exactDuplicates,
+      stats.routineNoiseRejects,
+      stats.strategicEligible,
+      stats.eventDuplicates,
+      stats.globalPoolSize,
+      stats.globalTopKSelected,
+      stats.workflowDispatches,
+      stats.workflowFailures,
+      stats.partialSourceFailure ? 1 : 0,
+      now,
+      now,
+    ).run();
+  }
+
+  async getDiscoveryStats(runId: number): Promise<GambitDiscoveryStats | null> {
+    const row = await this.db.prepare('SELECT * FROM gambit_discovery_stats WHERE run_id = ?').bind(runId).first<Row>();
+    if (!row) return null;
+    return {
+      runId: numberValue(row.run_id),
+      sourcesAttempted: numberValue(row.sources_attempted),
+      sourcesSucceeded: numberValue(row.sources_succeeded),
+      sourcesFailed: numberValue(row.sources_failed),
+      rawItemsObserved: numberValue(row.raw_items_observed),
+      staleItems: numberValue(row.stale_items),
+      malformedItems: numberValue(row.malformed_items),
+      admittedItems: numberValue(row.admitted_items),
+      exactDuplicates: numberValue(row.exact_duplicates),
+      routineNoiseRejects: numberValue(row.routine_noise_rejects),
+      strategicEligible: numberValue(row.strategic_eligible),
+      eventDuplicates: numberValue(row.event_duplicates),
+      globalPoolSize: numberValue(row.global_pool_size),
+      globalTopKSelected: numberValue(row.global_top_k_selected),
+      workflowDispatches: numberValue(row.workflow_dispatches),
+      workflowFailures: numberValue(row.workflow_failures),
+      partialSourceFailure: numberValue(row.partial_source_failure) === 1,
+      createdAt: row.created_at ? String(row.created_at) : undefined,
+      updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+    };
+  }
+
+  async countEnabledSources(): Promise<number> {
+    const row = await this.db.prepare('SELECT COUNT(*) AS total FROM gambit_sources WHERE enabled = 1').first<Row>();
+    return numberValue(row?.total);
+  }
+
+  async countPublishedArticles(): Promise<number> {
+    const row = await this.db.prepare('SELECT COUNT(*) AS total FROM gambit_articles WHERE status = ? AND political_topic = 0').bind('PUBLISHED').first<Row>();
+    return numberValue(row?.total);
+  }
+
+  /**
+   * Public "Latest Scan / Watching" summary derived from REAL persisted data.
+   * Only safe aggregates are exposed: no candidate ids, workflow ids,
+   * provider/model names, token counts, prompts, or error strings.
+   */
+  async getLatestScan(now = new Date().toISOString()): Promise<GambitLatestScan> {
+    const run = await this.db.prepare(`
+      SELECT * FROM gambit_runs
+      WHERE run_type = 'DISCOVERY' AND status IN ('COMPLETED', 'FAILED')
+      ORDER BY id DESC LIMIT 1
+    `).first<Row>();
+    if (!run) {
+      return {
+        hasRun: false,
+        completedAt: null,
+        status: null,
+        sourcesChecked: 0,
+        itemsReviewed: 0,
+        candidatesReviewed: 0,
+        published: 0,
+        partialSourceFailure: false,
+      };
+    }
+    const runId = numberValue(run.id);
+    const stats = await this.getDiscoveryStats(runId);
+    const published = await this.countPublishedArticles();
+    const runStatus = String(run.status) as GambitLatestScan['status'];
+    return {
+      hasRun: true,
+      completedAt: run.finished_at ? String(run.finished_at) : null,
+      status: runStatus,
+      sourcesChecked: stats ? stats.sourcesSucceeded : numberValue(run.sources_fetched),
+      itemsReviewed: stats ? stats.admittedItems : numberValue(run.candidates_found),
+      candidatesReviewed: stats ? stats.globalTopKSelected : 0,
+      published,
+      partialSourceFailure: stats ? stats.sourcesFailed > 0 : runStatus === 'FAILED',
+    };
   }
 
   private async mapPublicArticle(row: Row): Promise<GambitPublicArticle> {

@@ -566,6 +566,10 @@ export interface Env {
   GAMBIT_SCHEDULE_ENABLED?: string;
   GAMBIT_LOCAL_MEMORY_SNAPSHOTS?: string;
   GAMBIT_MAX_SOURCES_PER_RUN?: string;
+  /** Global analysis cap: how many cross-source candidates may enter the expensive LLM Workflow per discovery run. */
+  GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN?: string;
+  /** Bounded fetch parallelism for the broad daily source scan. */
+  GAMBIT_FETCH_CONCURRENCY?: string;
   GAMBIT_MAX_LLM_CALLS_PER_RUN?: string;
   GAMBIT_MAX_LLM_TOKENS_PER_RUN?: string;
   GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN?: string;

@@ -435,3 +435,49 @@ export interface GambitMetrics {
   dueResolutions: number;
   resolutionResults: number;
 }
+
+/**
+ * Durable per-run discovery funnel (additive migration 0025). This is
+ * observability for the broad-discovery redesign: it records how many sources
+ * were attempted/succeeded/failed and how the cross-source candidate pool was
+ * formed, deduplicated, ranked and capped before the expensive analysis path.
+ * It deliberately never stores prompts, tokens, scores of individual
+ * candidates, or internal error detail.
+ */
+export interface GambitDiscoveryStats {
+  runId: number;
+  sourcesAttempted: number;
+  sourcesSucceeded: number;
+  sourcesFailed: number;
+  rawItemsObserved: number;
+  staleItems: number;
+  malformedItems: number;
+  admittedItems: number;
+  exactDuplicates: number;
+  routineNoiseRejects: number;
+  strategicEligible: number;
+  eventDuplicates: number;
+  globalPoolSize: number;
+  globalTopKSelected: number;
+  workflowDispatches: number;
+  workflowFailures: number;
+  partialSourceFailure: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Public-facing "Latest Scan / Watching" summary. Only safe aggregates cross
+ * the public boundary: no candidate ids, workflow ids, provider/model names,
+ * token counts, prompts, scores, or internal error strings.
+ */
+export interface GambitLatestScan {
+  hasRun: boolean;
+  completedAt: string | null;
+  status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | null;
+  sourcesChecked: number;
+  itemsReviewed: number;
+  candidatesReviewed: number;
+  published: number;
+  partialSourceFailure: boolean;
+}

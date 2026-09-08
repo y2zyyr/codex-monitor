@@ -115,6 +115,10 @@ export interface DiscoveryResult {
   failures: Array<{ sourceId: string; status: string; error: string }>;
   fetchCount: number;
   selectedSourceIds: string[];
+  /** Sources that returned a successful fetch (even when the feed had no admissible items). */
+  sourcesSucceeded: number;
+  /** Admitted items after freshness/hostname/malformed filters (=== items.length). */
+  admittedItems: number;
   rawItemsFound: number;
   staleItems: number;
   malformedItems: number;
@@ -142,6 +146,10 @@ export function selectSourcesForRun(
 /**
  * V1 discovery intentionally fetches only configured source URLs. A source is
  * never selected because content told the system to visit another URL.
+ *
+ * Broad-discovery redesign: every enabled source that fits the per-run cap is
+ * attempted with bounded concurrency, and each source is isolated so one
+ * timeout/failure cannot invalidate the healthy sources of the same run.
  */
 export async function discoverConfiguredSources(
   sources: GambitSourceDefinition[],
@@ -155,34 +163,62 @@ export async function discoverConfiguredSources(
     timeoutMs?: number;
     maxBytes?: number;
     budget?: GambitRunBudget;
+    concurrency?: number;
   } = {},
 ): Promise<DiscoveryResult> {
   const items: DiscoveryItem[] = [];
   const failures: DiscoveryResult['failures'] = [];
   let fetchCount = 0;
+  let sourcesSucceeded = 0;
   let rawItemsFound = 0;
   let staleItems = 0;
   let malformedItems = 0;
   const now = options.now ?? new Date();
   const maxItemsPerSource = Math.min(5, Math.max(1, Math.floor(options.maxItemsPerSource ?? 3)));
   const maxItemAgeDays = Math.min(365, Math.max(1, Math.floor(options.maxItemAgeDays ?? 30)));
+  const concurrency = Math.min(8, Math.max(1, Math.floor(options.concurrency ?? 4)));
   const selectedSources = selectSourcesForRun(sources, options.maxSources ?? 20, options.rotationKey);
-  for (const source of selectedSources) {
+
+  // Phase 1 — bounded parallel fetch with per-source isolation. One broken
+  // source only records a failure; every other source still contributes.
+  const fetched = await mapWithConcurrency(selectedSources, concurrency, async source => {
     if (options.budget && !options.budget.consume('gambit_http')) {
+      return { source, result: null as never, budgetExceeded: true, fetchError: null as string | null };
+    }
+    try {
+      const result = await fetchEvidence(source.feedUrl || source.url, source, {
+        fetchImpl: options.fetchImpl,
+        now: options.now,
+        timeoutMs: options.timeoutMs,
+        maxBytes: options.maxBytes,
+      });
+      return { source, result, budgetExceeded: false, fetchError: null as string | null };
+    } catch (error) {
+      return {
+        source,
+        result: null as never,
+        budgetExceeded: false,
+        fetchError: error instanceof Error ? error.message.slice(0, 200) : 'unknown fetch error',
+      };
+    }
+  });
+
+  for (const entry of fetched) {
+    const { source, result } = entry;
+    if (entry.budgetExceeded) {
       failures.push({ sourceId: source.id, status: 'BUDGET_EXCEEDED', error: 'The per-run gambit_http budget was exhausted.' });
       continue;
     }
-    const result = await fetchEvidence(source.feedUrl || source.url, source, {
-      fetchImpl: options.fetchImpl,
-      now: options.now,
-      timeoutMs: options.timeoutMs,
-      maxBytes: options.maxBytes,
-    });
     fetchCount += 1;
+    if (entry.fetchError) {
+      failures.push({ sourceId: source.id, status: 'FETCH_ERROR', error: entry.fetchError });
+      continue;
+    }
     if (!result.ok) {
       failures.push({ sourceId: source.id, status: result.status, error: result.error });
       continue;
     }
+    sourcesSucceeded += 1;
     if (!result.isFeed) {
       if (result.snapshot.title && result.snapshot.normalizedContent.trim()) {
         items.push({
@@ -261,10 +297,27 @@ export async function discoverConfiguredSources(
     failures,
     fetchCount,
     selectedSourceIds: selectedSources.map(source => source.id),
+    sourcesSucceeded,
+    admittedItems: items.length,
     rawItemsFound,
     staleItems,
     malformedItems,
   };
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 export async function fingerprintCandidate(title: string, canonicalUrl: string, content: string, stableId?: string): Promise<string> {

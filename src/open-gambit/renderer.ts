@@ -14,7 +14,7 @@ import {
   AI_OPERATION_DISCLOSURE_JA,
   AI_OPERATION_DISCLOSURE_ZH,
 } from './disclosure';
-import type { GambitPublicArticle, GambitTranslation, GambitTrajectory } from './types';
+import type { GambitPublicArticle, GambitTranslation, GambitTrajectory, GambitLatestScan } from './types';
 import { formatDateShortForLocale } from '../utils/timezone';
 
 export const OPEN_GAMBIT_SITE_URL = 'https://tibo.modelyard.dev';
@@ -48,6 +48,17 @@ type GambitCopy = {
   aiDisclosureTitle: string;
   disclosureSection: string;
   disclosureText: string;
+  // Watching / Latest Scan panel
+  watchingTitle: string;
+  watchingDesc: string;
+  latestScan: string;
+  sourcesChecked: string;
+  itemsReviewed: string;
+  candidatesReviewed: string;
+  publishedLabel: string;
+  noMoveCleared: string;
+  awaitingFirstScan: string;
+  limitedCoverage: string;
 };
 
 const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
@@ -80,6 +91,16 @@ const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
     aiDisclosureTitle: 'ModelYard AI',
     disclosureSection: 'Open Gambit',
     disclosureText: 'Sourced facts, strategic analysis and AI forecasts are labelled separately. Original forecasts are retained for later verification.',
+    watchingTitle: 'Open Gambit is watching',
+    watchingDesc: 'Open Gambit continuously scans first-party AI, model, API, protocol and developer-platform sources for visible strategic moves. Only moves that clear the strategic and verification threshold are published.',
+    latestScan: 'Latest scan',
+    sourcesChecked: 'sources checked',
+    itemsReviewed: 'items reviewed',
+    candidatesReviewed: 'candidates selected for deeper review',
+    publishedLabel: 'published',
+    noMoveCleared: 'No move cleared the strategic and verification threshold.',
+    awaitingFirstScan: 'Monitoring is starting — the first scan has not completed yet.',
+    limitedCoverage: 'Latest scan completed with limited source coverage.',
   },
   zh: {
     heading: '阳谋',
@@ -110,6 +131,16 @@ const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
     aiDisclosureTitle: 'ModelYard AI 说明',
     disclosureSection: '阳谋',
     disclosureText: '来源事实、战略分析和 AI 走势预测会分别标注。预测会保留原始版本，以便后续验证。',
+    watchingTitle: '阳谋正在观察',
+    watchingDesc: '阳谋持续扫描 AI 公司、模型、API、协议与开发者平台的一手来源，寻找摆在桌面上的战略动作。只有通过战略与验证门槛的动作才会发布。',
+    latestScan: '最近一次扫描',
+    sourcesChecked: '个来源已检查',
+    itemsReviewed: '条内容已审阅',
+    candidatesReviewed: '个候选进入深入复核',
+    publishedLabel: '篇已发布',
+    noMoveCleared: '目前没有动作通过战略与验证门槛。',
+    awaitingFirstScan: '监控正在启动——首次扫描尚未完成。',
+    limitedCoverage: '最近一次扫描完成，但来源覆盖有限。',
   },
   ja: {
     heading: 'Open Gambit',
@@ -140,6 +171,16 @@ const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
     aiDisclosureTitle: 'ModelYard AI',
     disclosureSection: 'Open Gambit',
     disclosureText: '出典のある事実、戦略分析、AI 予測を分けて表示します。予測の原文は後日の検証のために保存します。',
+    watchingTitle: 'Open Gambit は監視中です',
+    watchingDesc: 'Open Gambit は AI 企業、モデル、API、プロトコル、開発者プラットフォームの一次情報源を継続的にスキャンし、表に出ている戦略的な動きを探します。戦略と検証の基準を満たした動きだけが公開されます。',
+    latestScan: '直近のスキャン',
+    sourcesChecked: '確認済みの情報源',
+    itemsReviewed: 'レビュー済みの項目',
+    candidatesReviewed: '深掘りレビューに選ばれた候補',
+    publishedLabel: '公開済み',
+    noMoveCleared: '戦略と検証の基準を満たした動きはまだありません。',
+    awaitingFirstScan: 'モニタリング開始準備中 — 最初のスキャンはまだ完了していません。',
+    limitedCoverage: '直近のスキャンは完了しましたが、情報源のカバーは限られています。',
   },
   fr: {
     heading: 'Open Gambit',
@@ -170,6 +211,16 @@ const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
     aiDisclosureTitle: 'ModelYard IA',
     disclosureSection: 'Open Gambit',
     disclosureText: 'Les faits sourcés, l’analyse stratégique et les prévisions IA sont signalés séparément. Les prévisions originales sont conservées pour une vérification ultérieure.',
+    watchingTitle: 'Open Gambit surveille',
+    watchingDesc: 'Open Gambit scanne en continu les sources de première main des entreprises, modèles, API, protocoles et plateformes de développement IA pour repérer les mouvements stratégiques visibles. Seuls les mouvements qui franchissent le seuil stratégique et de vérification sont publiés.',
+    latestScan: 'Dernier scan',
+    sourcesChecked: 'sources vérifiées',
+    itemsReviewed: 'éléments examinés',
+    candidatesReviewed: 'candidats retenus pour un examen approfondi',
+    publishedLabel: 'publiés',
+    noMoveCleared: 'Aucun mouvement n’a franchi le seuil stratégique et de vérification.',
+    awaitingFirstScan: 'La surveillance démarre — le premier scan n’est pas encore terminé.',
+    limitedCoverage: 'Le dernier scan s’est terminé avec une couverture de sources limitée.',
   },
   es: {
     heading: 'Open Gambit',
@@ -200,6 +251,16 @@ const OPEN_GAMBIT_COPY: Record<SiteLocale, GambitCopy> = {
     aiDisclosureTitle: 'ModelYard IA',
     disclosureSection: 'Open Gambit',
     disclosureText: 'Los hechos con fuentes, el análisis estratégico y las previsiones de IA aparecen diferenciados. Las previsiones originales se conservan para verificarlas más adelante.',
+    watchingTitle: 'Open Gambit está observando',
+    watchingDesc: 'Open Gambit escanea de forma continua las fuentes de primera mano de empresas, modelos, API, protocolos y plataformas de desarrollo de IA para detectar movimientos estratégicos visibles. Solo los movimientos que superan el umbral estratégico y de verificación se publican.',
+    latestScan: 'Último escaneo',
+    sourcesChecked: 'fuentes revisadas',
+    itemsReviewed: 'elementos revisados',
+    candidatesReviewed: 'candidatos seleccionados para revisión profunda',
+    publishedLabel: 'publicados',
+    noMoveCleared: 'Ningún movimiento superó el umbral estratégico y de verificación.',
+    awaitingFirstScan: 'La monitorización está comenzando — el primer escaneo aún no ha terminado.',
+    limitedCoverage: 'El último escaneo se completó con una cobertura de fuentes limitada.',
   },
 };
 
@@ -215,7 +276,7 @@ interface OpenGambitHeadOptions {
   structuredData?: unknown;
 }
 
-export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: SiteLocale, siteUrl = OPEN_GAMBIT_SITE_URL): string {
+export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: SiteLocale, siteUrl = OPEN_GAMBIT_SITE_URL, scan: GambitLatestScan | null = null): string {
   const baseUrl = normalizeSiteUrl(siteUrl);
   const copy = OPEN_GAMBIT_COPY[lang];
   const title = `${MODELYARD_BRAND} · ${copy.heading}`;
@@ -234,7 +295,16 @@ export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: S
       ].join('\n');
     })
     .join('\n');
-  const empty = cards ? '' : `<p class="gambit-empty">${escapeHtml(copy.empty)}</p>`;
+  // Public operational state based on REAL persisted data (STATE A/B/C/D).
+  // It never exposes candidate ids, workflow ids, provider/model names, token
+  // counts, scores or internal error strings.
+  const hasArticles = cards.length > 0;
+  const empty = hasArticles ? '' : `<p class="gambit-empty">${escapeHtml(copy.empty)}</p>`;
+  const listContent = hasArticles
+    ? cards + renderWatchingPanel(scan, copy, { compact: true }, lang)
+    : scan?.hasRun
+      ? renderWatchingPanel(scan, copy, { compact: false }, lang)
+      : empty + renderWatchingPanel(null, copy, { compact: false }, lang);
   const body = [
     '<body>',
     '  <div class="gambit-site">',
@@ -246,7 +316,7 @@ export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: S
     `      <p class="gambit-lede">${escapeHtml(copy.description)}</p>`,
     '      <section class="gambit-list" aria-labelledby="latestGambitTitle">',
     `        <h2 id="latestGambitTitle">${escapeHtml(copy.latest)}</h2>`,
-    cards || empty,
+    listContent,
     '      </section>',
     '    </main>',
     renderSharedFooter(lang),
@@ -255,6 +325,55 @@ export function renderOpenGambitLanding(articles: GambitPublicArticle[], lang: S
     '</html>',
   ].join('\n');
   return renderOpenGambitHead({ lang, title, description: copy.description, canonical, alternatePaths: localizedLandingPaths(baseUrl), type: 'website' }) + body;
+}
+
+/**
+ * "Latest Scan / Watching" operational panel. Real data only — the caller
+ * derives the summary from persisted run rows (never hardcoded). Public-safe
+ * aggregates only. When compact (published articles are the primary content)
+ * the descriptive paragraph and zero-publication note are omitted.
+ */
+function renderWatchingPanel(
+  scan: GambitLatestScan | null,
+  copy: GambitCopy,
+  options: { compact: boolean },
+  lang: SiteLocale,
+): string {
+  const isStateA = !scan || !scan.hasRun;
+  if (isStateA) {
+    return [
+      '<section class="gambit-watching" aria-labelledby="gambitWatchingTitle">',
+      `  <h2 id="gambitWatchingTitle">${escapeHtml(copy.watchingTitle)}</h2>`,
+      `  <p class="gambit-watching-note">${escapeHtml(copy.awaitingFirstScan)}</p>`,
+      '</section>',
+    ].join('\n');
+  }
+  const partial = scan.partialSourceFailure;
+  const note = partial
+    ? copy.limitedCoverage
+    : scan.published === 0 ? copy.noMoveCleared : '';
+  const stats = [
+    [scan.sourcesChecked, copy.sourcesChecked],
+    [scan.itemsReviewed, copy.itemsReviewed],
+    [scan.candidatesReviewed, copy.candidatesReviewed],
+    [scan.published, copy.publishedLabel],
+  ].map(([value, label]) => [
+    '<div class="gambit-watching-stat">',
+    `  <span class="gambit-watching-number">${escapeHtml(String(value))}</span>`,
+    `  <span class="gambit-watching-label">${escapeHtml(label)}</span>`,
+    '</div>',
+  ].join('\n')).join('\n');
+  const noteHtml = note ? `<p class="gambit-watching-note">${escapeHtml(note)}</p>` : '';
+  const descHtml = options.compact ? '' : `<p class="gambit-watching-desc">${escapeHtml(copy.watchingDesc)}</p>`;
+  return [
+    '<section class="gambit-watching" aria-labelledby="gambitWatchingTitle">',
+    `  <h2 id="gambitWatchingTitle">${escapeHtml(copy.watchingTitle)}</h2>`,
+    descHtml,
+    `  <p class="gambit-watching-scan">${escapeHtml(copy.latestScan)} · ${escapeHtml(formatDate(scan.completedAt, lang))}</p>`,
+    `  <div class="gambit-watching-stats">${stats}</div>`,
+    noteHtml,
+    '</section>',
+  ].join('\n');
 }
 
 export function renderOpenGambitArticle(article: GambitPublicArticle, lang: SiteLocale, siteUrl = OPEN_GAMBIT_SITE_URL): string {

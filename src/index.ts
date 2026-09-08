@@ -181,8 +181,18 @@ async function getPublishedGambits(env: Env, limit = 10): Promise<GambitPublicAr
   }
 }
 
+async function getLatestGambitScan(env: Env): Promise<import('./open-gambit/types').GambitLatestScan | null> {
+  try {
+    return await new GambitRepository(env.DB).getLatestScan();
+  } catch (error) {
+    // The migration may not be applied yet in an older local/staging DB.
+    console.error('[Open Gambit] latest_scan_unavailable', { error: error instanceof Error ? error.message.slice(0, 160) : 'unknown' });
+    return null;
+  }
+}
+
 async function buildOpenGambitLandingResponse(env: Env, lang: SiteLocale): Promise<Response> {
-  const html = renderOpenGambitLanding(await getPublishedGambits(env, 10), lang, env.SITE_URL);
+  const html = renderOpenGambitLanding(await getPublishedGambits(env, 10), lang, env.SITE_URL, await getLatestGambitScan(env));
   return new Response(html, {
     status: 200,
     headers: {
