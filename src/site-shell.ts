@@ -9,6 +9,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
   monitoring: string;
   live: string;
   awaitingFirstRun: string;
+  notConfigured: string;
+  sourceNotConfigured: string;
+  classifierNotConfigured: string;
+  degraded: string;
+  stale: string;
+  unknown: string;
   footer: string;
   footerNavigation: string;
   rssTitle: string;
@@ -24,6 +30,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
     monitoring: 'Monitoring',
     live: 'Monitor',
     awaitingFirstRun: 'Awaiting first run',
+    notConfigured: 'Not configured',
+    sourceNotConfigured: 'Source not configured',
+    classifierNotConfigured: 'Classifier not configured',
+    degraded: 'Degraded',
+    stale: 'Stale',
+    unknown: 'Unknown',
     footer: 'Independent monitor · Not affiliated with OpenAI.',
     footerNavigation: 'Footer navigation',
     rssTitle: 'ModelYard · Tibo Codex Monitor RSS',
@@ -39,6 +51,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
     monitoring: '正在监控',
     live: '监控中',
     awaitingFirstRun: '等待首次运行',
+    notConfigured: '尚未配置',
+    sourceNotConfigured: '数据源未配置',
+    classifierNotConfigured: '分类器未配置',
+    degraded: '服务降级',
+    stale: '数据过期',
+    unknown: '未知',
     footer: '非官方监控站 · 与 OpenAI 无隶属关系。',
     footerNavigation: '页脚导航',
     rssTitle: 'ModelYard · Tibo Codex 监控 RSS',
@@ -54,6 +72,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
     monitoring: '監視中',
     live: 'モニター',
     awaitingFirstRun: '初回実行を待っています',
+    notConfigured: '未設定',
+    sourceNotConfigured: 'ソース未設定',
+    classifierNotConfigured: '分類器未設定',
+    degraded: '低下',
+    stale: '古いデータ',
+    unknown: '不明',
     footer: '非公式モニター · OpenAI とは提携していません。',
     footerNavigation: 'フッターナビゲーション',
     rssTitle: 'ModelYard · Tibo Codex Monitor RSS',
@@ -69,6 +93,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
     monitoring: 'Supervisando',
     live: 'Monitor',
     awaitingFirstRun: 'Esperando la primera ejecución',
+    notConfigured: 'No configurado',
+    sourceNotConfigured: 'Fuente no configurada',
+    classifierNotConfigured: 'Clasificador no configurado',
+    degraded: 'Degradado',
+    stale: 'Desactualizado',
+    unknown: 'Desconocido',
     footer: 'Monitor independiente · No afiliado a OpenAI.',
     footerNavigation: 'Navegación del pie de página',
     rssTitle: 'ModelYard · Monitor Tibo Codex RSS',
@@ -84,6 +114,12 @@ export const SITE_BRAND_COPY: Record<SiteLocale, {
     monitoring: 'Surveillance en cours',
     live: 'Moniteur',
     awaitingFirstRun: 'En attente de la première exécution',
+    notConfigured: 'Non configuré',
+    sourceNotConfigured: 'Source non configurée',
+    classifierNotConfigured: 'Classificateur non configuré',
+    degraded: 'Dégradé',
+    stale: 'Obsolète',
+    unknown: 'Inconnu',
     footer: 'Moniteur indépendant · Non affilié à OpenAI.',
     footerNavigation: 'Navigation du pied de page',
     rssTitle: 'ModelYard · Tibo Codex Monitor RSS',
@@ -242,6 +278,21 @@ export function renderSharedHeader(lang: SiteLocale, options: SharedHeaderOption
     + '</div></details>';
   const moduleName = copy.monitor;
   const openGambitPath = OPEN_GAMBIT_PATHS[lang];
+  // Single source of truth for the global header status badge: the canonical
+  // SITE_BRAND_COPY dictionary is rendered once into data-state-* attributes.
+  // The client-side updater reads these attributes instead of a second
+  // dictionary, so every public route shows the same per-locale status copy.
+  const badgeStates = [
+    ['live', copy.live],
+    ['monitoring', copy.monitoring],
+    ['awaiting-first-run', copy.awaitingFirstRun],
+    ['not-configured', copy.notConfigured],
+    ['source-not-configured', copy.sourceNotConfigured],
+    ['classifier-not-configured', copy.classifierNotConfigured],
+    ['degraded', copy.degraded],
+    ['stale', copy.stale],
+    ['unknown', copy.unknown],
+  ].map(([state, label]) => ' data-state-' + state + '="' + escapeHtml(label) + '"').join('');
   return [
     '    <header class="header">',
     '      <div class="header-left">',
@@ -258,7 +309,7 @@ export function renderSharedHeader(lang: SiteLocale, options: SharedHeaderOption
     '        </a>',
     '      </div>',
     '      <div class="header-right">',
-    '        <span class="live-badge" id="liveBadge"><span class="live-dot" style="background:#606070;animation:none"></span><span id="lastCheckedLabel">' + escapeHtml(options.interactive ? copy.awaitingFirstRun : copy.live) + '</span></span>',
+    '        <span class="live-badge" id="liveBadge"' + badgeStates + '><span class="live-dot" style="background:#606070;animation:none"></span><span id="lastCheckedLabel">' + escapeHtml(options.interactive ? copy.awaitingFirstRun : copy.live) + '</span></span>',
     '        <a class="header-gambit-link" href="' + escapeHtml(openGambitPath) + '">' + escapeHtml(labels.openGambit) + '</a>',
     '        <a class="header-community-link" href="' + escapeHtml(communityPath(lang)) + '">' + escapeHtml(labels.community) + '</a>',
     '        ' + languageMenu,

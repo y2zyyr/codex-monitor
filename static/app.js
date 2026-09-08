@@ -19,8 +19,10 @@ const messages = {
     monitoring: 'Monitoring',
     toggleLanguage: 'Choose language',
 
-    // Status badges
-    live: 'LIVE',
+    // Status badges (canonical copy lives in src/site-shell.ts and is rendered
+    // into data-state-* attributes on #liveBadge; these values are only a
+    // defensive fallback for stale cached HTML).
+    live: 'Monitor',
     notConfigured: 'NOT CONFIGURED',
     sourceNotConfigured: 'SOURCE NOT CONFIGURED',
     classifierNotConfigured: 'CLASSIFIER NOT CONFIGURED',
@@ -180,7 +182,7 @@ const messages = {
     toggleLanguage: '选择语言',
 
     // Status badges
-    live: '正常监控',
+    live: '监控中',
     notConfigured: '尚未配置',
     sourceNotConfigured: '数据源未配置',
     classifierNotConfigured: '分类器未配置',
@@ -339,7 +341,7 @@ messages.ja = {
   siteTitle: 'ModelYard · Tibo Codex リセット追跡 | 使用量制限とポリシー更新',
   siteDescription: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、ChatGPT Work の使用量制限、GPT/Codex のレート制限とポリシー更新を、出典と確認状態付きで追跡します。',
   intro: 'ModelYard の Tibo Codex Monitor が公開された Codex のリセット、使用量制限、ポリシー更新を追跡します。各イベントに出典と確認状態を表示します。',
-  monitoring: '監視中', toggleLanguage: '言語を選択', live: '稼働中', notConfigured: '未設定', sourceNotConfigured: 'ソース未設定', classifierNotConfigured: '分類器未設定', degraded: '低下', stale: '古いデータ', unknown: '不明', statusUnknown: '不明', awaitingFirstRun: '初回実行待ち',
+  monitoring: '監視中', toggleLanguage: '言語を選択', live: 'モニター', notConfigured: '未設定', sourceNotConfigured: 'ソース未設定', classifierNotConfigured: '分類器未設定', degraded: '低下', stale: '古いデータ', unknown: '不明', statusUnknown: '不明', awaitingFirstRun: '初回実行待ち',
   lastReset: '最近のリセット', currentPolicy: '最新ポリシー変更', latestChange: '最新の更新', lastChecked: '最終確認', sourceStatus: '情報源',
   statusAnswerTitle: '現在のリセット状態', statusAnswerLead: 'まず既知の最新リセット状態を確認し、イベントを開いて出典と確認の詳細をご覧ください。', lastConfirmedReset: '最後に確認されたリセット', lastRecordedReset: '最後に記録されたリセット', nextKnownReset: '次に予定されているリセット', checkingLiveStatus: 'リセットの状態を確認中…', viewResetHistory: 'リセット履歴を見る', viewLatestEvent: '最新イベントを見る',
   xDirectSource: 'X 直接ソース', webIndexedSource: 'ウェブ検索インデックス', lastNewPost: '最新の投稿', lastCheckedUnavailable: '確認済みの実行はまだありません', latestEventTitle: '最新イベント',
@@ -356,7 +358,7 @@ messages.es = {
   siteTitle: 'ModelYard · Rastreador de restablecimientos de Tibo Codex | Límites y políticas',
   siteDescription: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos públicos, los límites de ChatGPT Work y las actualizaciones de GPT/Codex con fuentes y estado de verificación.',
   intro: 'El Monitor Tibo Codex de ModelYard sigue los restablecimientos, límites y políticas públicas; cada evento incluye su fuente y estado de verificación.',
-  monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'EN DIRECTO', notConfigured: 'NO CONFIGURADO', sourceNotConfigured: 'FUENTE NO CONFIGURADA', classifierNotConfigured: 'CLASIFICADOR NO CONFIGURADO', degraded: 'DEGRADADO', stale: 'DESACTUALIZADO', unknown: 'DESCONOCIDO', statusUnknown: 'Desconocido', awaitingFirstRun: 'A LA ESPERA DE LA PRIMERA EJECUCIÓN',
+  monitoring: 'Supervisando', toggleLanguage: 'Elegir idioma', live: 'Monitor', notConfigured: 'NO CONFIGURADO', sourceNotConfigured: 'FUENTE NO CONFIGURADA', classifierNotConfigured: 'CLASIFICADOR NO CONFIGURADO', degraded: 'DEGRADADO', stale: 'DESACTUALIZADO', unknown: 'DESCONOCIDO', statusUnknown: 'Desconocido', awaitingFirstRun: 'A LA ESPERA DE LA PRIMERA EJECUCIÓN',
   lastReset: 'Último restablecimiento', currentPolicy: 'Último cambio de política', latestChange: 'Última actualización', lastChecked: 'Última comprobación', sourceStatus: 'Fuente de información',
   statusAnswerTitle: 'Estado actual del restablecimiento', statusAnswerLead: 'Consulta primero el estado conocido más reciente y abre un evento para ver su fuente y verificación.', lastConfirmedReset: 'Último restablecimiento confirmado', lastRecordedReset: 'Último restablecimiento registrado', nextKnownReset: 'Próximo restablecimiento conocido', checkingLiveStatus: 'Comprobando el estado del restablecimiento…', viewResetHistory: 'Ver historial de restablecimientos', viewLatestEvent: 'Ver el último evento',
   xDirectSource: 'X directo', webIndexedSource: 'Índice web', lastNewPost: 'última publicación', lastCheckedUnavailable: 'Aún no hay comprobaciones correctas', latestEventTitle: 'Último evento',
@@ -373,7 +375,7 @@ messages.fr = {
   siteTitle: 'ModelYard · Suivi des réinitialisations Tibo Codex | Limites et politiques',
   siteDescription: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations publiques, les limites ChatGPT Work et les mises à jour GPT/Codex, avec leurs sources et leur état de vérification.',
   intro: 'Le Tibo Codex Monitor de ModelYard suit les réinitialisations, limites et politiques publiques ; chaque événement inclut sa source et son état de vérification.',
-  monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'EN DIRECT', notConfigured: 'NON CONFIGURÉ', sourceNotConfigured: 'SOURCE NON CONFIGURÉE', classifierNotConfigured: 'CLASSIFICATEUR NON CONFIGURÉ', degraded: 'DÉGRADÉ', stale: 'OBSOLÈTE', unknown: 'INCONNU', statusUnknown: 'Inconnu', awaitingFirstRun: 'EN ATTENTE DE LA PREMIÈRE EXÉCUTION',
+  monitoring: 'Surveillance en cours', toggleLanguage: 'Choisir la langue', live: 'Moniteur', notConfigured: 'NON CONFIGURÉ', sourceNotConfigured: 'SOURCE NON CONFIGURÉE', classifierNotConfigured: 'CLASSIFICATEUR NON CONFIGURÉ', degraded: 'DÉGRADÉ', stale: 'OBSOLÈTE', unknown: 'INCONNU', statusUnknown: 'Inconnu', awaitingFirstRun: 'EN ATTENTE DE LA PREMIÈRE EXÉCUTION',
   lastReset: 'Dernière réinitialisation', currentPolicy: 'Dernier changement de politique', latestChange: 'Dernière mise à jour', lastChecked: 'Dernière vérification', sourceStatus: 'Source d’information',
   statusAnswerTitle: 'État actuel de la réinitialisation', statusAnswerLead: 'Consultez d’abord le dernier état connu, puis ouvrez un événement pour voir sa source et sa vérification.', lastConfirmedReset: 'Dernière réinitialisation confirmée', lastRecordedReset: 'Dernière réinitialisation enregistrée', nextKnownReset: 'Prochaine réinitialisation connue', checkingLiveStatus: 'Vérification de l’état de la réinitialisation…', viewResetHistory: 'Voir l’historique des réinitialisations', viewLatestEvent: 'Voir le dernier événement',
   xDirectSource: 'X direct', webIndexedSource: 'Index web', lastNewPost: 'dernier post', lastCheckedUnavailable: 'Aucune vérification réussie pour le moment', latestEventTitle: 'Dernier événement',
@@ -1149,6 +1151,27 @@ function getDiscoveredViaLabel(event) {
   return event.first_discovered_via;
 }
 
+/**
+ * Single source of truth for the global header status badge.
+ *
+ * The shared site shell (src/site-shell.ts) is the ONLY locale dictionary for
+ * header status presentation. It renders the canonical per-locale copy into
+ * data-state-* attributes on #liveBadge, so every public route (monitor,
+ * Open Gambit, community, static pages) shows the same per-locale status
+ * wording. This function reads those attributes instead of a second
+ * client-side dictionary; t() is only a defensive fallback for stale cached
+ * HTML that predates the attribute bridge.
+ */
+function badgeLabel(state) {
+  const badge = document.getElementById('liveBadge');
+  if (badge) {
+    const kebab = state.replace(/([A-Z])/g, '-$1').toLowerCase();
+    const value = badge.getAttribute('data-state-' + kebab);
+    if (value !== null && value !== '') return value;
+  }
+  return t(state);
+}
+
 function updateLiveBadge(data) {
   const badge = document.getElementById('liveBadge');
   const dot = badge.querySelector('.live-dot');
@@ -1156,7 +1179,7 @@ function updateLiveBadge(data) {
 
   if (!data) {
     dot.style.background = '#606070';
-    label.textContent = t('unknown');
+    label.textContent = badgeLabel('unknown');
     return;
   }
 
@@ -1167,7 +1190,7 @@ function updateLiveBadge(data) {
   // infer configured providers or a LIVE state from that partial payload.
   if (!providers) {
     dot.style.background = '#606070';
-    label.textContent = data.lastCheckedAt ? t('monitoring') : t('awaitingFirstRun');
+    label.textContent = data.lastCheckedAt ? badgeLabel('monitoring') : badgeLabel('awaitingFirstRun');
     return;
   }
 
@@ -1179,26 +1202,26 @@ function updateLiveBadge(data) {
 
   if (!sourceConfigured && !classifierConfigured) {
     dot.style.background = '#ef4444';
-    label.textContent = t('notConfigured');
+    label.textContent = badgeLabel('notConfigured');
     return;
   }
 
   if (!sourceConfigured) {
     dot.style.background = '#eab308';
-    label.textContent = t('sourceNotConfigured');
+    label.textContent = badgeLabel('sourceNotConfigured');
     return;
   }
 
   if (!classifierConfigured) {
     dot.style.background = '#eab308';
-    label.textContent = t('classifierNotConfigured');
+    label.textContent = badgeLabel('classifierNotConfigured');
     return;
   }
 
   if ((lastRun && lastRun.status === 'failed') || data.status === 'degraded'
     || (directPrimary && xApi && ['down', 'degraded', 'stale'].indexOf(xApi.status) !== -1)) {
     dot.style.background = '#ef4444';
-    label.textContent = t('degraded');
+    label.textContent = badgeLabel('degraded');
     return;
   }
 
@@ -1213,17 +1236,17 @@ function updateLiveBadge(data) {
 
     if (hours > 2) {
       dot.style.background = '#eab308';
-      label.textContent = t('stale');
+      label.textContent = badgeLabel('stale');
       return;
     }
 
     dot.style.background = '#22c55e';
-    label.textContent = t('live');
+    label.textContent = badgeLabel('live');
     return;
   }
 
   dot.style.background = '#606070';
-  label.textContent = t('awaitingFirstRun');
+  label.textContent = badgeLabel('awaitingFirstRun');
 }
 
 function updateMonitoredAccounts(data) {

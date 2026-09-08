@@ -5,7 +5,7 @@ const messages = {
   en: {
     siteTitle: 'Tibo Codex Monitor — Usage Reset & Rate Limit Tracker',
     monitoring: 'Monitoring @thsottiaux',
-    live: 'LIVE',
+    live: 'Monitor',
     notConfigured: 'NOT CONFIGURED',
     lastReset: 'Last Reset',
     currentPolicy: 'Current Policy',
@@ -30,7 +30,7 @@ const messages = {
   'zh-CN': {
     siteTitle: 'Tibo Codex 监控 — 使用额度、重置与限额追踪',
     monitoring: '正在监控 @thsottiaux',
-    live: '正常监控',
+    live: '监控中',
     notConfigured: '尚未配置',
     lastReset: '最近重置',
     currentPolicy: '当前政策',
@@ -71,7 +71,7 @@ describe('Complete Chinese UI Audit', () => {
     const commonEnglishPhrases = [
       'Last Reset', 'Current Policy', 'Latest Change', 'Last Checked',
       'Timeline', 'All', 'Reset Planned', 'Reset Completed',
-      'Time Changed', 'Policy', 'No events', 'LIVE', 'DEGRADED',
+      'Time Changed', 'Policy', 'No events', 'Monitor', 'DEGRADED',
       'STALE', 'NOT CONFIGURED', 'Loading', 'Source', 'AI Summary',
       'Published', 'Effective', 'Confidence', 'Published time unavailable',
       'View original post', 'Unofficial community monitor',
@@ -100,7 +100,7 @@ describe('Chinese UI - Static Text Not Leaking English', () => {
   });
 
   it('LIVE badge is translated in Chinese', () => {
-    expect(messages['zh-CN'].live).toBe('正常监控');
+    expect(messages['zh-CN'].live).toBe('监控中');
   });
 
   it('NOT CONFIGURED is translated in Chinese', () => {
