@@ -609,7 +609,7 @@ async function handleCron(env: Env): Promise<Response> {
     // that would erase a previous degraded state on every Cron start. The
     // configured/not-configured state is derived from the binding itself.
     if (!hasLLM) {
-      await repo.recordProviderStatus('llm-classifier', 'not_configured', null, 'LLM_CLASSIFIER_CONFIGURATION_MISSING');
+      await repo.recordProviderStatus('llm-classifier', 'not_configured', null, 'LLM_NOT_CONFIGURED');
     }
   } catch (e) {}
 
