@@ -172,7 +172,7 @@ Migration verification passed remotely: the migration ledger ends at `0026_class
 
 The remote synthetic failure path passed. One TEST_ONLY pending post produced no event, retained `classification_pending = 1`, accumulated `classification_attempts = 1`, persisted `PERMANENT_OR_CONFIGURATION_ERROR` with bounded `LLM_NOT_CONFIGURED`, and an immediate equivalent run made zero classifier calls because the 15-minute backoff was active. The fixture was deleted afterward; final staging D1 checks found zero TEST_ONLY source posts and events.
 
-The live classifier smoke was intentionally blocked before network access: staging secret inventory contains only `GAMBIT_ADMIN_TOKEN` and `GAMBIT_LLM_API_KEY`, with no explicit `LLM_API_KEY`, `LLM_BASE_URL`, or `LLM_MODEL`. No production credential, provider default, or second provider was substituted. Therefore the healthy-provider recovery half, remote duplicate-event recovery, and remote reset-context fixture were not run and cannot be certified from this environment.
+The live classifier smoke was intentionally blocked before network access: staging secret inventory contains only `GAMBIT_ADMIN_TOKEN` and `GAMBIT_LLM_API_KEY`, with no `LLM_API_KEY`; the staging deployment has explicit non-secret `LLM_BASE_URL` and `LLM_MODEL` keys but no classifier credential. A read-only check of the repository-local and parent ignored environment files and the shell found no independent classifier credential. No production credential, provider default, or second provider was substituted. This is the terminal result for this run: `STAGING_CLASSIFIER_CREDENTIAL_REQUIRED`. Therefore the healthy-provider recovery half, remote duplicate-event recovery, and remote reset-context fixture were not run and cannot be certified from this environment.
 
 Final staging `/api/health` was read-only and sanitized: `dbConnected=true`, `classifier.configured=false`, `status=not_configured`, `availability=unavailable`, and `lastErrorCode=LLM_NOT_CONFIGURED`; no provider name, credential, response body, or raw diagnostic was exposed. The temporary staging-only `CRON_SECRET` used for the failure-path harness was deleted afterward.
 
@@ -191,7 +191,7 @@ Tibo Cron remains `*/15 * * * *`. Open Gambit remains `30 2 * * *`; its discover
 - Provider/configuration rows retry every six hours at the cap while pending; this is bounded and budgeted but can retain a long-lived queue during an unresolved outage.
 - Historical stuck-run rows remain for audit fidelity; they do not affect future execution.
 - `/api/health` remains an existing operational endpoint. No new public dashboard or timeline observability surface was added.
-- Remote staging verification remained isolated and stopped at the missing explicit classifier configuration rather than borrowing production credentials. A staging provider configuration is required before the live smoke and healthy-recovery gates can pass.
+- Remote staging verification remained isolated and stopped at `STAGING_CLASSIFIER_CREDENTIAL_REQUIRED` rather than borrowing production credentials. A staging classifier credential is required before the live smoke and healthy-recovery gates can pass.
 - Production deployment remains separately unauthorized and out of scope.
 
 ## Final Matrix
@@ -224,12 +224,24 @@ LOCAL_SYNTHETIC_ACCEPTANCE:                 PASS
 REMOTE_STAGING:                             FAIL (classifier config missing)
 REMOTE_STAGING_DEPLOYED:                    YES
 REMOTE_STAGING_MIGRATION_0026:               PASS
-REMOTE_STAGING_CLASSIFIER_SMOKE:            BLOCKED_MISSING_CONFIGURATION
-REMOTE_STAGING_RECOVERY:                    BLOCKED_MISSING_CONFIGURATION
+STAGING_CLASSIFIER_CONFIGURED:               NO
+STAGING_CLASSIFIER_USES_EXPLICIT_BASE_URL:   YES
+STAGING_CLASSIFIER_USES_EXPLICIT_MODEL:      YES
+PRODUCTION_CREDENTIAL_SUBSTITUTED:           NO
+REMOTE_STAGING_CLASSIFIER_SMOKE:             BLOCKED
+REMOTE_STAGING_FAILURE_PATH:                 PASS
+REMOTE_STAGING_RECOVERY:                     BLOCKED
 REMOTE_STAGING_DUPLICATE_PROTECTION:        NOT_RUN
 REMOTE_STAGING_RESET_CONTEXT:               NOT_RUN
+STAGING_HEALTH_CLASSIFIER:                  UNAVAILABLE
 STAGING_HEALTH_SANITIZED:                   PASS
+STAGING_TEST_ONLY_CLEANUP:                  PASS
+CANDIDATE_SHA:                              65787906ef255def5f80845be91223a00d111e01
+PRODUCTION_MIGRATION_0026_APPLIED:          NO
 PRODUCTION_DEPLOYED:                        NO
-PRODUCTION_MUTATED_BEFORE_AUTHORIZATION:    NO
+PRODUCTION_SECRET_CHANGED:                  NO
+PRODUCTION_CRON_CHANGED:                    NO
+OPEN_GAMBIT_PRODUCTION_CHANGED:             NO
+PRODUCTION_MUTATED:                         NO
 FINAL DECISION:                             BLOCKED
 ```
