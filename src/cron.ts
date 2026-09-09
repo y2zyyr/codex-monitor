@@ -17,15 +17,21 @@ import {
   applyTrustedResetContext,
   CLASSIFIER_VERSION,
   getStrongResetSignal,
+  hasCredibleActiveResetContext,
   getTrustedSourceContext,
   hasExplicitCodexReference,
   isCompletedResetHint,
   isCodexProductSignalAdmissible,
   isObviousIrrelevant,
   isSoftResetHint,
-  isTrustedContextualReset,
+  isTrustedContextualResetWithContext,
   keywordPrefilter,
 } from './classifier/types';
+import {
+  boundedClassificationError,
+  isClassificationRetryEligible,
+  normalizeClassificationFailureKind,
+} from './classifier/retry';
 import type { SocialSourceProvider, SearchResult, WebSearchProvider } from './providers/types';
 import {
   XApiProvider,
@@ -159,6 +165,11 @@ export async function executeCron(
     // confirmation mode stable across worker restarts and Cron boundaries.
     await repo.advanceResetCycleState(now.toISOString());
     const activeCycle = await repo.getActiveResetCycle({ advance: false });
+    const activeCodexReset = hasCredibleActiveResetContext(activeCycle)
+      || await repo.hasRecentTrustedResetPlan(now);
+    const classificationContext = {
+      activeCodexReset,
+    };
     searchMode = getWebSearchMode(activeCycle, now);
     const accounts = monitoredAccounts(env);
     const discoveryResults: SearchResult[] = [];
@@ -358,26 +369,24 @@ export async function executeCron(
       if (classificationBudget <= 0) break;
       if (candidate.id !== undefined) classifiedPostIds.add(candidate.id);
       if (!isObviousIrrelevant(candidate)) llmClassifications++;
-      const outcome = await classifyAndCreateEvent(repo, classifier, candidate, now);
+      const outcome = await classifyAndCreateEvent(repo, classifier, candidate, now, classificationContext);
       recordClassificationCategory(classificationByCategory, outcome.outcome);
       if (outcome.created) eventsCreated++;
-      if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${candidate.id}: ${outcome.outcome.error}`);
+      if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${candidate.id}: ${formatClassificationFailure(outcome.outcome)}`);
       classificationBudget--;
     }
     if (classificationBudget > 0) {
-      const pending = await repo.getUnclassifiedPosts(20);
+      const pending = await repo.getUnclassifiedPosts(20, now);
       for (const post of pending) {
         if (classificationBudget <= 0) break;
         if (post.id !== undefined && classifiedPostIds.has(post.id)) continue;
-        const attempts = (post as SourcePost & { classification_attempts?: number }).classification_attempts ?? 0;
-        const lastAttempt = (post as SourcePost & { last_classification_attempt_at?: string }).last_classification_attempt_at;
-        if (attempts >= 5 || (lastAttempt && new Date(lastAttempt).getTime() > now.getTime() - 3600000)) continue;
+        if (!isClassificationRetryEligible(post, now)) continue;
         if (post.id !== undefined) classifiedPostIds.add(post.id);
         if (!isObviousIrrelevant(post)) llmClassifications++;
-        const outcome = await classifyAndCreateEvent(repo, classifier, post, now);
+        const outcome = await classifyAndCreateEvent(repo, classifier, post, now, classificationContext);
         recordClassificationCategory(classificationByCategory, outcome.outcome);
         if (outcome.created) eventsCreated++;
-        if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${post.id}: ${outcome.outcome.error}`);
+        if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for source ${post.id}: ${formatClassificationFailure(outcome.outcome)}`);
         classificationBudget--;
       }
     }
@@ -391,14 +400,15 @@ export async function executeCron(
       for (const post of directRecoveryCandidates) {
         if (classificationBudget <= 0) break;
         if (post.id !== undefined && classifiedPostIds.has(post.id)) continue;
-        if (!isCompletedResetHint(post) && !isSoftResetHint(post) && !isTrustedContextualReset(post)) continue;
+        if (post.classification_pending && !isClassificationRetryEligible(post, now)) continue;
+        if (!isCompletedResetHint(post) && !isSoftResetHint(post) && !isTrustedContextualResetWithContext(post, classificationContext)) continue;
         if (post.id !== undefined) classifiedPostIds.add(post.id);
         candidatesFound++;
         if (!isObviousIrrelevant(post)) llmClassifications++;
-        const outcome = await classifyAndCreateEvent(repo, classifier, post, now);
+        const outcome = await classifyAndCreateEvent(repo, classifier, post, now, classificationContext);
         recordClassificationCategory(classificationByCategory, outcome.outcome);
         if (outcome.created) eventsCreated++;
-        if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for recovered source ${post.id}: ${outcome.outcome.error}`);
+        if (outcome.outcome.status === 'ERROR') errors.push(`LLM classification failed for recovered source ${post.id}: ${formatClassificationFailure(outcome.outcome)}`);
         classificationBudget--;
       }
     }
@@ -510,9 +520,9 @@ export async function classifyAndCreateEvent(
   classifier: ClassificationProvider,
   post: SourcePost,
   clock: Date = new Date(),
+  classificationContext: { activeCodexReset?: boolean } = {},
 ): Promise<{ created: boolean; outcome: ClassificationOutcome }> {
   const now = clock.toISOString();
-  const currentAttempts = ((post as SourcePost & { classification_attempts?: number }).classification_attempts ?? 0) + 1;
   try {
     const completedResetResult = isCompletedResetHint(post)
       ? buildCompletedResetHintResult(post)
@@ -527,7 +537,7 @@ export async function classifyAndCreateEvent(
       ? { status: 'SUCCESS', result: obviousIrrelevantResult }
       : await classifier.classify(post);
     if (!obviousIrrelevantResult) await recordClassifierStatus(repo, classifierOutcome, now);
-    const contextualClassification = applyTrustedResetContext(post, classifierOutcome);
+    const contextualClassification = applyTrustedResetContext(post, classifierOutcome, classificationContext);
     // Explicit direct completion language is deterministic enough to keep
     // even when the LLM is unavailable. This protects the source-of-truth
     // signal from both transient classifier failures and model drift.
@@ -541,7 +551,7 @@ export async function classifyAndCreateEvent(
         false,
         contextualClassification.sourceContext,
       ));
-      await repo.updateClassificationRetry(post.id!, currentAttempts, now, classifierOutcome.error);
+      await persistClassificationRetry(repo, post, now, classifierOutcome);
       return { created: false, outcome: classifierOutcome };
     }
 
@@ -561,7 +571,7 @@ export async function classifyAndCreateEvent(
         false,
         contextualClassification.sourceContext,
       ));
-      await repo.updateClassificationRetry(post.id!, currentAttempts, now, outcome.error);
+      await persistClassificationRetry(repo, post, now, outcome);
       return { created: false, outcome };
     }
     const result = outcome.result;
@@ -616,8 +626,7 @@ export async function classifyAndCreateEvent(
       if (event && isResetLifecycleCategory(result.category)) await repo.handleResetEvent(event);
     }
     return { created: eventId !== null, outcome };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     await persistClassificationTrace(repo, post, {
       classification_label: 'ERROR',
       classification_decision: 'RETRY',
@@ -626,9 +635,34 @@ export async function classifyAndCreateEvent(
       classification_event_created: false,
       classifier_version: CLASSIFIER_VERSION,
     });
-    await repo.updateClassificationRetry(post.id!, currentAttempts, now, message);
-    return { created: false, outcome: { status: 'ERROR', error: message, category: 'ERROR' } };
+    const safeOutcome: ClassificationOutcome = {
+      status: 'ERROR',
+      error: 'UNEXPECTED_CLASSIFIER_ERROR',
+      errorCode: 'UNEXPECTED_CLASSIFIER_ERROR',
+      failureKind: 'CLASSIFIER_OUTPUT_ERROR',
+      category: 'ERROR',
+    };
+    await persistClassificationRetry(repo, post, now, safeOutcome);
+    return { created: false, outcome: safeOutcome };
   }
+}
+
+async function persistClassificationRetry(
+  repo: Repository,
+  post: SourcePost,
+  attemptedAt: string,
+  outcome: Extract<ClassificationOutcome, { status: 'ERROR' }>,
+): Promise<void> {
+  await repo.updateClassificationRetry(
+    post.id!,
+    attemptedAt,
+    boundedClassificationError(outcome),
+    normalizeClassificationFailureKind(outcome),
+  );
+}
+
+function formatClassificationFailure(outcome: Extract<ClassificationOutcome, { status: 'ERROR' }>): string {
+  return `${normalizeClassificationFailureKind(outcome)}:${boundedClassificationError(outcome)}`;
 }
 
 type TraceCapableRepository = Repository & {
@@ -806,11 +840,12 @@ function parseNullableCounter(value: string | null): number | null {
 
 async function recordClassifierStatus(repo: Repository, outcome: ClassificationOutcome, checkedAt: string): Promise<void> {
   try {
+    const error = outcome.status === 'ERROR' ? formatClassificationFailure(outcome) : null;
     await repo.recordProviderStatus(
       'llm-classifier',
       outcome.status === 'SUCCESS' ? 'ok' : 'degraded',
       outcome.status === 'SUCCESS' ? checkedAt : null,
-      outcome.status === 'ERROR' ? outcome.error : null,
+      error,
     );
   } catch (error) {
     console.error('[Cron] Failed to persist classifier status:', error);

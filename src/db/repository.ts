@@ -36,6 +36,7 @@ import {
   utcForLocalDate,
 } from '../utils/timezone';
 import { buildCompletedResetHintResult, isCompletedResetHint } from '../classifier/types';
+import { providerFailureKindsSql } from '../classifier/retry';
 
 // History is a public-event aggregate. Keep IRRELEVANT out because that
 // classifier result is deliberately never inserted into monitor_events.
@@ -95,6 +96,7 @@ function mapSourcePost(row: D1SourcePostRow): SourcePost {
     classification_attempts: row.classification_attempts ?? 0,
     last_classification_attempt_at: row.last_classification_attempt_at,
     classification_error: row.classification_error,
+    classification_failure_kind: row.classification_failure_kind as SourcePost['classification_failure_kind'],
     classification_label: row.classification_label,
     classification_decision: row.classification_decision as SourcePost['classification_decision'],
     classification_reason_code: row.classification_reason_code as SourcePost['classification_reason_code'],
@@ -526,10 +528,43 @@ export class Repository {
     `).bind(now, sourcePostId, sourcePostId, sourcePostId).run();
   }
 
-  async getUnclassifiedPosts(limit = 50): Promise<SourcePost[]> {
+  async getUnclassifiedPosts(limit = 50, now = new Date()): Promise<SourcePost[]> {
+    const providerFailureCondition = `(classification_failure_kind IN (${providerFailureKindsSql()})
+      OR (classification_failure_kind IS NULL
+        AND (classification_error LIKE 'LLM API error:%' OR classification_error LIKE 'LLM request failed:%')))`;
     const { results } = await this.db
-      .prepare('SELECT * FROM source_posts WHERE classification_pending = 1 AND classification_attempts < 5 ORDER BY published_at DESC LIMIT ?')
-      .bind(limit)
+      .prepare(`
+        SELECT * FROM source_posts
+        WHERE classification_pending = 1
+          AND (
+            (
+              ${providerFailureCondition}
+              AND (
+                last_classification_attempt_at IS NULL
+                OR julianday(last_classification_attempt_at) <= julianday(?) - (
+                  CASE
+                    WHEN COALESCE(classification_attempts, 0) <= 1 THEN 15
+                    WHEN COALESCE(classification_attempts, 0) = 2 THEN 30
+                    WHEN COALESCE(classification_attempts, 0) = 3 THEN 60
+                    WHEN COALESCE(classification_attempts, 0) = 4 THEN 240
+                    ELSE 360
+                  END / 1440.0
+                )
+              )
+            )
+            OR (
+              NOT (${providerFailureCondition})
+              AND COALESCE(classification_attempts, 0) < 5
+              AND (
+                last_classification_attempt_at IS NULL
+                OR julianday(last_classification_attempt_at) <= julianday(?, '-60 minutes')
+              )
+            )
+          )
+        ORDER BY COALESCE(last_classification_attempt_at, published_at, fetched_at) ASC
+        LIMIT ?
+      `)
+      .bind(now.toISOString(), now.toISOString(), limit)
       .all<D1SourcePostRow>();
     return results.map(mapSourcePost);
   }
@@ -540,6 +575,9 @@ export class Repository {
    * classified. It is deliberately D1-only; it never refetches from X.
    */
   async getDirectPostsWithoutEvents(limit = 50): Promise<SourcePost[]> {
+    const providerFailureCondition = `(sp.classification_failure_kind IN (${providerFailureKindsSql()})
+      OR (sp.classification_failure_kind IS NULL
+        AND (sp.classification_error LIKE 'LLM API error:%' OR sp.classification_error LIKE 'LLM request failed:%')))`;
     const { results } = await this.db
       .prepare(`
         SELECT sp.*
@@ -549,7 +587,10 @@ export class Repository {
           AND sp.canonical_platform = 'x'
           AND COALESCE(sp.source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
           AND COALESCE(sp.verification_status, 'DIRECT_VERIFIED') <> 'REJECTED'
-          AND COALESCE(sp.classification_attempts, 0) < 5
+          AND (
+            COALESCE(sp.classification_attempts, 0) < 5
+            OR ${providerFailureCondition}
+          )
         ORDER BY COALESCE(sp.published_at, sp.fetched_at) DESC
         LIMIT ?
       `)
@@ -560,15 +601,36 @@ export class Repository {
 
   async markClassified(id: number): Promise<void> {
     await this.db
-      .prepare('UPDATE source_posts SET classification_pending = 0, classification_attempts = classification_attempts + 1, last_classification_attempt_at = datetime(\'now\') WHERE id = ?')
+      .prepare(`
+        UPDATE source_posts SET
+          classification_pending = 0,
+          classification_attempts = MIN(COALESCE(classification_attempts, 0) + 1, 1000000),
+          last_classification_attempt_at = datetime('now'),
+          classification_error = NULL,
+          classification_failure_kind = NULL
+        WHERE id = ?
+      `)
       .bind(id)
       .run();
   }
 
-  async updateClassificationRetry(id: number, attempts: number, lastAttemptAt: string, error: string): Promise<void> {
+  async updateClassificationRetry(
+    id: number,
+    lastAttemptAt: string,
+    errorCode: string,
+    failureKind: 'TRANSIENT_PROVIDER_ERROR' | 'PERMANENT_OR_CONFIGURATION_ERROR' | 'CLASSIFIER_OUTPUT_ERROR',
+  ): Promise<void> {
     await this.db
-      .prepare('UPDATE source_posts SET classification_pending = 1, classification_attempts = ?, last_classification_attempt_at = ?, classification_error = ? WHERE id = ?')
-      .bind(attempts, lastAttemptAt, error, id)
+      .prepare(`
+        UPDATE source_posts SET
+          classification_pending = 1,
+          classification_attempts = MIN(COALESCE(classification_attempts, 0) + 1, 1000000),
+          last_classification_attempt_at = ?,
+          classification_error = ?,
+          classification_failure_kind = ?
+        WHERE id = ?
+      `)
+      .bind(lastAttemptAt, errorCode, failureKind, id)
       .run();
   }
 
@@ -967,6 +1029,32 @@ export class Repository {
     if (!row) return null;
     const [event] = await this.attachEventTranslations([mapMonitorEvent(row)]);
     return event ?? null;
+  }
+
+  /**
+   * A recent direct/official RESET_PLANNED event can keep a short completion
+   * post tied to the same Codex reset window after the lifecycle row has
+   * transitioned out of its active status. Indexed evidence is intentionally
+   * excluded.
+   */
+  async hasRecentTrustedResetPlan(now = new Date(), maxAgeHours = 48): Promise<boolean> {
+    const ageHours = Math.max(1, Math.min(168, Math.floor(maxAgeHours)));
+    const row = await this.db.prepare(`
+      SELECT e.id
+      FROM monitor_events e
+      JOIN source_posts sp ON e.source_post_id = sp.id
+      WHERE e.category = 'RESET_PLANNED'
+        AND e.verification_status IN ('DIRECT_VERIFIED', 'OFFICIAL_VERIFIED')
+        AND e.evidence_quality IN ('DIRECT', 'OFFICIAL')
+        AND sp.source_account = 'thsottiaux'
+        AND sp.canonical_platform = 'x'
+        AND sp.source_quality IN ('DIRECT', 'OFFICIAL')
+        AND sp.verification_status IN ('DIRECT_VERIFIED', 'OFFICIAL_VERIFIED')
+        AND julianday(COALESCE(e.published_at, e.created_at)) >= julianday(?) - (? / 24.0)
+      ORDER BY julianday(COALESCE(e.published_at, e.created_at)) DESC, e.id DESC
+      LIMIT 1
+    `).bind(now.toISOString(), ageHours).first<{ id: number }>();
+    return !!row?.id;
   }
 
   /**

@@ -16,7 +16,7 @@ import { toPublicManualResetReport } from './manual-reset';
 import { canUseXApi, XApiProvider } from './providers/x-api';
 import { SearchProvider, canUseSearchProvider, monitoredAccounts, WEB_SEARCH_PROVIDER_KEY } from './providers/search-provider';
 import type { WebSearchProvider } from './providers/types';
-import { LLMClassifier } from './classifier/llm';
+import { LLMClassifier, missingClassifierConfiguration } from './classifier/llm';
 import type { ClassificationProvider, ClassificationOutcome } from './types';
 import { isXApiAutomaticSyncEnabled } from './utils/schedule';
 import { isEventIndexEligible } from './utils/index-policy';
@@ -594,7 +594,7 @@ async function handleCron(env: Env): Promise<Response> {
     ? new SearchProvider(env, repo)
     : undefined;
   const xApiProvider = xApiAutomaticSync ? new XApiProvider(env, repo) : undefined;
-  const hasLLM = !!(env.LLM_API_KEY && env.LLM_API_KEY.length > 0);
+  const hasLLM = missingClassifierConfiguration(env).length === 0;
 
   try {
     if (!hasSearchProvider) {
@@ -609,7 +609,7 @@ async function handleCron(env: Env): Promise<Response> {
     // that would erase a previous degraded state on every Cron start. The
     // configured/not-configured state is derived from the binding itself.
     if (!hasLLM) {
-      await repo.recordProviderStatus('llm-classifier', 'not_configured', null, 'LLM_API_KEY not set');
+      await repo.recordProviderStatus('llm-classifier', 'not_configured', null, 'LLM_CLASSIFIER_CONFIGURATION_MISSING');
     }
   } catch (e) {}
 
@@ -675,7 +675,13 @@ async function handleOpenGambitScheduled(env: Env, cron: string): Promise<void> 
 class UnavailableClassifier implements ClassificationProvider {
   readonly name = 'llm-unavailable';
   async classify(_post: import('./types').SourcePost): Promise<ClassificationOutcome> {
-    return { status: 'ERROR', error: 'LLM_API_KEY not configured', category: 'ERROR' };
+    return {
+      status: 'ERROR',
+      error: 'LLM_NOT_CONFIGURED',
+      errorCode: 'LLM_NOT_CONFIGURED',
+      failureKind: 'PERMANENT_OR_CONFIGURATION_ERROR',
+      category: 'ERROR',
+    };
   }
 }
 

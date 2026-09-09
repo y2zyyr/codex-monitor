@@ -202,6 +202,89 @@ describe('D1 Repository', () => {
     });
   });
 
+  describe('Classifier retry state', () => {
+    it('increments retry attempts atomically instead of writing a caller snapshot', async () => {
+      const statement = {
+        bind: vi.fn().mockReturnThis(),
+        run: vi.fn().mockResolvedValue({ success: true }),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await new Repository(db).updateClassificationRetry(
+        205,
+        '2026-09-09T00:15:00.000Z',
+        'HTTP_400',
+        'PERMANENT_OR_CONFIGURATION_ERROR',
+      );
+
+      const sql = String((db.prepare as any).mock.calls[0][0]);
+      expect(sql).toContain('classification_attempts = MIN(COALESCE(classification_attempts, 0) + 1');
+      expect(sql).toContain('classification_failure_kind = ?');
+      expect(sql).not.toContain('classification_attempts = ?');
+      expect(statement.bind).toHaveBeenCalledWith(
+        '2026-09-09T00:15:00.000Z',
+        'HTTP_400',
+        'PERMANENT_OR_CONFIGURATION_ERROR',
+        205,
+      );
+    });
+
+    it('clears retry diagnostics when a post reaches a terminal classified state', async () => {
+      const statement = {
+        bind: vi.fn().mockReturnThis(),
+        run: vi.fn().mockResolvedValue({ success: true }),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await new Repository(db).markClassified(205);
+
+      const sql = String((db.prepare as any).mock.calls[0][0]);
+      expect(sql).toContain('classification_pending = 0');
+      expect(sql).toContain('classification_error = NULL');
+      expect(sql).toContain('classification_failure_kind = NULL');
+      expect(sql).toContain('classification_attempts = MIN(COALESCE(classification_attempts, 0) + 1');
+      expect(statement.bind).toHaveBeenCalledWith(205);
+    });
+
+    it('uses the provider backoff queue and does not apply the quality cap to provider failures', async () => {
+      const statement = {
+        bind: vi.fn().mockReturnThis(),
+        all: vi.fn().mockResolvedValue({ results: [] }),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await new Repository(db).getUnclassifiedPosts(20, new Date('2026-09-09T01:00:00.000Z'));
+
+      const sql = String((db.prepare as any).mock.calls[0][0]);
+      expect(sql).toContain('TRANSIENT_PROVIDER_ERROR');
+      expect(sql).toContain('PERMANENT_OR_CONFIGURATION_ERROR');
+      expect(sql).toContain('WHEN COALESCE(classification_attempts, 0) = 4 THEN 240');
+      expect(sql).toContain('ELSE 360');
+      expect(statement.bind).toHaveBeenCalledWith(
+        '2026-09-09T01:00:00.000Z',
+        '2026-09-09T01:00:00.000Z',
+        20,
+      );
+    });
+
+    it('only treats recent direct reset plans as contextual lifecycle evidence', async () => {
+      const statement = {
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue({ id: 66 }),
+      };
+      const db = { prepare: vi.fn().mockReturnValue(statement) } as unknown as D1Database;
+
+      await expect(new Repository(db).hasRecentTrustedResetPlan(new Date('2026-09-09T00:00:00.000Z'))).resolves.toBe(true);
+
+      const sql = String((db.prepare as any).mock.calls[0][0]);
+      expect(sql).toContain("e.category = 'RESET_PLANNED'");
+      expect(sql).toContain("e.evidence_quality IN ('DIRECT', 'OFFICIAL')");
+      expect(sql).toContain("sp.source_account = 'thsottiaux'");
+      expect(sql).toContain('julianday(?) - (? / 24.0)');
+      expect(statement.bind).toHaveBeenCalledWith('2026-09-09T00:00:00.000Z', 48);
+    });
+  });
+
   describe('Read-path efficiency', () => {
     it('can read the active reset cycle without advancing state', async () => {
       const statement = {

@@ -21,12 +21,12 @@ function post(text: string): SourcePost {
   };
 }
 
-function classifier(): LLMClassifier {
+function classifier(options: { timeoutMs?: number } = {}): LLMClassifier {
   return new LLMClassifier({
     LLM_API_KEY: 'test-key',
     LLM_BASE_URL: 'https://llm.example/v1',
     LLM_MODEL: 'test-model',
-  } as Env);
+  } as Env, options);
 }
 
 function response(result: Record<string, unknown>): Response {
@@ -58,6 +58,16 @@ function baseResult(overrides: Record<string, unknown>): Record<string, unknown>
 describe('LLM classifier coverage taxonomy', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each(['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL'] as const)('requires explicit %s configuration', (missing) => {
+    const env: Env = {
+      LLM_API_KEY: 'test-key',
+      LLM_BASE_URL: 'https://llm.example/v1',
+      LLM_MODEL: 'test-model',
+    };
+    delete env[missing];
+    expect(() => new LLMClassifier(env)).toThrow(/Classifier configuration is missing/);
   });
 
   it('accepts product updates, roadmap questions, and feature discussions', async () => {
@@ -114,8 +124,12 @@ describe('LLM classifier coverage taxonomy', () => {
 
     const result = await classifier().classify(post('Codex users are increasingly working from cafes.'));
 
-    expect(result).toMatchObject({ status: 'ERROR', category: 'ERROR' });
-    expect((result as { error?: string }).error).toContain('CODEX_UPDATE requires statement_nature=FACT');
+    expect(result).toMatchObject({
+      status: 'ERROR',
+      category: 'ERROR',
+      error: 'INVALID_STRUCTURED_OUTPUT',
+      failureKind: 'CLASSIFIER_OUTPUT_ERROR',
+    });
   });
 
   it('rejects RESET_COMPLETED with OBSERVATION', async () => {
@@ -126,8 +140,12 @@ describe('LLM classifier coverage taxonomy', () => {
 
     const result = await classifier().classify(post('Codex users observed a fresh usage window.'));
 
-    expect(result).toMatchObject({ status: 'ERROR', category: 'ERROR' });
-    expect((result as { error?: string }).error).toContain('RESET_COMPLETED requires statement_nature=FACT');
+    expect(result).toMatchObject({
+      status: 'ERROR',
+      category: 'ERROR',
+      error: 'INVALID_STRUCTURED_OUTPUT',
+      failureKind: 'CLASSIFIER_OUTPUT_ERROR',
+    });
   });
 
   it('drops model-invented timestamps when the post only uses relative timing', async () => {
@@ -154,7 +172,61 @@ describe('LLM classifier coverage taxonomy', () => {
 
     const result = await classifier().classify(post('We are planning a Codex update.'));
 
-    expect(result).toMatchObject({ status: 'ERROR', category: 'ERROR' });
-    expect((result as { error?: string }).error).toContain('requires statement_nature=FACT');
+    expect(result).toMatchObject({
+      status: 'ERROR',
+      category: 'ERROR',
+      error: 'INVALID_STRUCTURED_OUTPUT',
+      failureKind: 'CLASSIFIER_OUTPUT_ERROR',
+    });
+  });
+
+  it('classifies HTTP 400 as a bounded provider/configuration failure without logging the body', async () => {
+    const secret = 'body-secret-must-not-leak';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      text: async () => JSON.stringify({ error: { message: secret } }),
+    } as Response)));
+
+    const result = await classifier().classify(post('All reset for everyone.'));
+
+    expect(result).toMatchObject({
+      status: 'ERROR',
+      error: 'HTTP_400',
+      errorCode: 'HTTP_400',
+      failureKind: 'PERMANENT_OR_CONFIGURATION_ERROR',
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain(secret);
+  });
+
+  it('classifies HTTP 503 as a transient provider failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503 } as Response)));
+
+    await expect(classifier().classify(post('Codex is back.'))).resolves.toMatchObject({
+      status: 'ERROR',
+      error: 'HTTP_503',
+      failureKind: 'TRANSIENT_PROVIDER_ERROR',
+    });
+  });
+
+  it('returns a bounded timeout result and passes an AbortSignal to fetch', async () => {
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      expect(init?.signal).toBeDefined();
+      init?.signal?.addEventListener('abort', () => {
+        const error = new Error('request aborted');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(classifier({ timeoutMs: 5 }).classify(post('Codex reset status?'))).resolves.toMatchObject({
+      status: 'ERROR',
+      error: 'TIMEOUT',
+      failureKind: 'TRANSIENT_PROVIDER_ERROR',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

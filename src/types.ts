@@ -92,6 +92,7 @@ export interface SourcePost {
   classification_attempts?: number;
   last_classification_attempt_at?: string | null;
   classification_error?: string | null;
+  classification_failure_kind?: ClassificationFailureKind | null;
   classification_label?: string | null;
   classification_decision?: ClassificationDecision | null;
   classification_reason_code?: ClassificationReasonCode | null;
@@ -250,6 +251,18 @@ export const CLASSIFICATION_SOURCE_CONTEXTS = [
 ] as const;
 export type ClassificationSourceContext = typeof CLASSIFICATION_SOURCE_CONTEXTS[number];
 
+/**
+ * Failure taxonomy for the automatic classifier queue. Provider failures are
+ * deliberately separate from invalid/low-quality classifier output so an
+ * external outage cannot consume the same terminal budget as a bad result.
+ */
+export const CLASSIFICATION_FAILURE_KINDS = [
+  'TRANSIENT_PROVIDER_ERROR',
+  'PERMANENT_OR_CONFIGURATION_ERROR',
+  'CLASSIFIER_OUTPUT_ERROR',
+] as const;
+export type ClassificationFailureKind = typeof CLASSIFICATION_FAILURE_KINDS[number];
+
 export interface ClassificationDecisionTrace {
   classification_label: string;
   classification_decision: ClassificationDecision;
@@ -262,7 +275,14 @@ export interface ClassificationDecisionTrace {
 // --- Classification Outcome (distinguishes SUCCESS vs ERROR) ---
 export type ClassificationOutcome =
   | { status: "SUCCESS"; result: ClassificationResult }
-  | { status: "ERROR"; error: string; category: "ERROR" };
+  | {
+    status: "ERROR";
+    /** A bounded, non-secret diagnostic code. */
+    error: string;
+    category: "ERROR";
+    failureKind?: ClassificationFailureKind;
+    errorCode?: string;
+  };
 
 // --- Classification Provider ---
 export interface ClassificationProvider {
@@ -376,6 +396,7 @@ export interface D1SourcePostRow {
   classification_attempts?: number;
   last_classification_attempt_at?: string | null;
   classification_error?: string | null;
+  classification_failure_kind?: string | null;
   classification_label?: string | null;
   classification_decision?: string | null;
   classification_reason_code?: string | null;

@@ -30,10 +30,32 @@ import {
 import community from './community';
 import adminCommunity from './admin-community';
 import openGambit from './open-gambit';
+import { missingClassifierConfiguration } from '../classifier/llm';
 
 const api = new Hono<{ Bindings: Env }>();
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function classifierAvailability(configured: boolean, status: string): 'healthy' | 'degraded' | 'unavailable' {
+  if (!configured || status === 'not_configured' || status === 'down' || status === 'unknown') return 'unavailable';
+  return status === 'ok' ? 'healthy' : 'degraded';
+}
+
+function safeClassifierErrorCode(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const code = value.split(':').at(-1) ?? '';
+  return /^(?:TIMEOUT|NETWORK_ERROR|PROVIDER_RESPONSE_ERROR|PROVIDER_ERROR|PROVIDER_CONFIGURATION_ERROR|EMPTY_RESPONSE|INVALID_JSON_RESPONSE|INVALID_STRUCTURED_OUTPUT|LLM_NOT_CONFIGURED|UNEXPECTED_CLASSIFIER_ERROR|HTTP_[1-5]\d\d|CLASSIFIER_OUTPUT_ERROR)$/u.test(code)
+    ? code
+    : 'CLASSIFIER_ERROR';
+}
+
+function safeClassifierFailureKind(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const kind = value.split(':', 1)[0];
+  return ['TRANSIENT_PROVIDER_ERROR', 'PERMANENT_OR_CONFIGURATION_ERROR', 'CLASSIFIER_OUTPUT_ERROR'].includes(kind)
+    ? kind
+    : null;
+}
 
 function isValidDateOnly(value: string): boolean {
   if (!DATE_ONLY_PATTERN.test(value)) return false;
@@ -384,7 +406,7 @@ api.get('/status', async (c) => {
     const webSearchConfigured = canUseSearchProvider(c.env);
     const searchProvider = configuredSearchProvider(c.env);
     const webSearchStatus = searchProviderStatus(providerStatuses, searchProvider);
-    const llmConfigured = !!c.env.LLM_API_KEY?.trim();
+    const llmConfigured = missingClassifierConfiguration(c.env).length === 0;
     const llmStatus = !llmConfigured
       ? 'not_configured'
       : (hasLLM && hasLLM.status !== 'not_configured' ? hasLLM.status : 'unknown');
@@ -542,6 +564,7 @@ api.get('/health', async (c) => {
     const latestEvent = await repo.getLatestEvent();
     const lastSuccessfulRun = await repo.getLatestSuccessfulRun();
     const providerStatuses = await repo.getAllProviderStatuses();
+    const classifierStatus = await repo.getProviderStatus('llm-classifier');
     const now = new Date();
     const xApiSnapshot = await getXApiStatusSnapshot(repo, c.env, now);
     const searchUsage = await repo.getProviderUsageSummary(WEB_SEARCH_PROVIDER_KEY, providerUsageDate(now));
@@ -628,7 +651,11 @@ api.get('/health', async (c) => {
       name: 'llm',
       configured: llmConfigured,
       status: llmStatus,
+      availability: classifierAvailability(llmConfigured, llmStatus),
       lastSuccessAt: hasLLM?.last_success_at ?? null,
+      lastErrorAt: classifierStatus?.last_error_at ?? null,
+      lastErrorCode: safeClassifierErrorCode(classifierStatus?.last_error_message),
+      lastFailureKind: safeClassifierFailureKind(classifierStatus?.last_error_message),
     };
 
     return c.json({
@@ -693,7 +720,7 @@ api.get('/health', async (c) => {
       estimatedMonthlyGrossCostUsd: null,
       monthlyCreditUsd: null,
     };
-    const errorClassifier = { name: 'llm', configured: false, status: 'unknown', lastSuccessAt: null };
+    const errorClassifier = { name: 'llm', configured: false, status: 'unknown', availability: 'unavailable', lastSuccessAt: null, lastErrorAt: null, lastErrorCode: null, lastFailureKind: null };
     return c.json({
       status: 'error',
       version: '0.1.0',

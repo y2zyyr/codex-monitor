@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { ClassificationProvider, Env } from '../types';
 import { classifyAndCreateEvent } from '../cron';
-import { LLMClassifier } from '../classifier/llm';
+import { LLMClassifier, missingClassifierConfiguration } from '../classifier/llm';
 import { hmacSha256Hex, isAllowedCommunityOrigin, isCommunityAdminRequest } from '../community/security';
 import { Repository } from '../db/repository';
 import { GambitRepository } from '../open-gambit/repository';
@@ -136,7 +136,7 @@ openGambitApi.post('/replay/source/:sourcePostId', async (c) => {
 });
 
 function replayClassifier(env: Env): ClassificationProvider {
-  if (env.LLM_API_KEY?.trim()) return new LLMClassifier(env);
+  if (missingClassifierConfiguration(env).length === 0) return new LLMClassifier(env);
   // Staging deliberately has no legacy monitor LLM credential. Keep this
   // replay-only fallback bounded and conservative: contextual deterministic
   // reset rules may still admit a trusted strong reset, while ordinary posts

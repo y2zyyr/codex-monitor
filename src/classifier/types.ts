@@ -171,11 +171,13 @@ function normalizedPostText(post: SourcePost): string {
 const TRUSTED_TIBO_ACCOUNT = 'thsottiaux';
 const TRUSTED_X_URL_PATTERN = /^https:\/\/(?:www\.)?x\.com\/thsottiaux\/status\/(\d{5,30})\/?$/i;
 const STRONG_RESET_PHRASE_PATTERN = /\b(?:full\s+)?banked\s+reset\b|\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b[\s\S]{0,80}\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b|\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b[\s\S]{0,80}\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b/i;
-const BROAD_RESET_AUDIENCE_PATTERN = /\b(?:for|to)\s+(?:(?:all|every|each)\s+)?(?:users?|accounts?|subscribers?|customers?|members?)\b|\b(?:all|every|everyone)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b/i;
+const BROAD_RESET_AUDIENCE_PATTERN = /\b(?:for|to)\s+(?:(?:all|every|each)\s+)?(?:everyone|users?|accounts?|subscribers?|customers?|members?)\b|\b(?:all|every|everyone)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b|\beveryone\s+(?:should\s+be\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
 const FUTURE_RESET_PATTERN = /\b(?:will|going\s+to|plan(?:ned)?|intend(?:ed)?|today|tomorrow|later|soon|end\s+of\s+day|upcoming|scheduled|coming)\b/i;
 const COMPLETED_RESET_PATTERN = /\b(?:has|have|had|was|were|is|are|just|already)\s+(?:been\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)|completed?|done|propagated)\b|\bfeeling\s+reset(?:ted|ed)?\b|\b(?:reset|usage|quotas?|limits?)\b[\s\S]{0,80}\b(?:propagated|completed?|done|restored|renewed|replenished|refreshed)\b/i;
+const SHORT_COMPLETION_RESET_PATTERN = /\ball\s+reset\s+for\s+everyone\b|\breset(?:ted|ed)?\s+(?:is\s+)?(?:done|complete|completed|finished)\s+for\s+everyone\b|\beveryone\s+(?:should\s+be\s+)?reset(?:ted|ed)?\s+now\b/i;
 const NEGATED_RESET_PATTERN = /\b(?:not|never|didn't|did\s+not|hasn't|has\s+not|won't|will\s+not|cannot|can't)\s+(?:be\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
-const NON_CODEX_PRODUCT_PATTERN = /\b(?:chatgpt(?:\s+work)?|sora|dall[-\s]?e|playground|openai\s+api)\b/i;
+const NON_CODEX_PRODUCT_PATTERN = /\b(?:chatgpt(?:\s+work)?|sora|dall[-\s]?e|playground|openai\s+api|astra\s+sessions?|claude\s+sessions?|gemini\s+sessions?|router|demo\s+environment)\b/i;
+const RESET_LANGUAGE_PATTERN = /\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
 
 export function hasExplicitCodexReference(text: string): boolean {
   return /\bcodex\b/i.test(text);
@@ -184,6 +186,29 @@ export function hasExplicitCodexReference(text: string): boolean {
 export interface TrustedSourceContextEvaluation {
   trusted: boolean;
   sourceContext: ClassificationSourceContext;
+}
+
+export interface TrustedResetContextOptions {
+  /** A current/recent, direct/official Codex reset lifecycle is active. */
+  activeCodexReset?: boolean;
+}
+
+export interface ResetLifecycleContextSnapshot {
+  status?: string | null;
+  verification_status?: string | null;
+  planned_event_id?: number | null;
+  time_changed_event_id?: number | null;
+}
+
+/**
+ * Only direct/official lifecycle evidence can activate the short-completion
+ * supplement. Indexed plans and arbitrary caller-provided rows fail closed.
+ */
+export function hasCredibleActiveResetContext(cycle: ResetLifecycleContextSnapshot | null | undefined): boolean {
+  if (!cycle) return false;
+  return ['SCHEDULED', 'DUE', 'CONFIRMING', 'TIME_CHANGED'].includes(cycle.status ?? '')
+    && ['DIRECT_VERIFIED', 'OFFICIAL_VERIFIED'].includes(cycle.verification_status ?? '')
+    && (cycle.planned_event_id != null || cycle.time_changed_event_id != null);
 }
 
 /**
@@ -218,6 +243,44 @@ export interface StrongResetSignal {
   hasCompletionLanguage: boolean;
   matchedSignals: string[];
   category: 'RESET_PLANNED' | 'RESET_COMPLETED' | null;
+}
+
+export interface ContextualResetCompletionSignal {
+  strong: boolean;
+  hasAudienceContext: boolean;
+  hasCompletionLanguage: boolean;
+  matchedSignals: string[];
+  category: 'RESET_COMPLETED' | null;
+}
+
+function hasConflictingNonCodexResetContext(text: string): boolean {
+  return text.split(/[.!?\n]+/u).some(sentence => RESET_LANGUAGE_PATTERN.test(sentence) && NON_CODEX_PRODUCT_PATTERN.test(sentence));
+}
+
+/**
+ * Short completion language is intentionally separate from the established
+ * usage/quota rule. It is only eligible when the application supplies an
+ * active trusted reset lifecycle; text alone never promotes it.
+ */
+export function getContextualResetCompletionSignal(post: SourcePost): ContextualResetCompletionSignal {
+  const text = normalizedPostText(post);
+  const hasAudienceContext = BROAD_RESET_AUDIENCE_PATTERN.test(text);
+  const hasCompletionLanguage = SHORT_COMPLETION_RESET_PATTERN.test(text);
+  const negated = NEGATED_RESET_PATTERN.test(text);
+  const strong = !negated
+    && hasAudienceContext
+    && hasCompletionLanguage
+    && !hasConflictingNonCodexResetContext(text);
+  const matchedSignals: string[] = [];
+  if (hasCompletionLanguage) matchedSignals.push('short completion language');
+  if (hasAudienceContext) matchedSignals.push('broad user scope');
+  return {
+    strong,
+    hasAudienceContext,
+    hasCompletionLanguage,
+    matchedSignals,
+    category: strong ? 'RESET_COMPLETED' : null,
+  };
 }
 
 /**
@@ -255,12 +318,20 @@ export function isStrongResetSignal(post: SourcePost): boolean {
   return getStrongResetSignal(post).strong;
 }
 
-export function isTrustedContextualReset(post: SourcePost): boolean {
+export function isTrustedContextualReset(post: SourcePost, options: TrustedResetContextOptions = {}): boolean {
+  return isTrustedContextualResetWithContext(post, options);
+}
+
+export function isTrustedContextualResetWithContext(
+  post: SourcePost,
+  options: TrustedResetContextOptions = {},
+): boolean {
   const context = getTrustedSourceContext(post);
   const text = normalizedPostText(post);
   const hasExplicitCodex = hasExplicitCodexReference(text);
-  const hasNonCodexConflict = NON_CODEX_PRODUCT_PATTERN.test(text) && !hasExplicitCodex;
-  return context.trusted && getStrongResetSignal(post).strong && !hasNonCodexConflict;
+  const hasNonCodexConflict = hasConflictingNonCodexResetContext(text) && !hasExplicitCodex;
+  const shortCompletion = options.activeCodexReset === true && getContextualResetCompletionSignal(post).strong;
+  return context.trusted && !hasNonCodexConflict && (getStrongResetSignal(post).strong || shortCompletion);
 }
 
 function isResetLifecycleCategory(category: ClassificationResult['category']): boolean {
@@ -307,12 +378,30 @@ export interface TrustedResetContextResult {
  * supplemental context only repairs a strong, trusted reset that the model
  * discarded or assigned to a non-Codex scope. Explicit non-Codex text wins.
  */
-export function applyTrustedResetContext(post: SourcePost, outcome: ClassificationOutcome): TrustedResetContextResult {
+export function applyTrustedResetContext(
+  post: SourcePost,
+  outcome: ClassificationOutcome,
+  options: TrustedResetContextOptions = {},
+): TrustedResetContextResult {
   const context = getTrustedSourceContext(post);
-  const signal = getStrongResetSignal(post);
+  const strongSignal = getStrongResetSignal(post);
+  const shortCompletion = options.activeCodexReset ? getContextualResetCompletionSignal(post) : null;
+  const signal: StrongResetSignal = strongSignal.strong
+    ? strongSignal
+    : shortCompletion?.strong
+    ? {
+      strong: true,
+      hasStrongResetPhrase: false,
+      hasAudienceContext: shortCompletion.hasAudienceContext,
+      hasFutureIntent: false,
+      hasCompletionLanguage: true,
+      matchedSignals: shortCompletion.matchedSignals,
+      category: 'RESET_COMPLETED',
+    }
+    : strongSignal;
   const text = normalizedPostText(post);
   const hasExplicitCodex = hasExplicitCodexReference(text);
-  const hasNonCodexConflict = NON_CODEX_PRODUCT_PATTERN.test(text) && !hasExplicitCodex;
+  const hasNonCodexConflict = hasConflictingNonCodexResetContext(text) && !hasExplicitCodex;
   if (!context.trusted || !signal.strong || hasNonCodexConflict) {
     return { outcome, sourceContext: context.sourceContext, applied: false, strongReset: signal };
   }
@@ -323,7 +412,14 @@ export function applyTrustedResetContext(post: SourcePost, outcome: Classificati
     && outcome.result.category === signal.category
     && outcome.result.product_scope === 'CODEX'
     && isCodexProductSignalAdmissible(outcome.result)) {
-    return { outcome, sourceContext: context.sourceContext, applied: false, strongReset: signal };
+    // Even when the model chose the right category, the trusted lifecycle is
+    // what supplies the missing Codex anchor for a short completion post.
+    return {
+      outcome,
+      sourceContext: hasExplicitCodex ? context.sourceContext : 'TRUSTED_CODEX_SOURCE_APPLIED',
+      applied: !hasExplicitCodex,
+      strongReset: signal,
+    };
   }
 
   return {

@@ -4,9 +4,11 @@ import {
   applyTrustedResetContext,
   buildCompletedResetHintResult,
   buildSoftResetHintResult,
+  getContextualResetCompletionSignal,
   getSoftResetHintSignals,
   getStrongResetSignal,
   getTrustedSourceContext,
+  hasCredibleActiveResetContext,
   isCompletedResetHint,
   isStrongResetSignal,
   isSoftResetHint,
@@ -556,5 +558,157 @@ describe('Direct reset hint classification', () => {
       classification_source_context: 'TRUSTED_CODEX_SOURCE_AVAILABLE',
       classification_event_created: false,
     }));
+  });
+
+  it('requires a trusted active reset lifecycle before accepting short completion language', () => {
+    const activeContext = { activeCodexReset: true };
+    const shortCompletions = [
+      'All reset for everyone.',
+      'Reset done for everyone.',
+      'Everyone should be reset now.',
+    ];
+
+    expect(hasCredibleActiveResetContext({
+      status: 'SCHEDULED',
+      verification_status: 'DIRECT_VERIFIED',
+      planned_event_id: 10,
+    })).toBe(true);
+    expect(hasCredibleActiveResetContext({
+      status: 'SCHEDULED',
+      verification_status: 'INDEXED_ONLY',
+      planned_event_id: 10,
+    })).toBe(false);
+    expect(hasCredibleActiveResetContext({
+      status: 'SCHEDULED',
+      verification_status: 'DIRECT_VERIFIED',
+    })).toBe(false);
+
+    for (const text of shortCompletions) {
+      const candidate = post({ text });
+      expect(getContextualResetCompletionSignal(candidate)).toMatchObject({
+        strong: true,
+        hasAudienceContext: true,
+        hasCompletionLanguage: true,
+        category: 'RESET_COMPLETED',
+      });
+      expect(isTrustedContextualReset(candidate)).toBe(false);
+      expect(isTrustedContextualReset(candidate, activeContext)).toBe(true);
+      expect(applyTrustedResetContext(candidate, {
+        status: 'SUCCESS',
+        result: {
+          relevant: true,
+          category: 'RESET_COMPLETED',
+          product_scope: 'CODEX',
+          statement_nature: 'FACT',
+          confidence: 0.8,
+          title_en: 'Reset completed',
+          title_zh: '重置完成',
+          summary_en: 'The reset is complete.',
+          summary_zh: '重置已完成。',
+          effective_time: null,
+          reset_time: null,
+          reason: 'Contextual completion fixture.',
+        },
+      }, activeContext)).toMatchObject({
+        applied: true,
+        sourceContext: 'TRUSTED_CODEX_SOURCE_APPLIED',
+        outcome: { status: 'SUCCESS', result: { category: 'RESET_COMPLETED', product_scope: 'CODEX' } },
+      });
+    }
+  });
+
+  it('admits the post-205 equivalent only with trusted context and protects reset false positives', () => {
+    const activeContext = { activeCodexReset: true };
+    const modelResult = {
+      status: 'SUCCESS' as const,
+      result: {
+        relevant: true,
+        category: 'RESET_COMPLETED' as const,
+        product_scope: 'CODEX' as const,
+        statement_nature: 'FACT' as const,
+        confidence: 0.82,
+        title_en: 'Reset completed',
+        title_zh: '重置完成',
+        summary_en: 'The Codex reset is complete.',
+        summary_zh: 'Codex 重置已完成。',
+        effective_time: null,
+        reset_time: null,
+        reason: 'Model completion fixture.',
+      },
+    };
+    const post205 = post({
+      id: 205,
+      source_post_id: '2097000000000000205',
+      source_url: 'https://x.com/thsottiaux/status/2097000000000000205',
+      canonical_post_id: '2097000000000000205',
+      text: 'All reset for everyone. Enjoy the week with Astra.',
+    });
+    const repo = {
+      recordProviderStatus: vi.fn(async () => undefined),
+      recordClassificationDecision: vi.fn(async () => undefined),
+      updateClassificationRetry: vi.fn(async () => undefined),
+      markClassified: vi.fn(async () => undefined),
+      insertEvent: vi.fn(async () => 2050),
+      getEventById: vi.fn(async () => ({ id: 2050, source_post_id: 205, category: 'RESET_COMPLETED' })),
+      handleResetEvent: vi.fn(async () => undefined),
+    };
+    const classifier = { classify: vi.fn(async () => modelResult) };
+
+    return classifyAndCreateEvent(repo as any, classifier as any, post205, new Date('2026-09-09T00:00:00.000Z'), activeContext)
+      .then(result => {
+        expect(result.created).toBe(true);
+        expect(repo.insertEvent).toHaveBeenCalledWith(expect.objectContaining({ category: 'RESET_COMPLETED' }));
+        expect(repo.recordClassificationDecision).toHaveBeenCalledWith(205, expect.objectContaining({
+          classification_reason_code: 'TRUSTED_SOURCE_CONTEXT_APPLIED',
+          classification_source_context: 'TRUSTED_CODEX_SOURCE_APPLIED',
+        }));
+      });
+  });
+
+  it('fails closed for non-Codex wording, lyrics, and unverified generic sources', () => {
+    const activeContext = { activeCodexReset: true };
+    const falsePositives = [
+      'Reset my router for everyone.',
+      'All Astra sessions reset.',
+      'Reset the demo environment for everyone.',
+      'Never gonna give you up...',
+    ];
+    for (const text of falsePositives) {
+      const candidate = post({ text });
+      expect(getContextualResetCompletionSignal(candidate).strong).toBe(false);
+      expect(isTrustedContextualReset(candidate, activeContext)).toBe(false);
+      expect(applyTrustedResetContext(candidate, {
+        status: 'SUCCESS',
+        result: {
+          relevant: true,
+          category: 'RESET_COMPLETED',
+          product_scope: 'CODEX',
+          statement_nature: 'FACT',
+          confidence: 0.9,
+          title_en: 'Reset', title_zh: '重置', summary_en: 'Reset', summary_zh: '重置',
+          effective_time: null, reset_time: null, reason: 'False-positive fixture.',
+        },
+      }, activeContext)).toMatchObject({ applied: false });
+    }
+
+    const unverified = post({
+      source: 'web_search',
+      source_quality: 'INDEXED',
+      verification_status: 'INDEXED_ONLY',
+      text: 'All reset for everyone.',
+    });
+    expect(isTrustedContextualReset(unverified, activeContext)).toBe(false);
+    expect(applyTrustedResetContext(unverified, {
+      status: 'SUCCESS',
+      result: {
+        relevant: true,
+        category: 'RESET_COMPLETED',
+        product_scope: 'CODEX',
+        statement_nature: 'FACT',
+        confidence: 0.9,
+        title_en: 'Reset', title_zh: '重置', summary_en: 'Reset', summary_zh: '重置',
+        effective_time: null, reset_time: null, reason: 'Unverified fixture.',
+      },
+    }, activeContext)).toMatchObject({ applied: false, sourceContext: 'UNTRUSTED_SOURCE' });
   });
 });

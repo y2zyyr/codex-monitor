@@ -1,7 +1,7 @@
 // ============================================================
 // Codex Usage Monitor - LLM Classification Provider
 // ============================================================
-import type { ClassificationProvider, ClassificationOutcome, SourcePost, Env } from '../types';
+import type { ClassificationFailureKind, ClassificationProvider, ClassificationOutcome, SourcePost, Env } from '../types';
 import { EVENT_CATEGORIES, PRODUCT_SCOPES, STATEMENT_NATURES } from '../types';
 import type { ProductScope, StatementNature } from '../types';
 import { getTrustedSourceContext } from './types';
@@ -28,7 +28,22 @@ interface LLMResponse {
   error?: {
     message: string;
     type: string;
+    code?: string | null;
+    status?: number | null;
   };
+}
+
+export const LLM_CLASSIFIER_TIMEOUT_MS = 30_000;
+
+export const CLASSIFIER_CONFIGURATION_KEYS = ['LLM_API_KEY', 'LLM_BASE_URL', 'LLM_MODEL'] as const;
+
+export function missingClassifierConfiguration(env: Pick<Env, typeof CLASSIFIER_CONFIGURATION_KEYS[number]>): string[] {
+  return CLASSIFIER_CONFIGURATION_KEYS.filter((name) => !env[name]?.trim());
+}
+
+export interface LLMClassifierOptions {
+  /** Test/local override. Production uses the fixed bounded default. */
+  timeoutMs?: number;
 }
 
 // Only accept an LLM-produced timestamp when the source text contains an
@@ -47,15 +62,20 @@ export class LLMClassifier implements ClassificationProvider {
   private baseUrl: string;
   private model: string;
   private maxTokens: number;
+  private timeoutMs: number;
 
-  constructor(env: Env) {
-    if (!env.LLM_API_KEY) {
-      throw new Error('LLM_API_KEY is required for LLMClassifier');
+  constructor(env: Env, options: LLMClassifierOptions = {}) {
+    const missing = missingClassifierConfiguration(env);
+    if (missing.length > 0) {
+      throw new Error(`Classifier configuration is missing: ${missing.join(',')}`);
     }
-    this.apiKey = env.LLM_API_KEY;
-    this.baseUrl = (env.LLM_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    this.model = env.LLM_MODEL || 'gpt-4o-mini';
+    this.apiKey = env.LLM_API_KEY!;
+    this.baseUrl = env.LLM_BASE_URL!.replace(/\/+$/, '');
+    this.model = env.LLM_MODEL!;
     this.maxTokens = Number(env.LLM_MAX_TOKENS) || 2000;
+    this.timeoutMs = Number.isFinite(options.timeoutMs)
+      ? Math.max(1, Math.min(60_000, Number(options.timeoutMs)))
+      : LLM_CLASSIFIER_TIMEOUT_MS;
   }
 
   async classify(post: SourcePost): Promise<ClassificationOutcome> {
@@ -123,9 +143,13 @@ Verification status: ${post.verification_status ?? 'DIRECT_VERIFIED'}
 ${trustedContext}
 If evidence quality is INDEXED, treat the snippet as provisional evidence and keep confidence conservative.`;
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
@@ -143,29 +167,34 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[LLMClassifier] API error: ${response.status} ${errText}`);
-        return { status: "ERROR", error: `LLM API error: ${response.status}`, category: "ERROR" };
+        return httpFailure(response.status);
       }
 
-      const data = await response.json() as LLMResponse;
+      let data: LLMResponse;
+      try {
+        data = await response.json() as LLMResponse;
+      } catch {
+        return classifierError('INVALID_JSON_RESPONSE', 'CLASSIFIER_OUTPUT_ERROR');
+      }
       if (data.error) {
-        console.error(`[LLMClassifier] API error: ${data.error.message}`);
-        return { status: "ERROR", error: `LLM API error: ${data.error.message}`, category: "ERROR" };
+        return data.error.status ? httpFailure(data.error.status) : classifierError('PROVIDER_RESPONSE_ERROR', 'TRANSIENT_PROVIDER_ERROR');
       }
 
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
-        return { status: "ERROR", error: 'Empty LLM response', category: "ERROR" };
+        return classifierError('EMPTY_RESPONSE', 'CLASSIFIER_OUTPUT_ERROR');
       }
 
       const result = this.parseResult(content, post);
       return result;
 
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[LLMClassifier] Request failed: ${msg}`);
-      return { status: "ERROR", error: `LLM request failed: ${msg}`, category: "ERROR" };
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        return classifierError('TIMEOUT', 'TRANSIENT_PROVIDER_ERROR');
+      }
+      return classifierError('NETWORK_ERROR', 'TRANSIENT_PROVIDER_ERROR');
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -225,10 +254,10 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
           reason: String(parsed.reason ?? ''),
         }
       };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[LLMClassifier] Parse error: ${msg}, content: ${content.substring(0, 200)}`);
-      return { status: "ERROR", error: `Parse error: ${msg}`, category: "ERROR" };
+    } catch {
+      // Do not log or persist model output. The caller only needs a bounded
+      // code to select the normal classifier-output retry path.
+      return classifierError('INVALID_STRUCTURED_OUTPUT', 'CLASSIFIER_OUTPUT_ERROR');
     }
   }
 
@@ -243,4 +272,25 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
     if (!EXPLICIT_CALENDAR_DATE_PATTERN.test(sourceText)) return null;
     return this.validateTime(value);
   }
+}
+
+function classifierError(errorCode: string, failureKind: ClassificationFailureKind): ClassificationOutcome {
+  return {
+    status: 'ERROR',
+    error: errorCode,
+    errorCode,
+    failureKind,
+    category: 'ERROR',
+  };
+}
+
+function httpFailure(status: number): ClassificationOutcome {
+  const safeStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? status : 0;
+  if (safeStatus === 408 || safeStatus === 425 || safeStatus === 429 || safeStatus >= 500) {
+    return classifierError(safeStatus ? `HTTP_${safeStatus}` : 'PROVIDER_RESPONSE_ERROR', 'TRANSIENT_PROVIDER_ERROR');
+  }
+  if (safeStatus >= 400 && safeStatus < 500) {
+    return classifierError(`HTTP_${safeStatus}`, 'PERMANENT_OR_CONFIGURATION_ERROR');
+  }
+  return classifierError('PROVIDER_RESPONSE_ERROR', 'TRANSIENT_PROVIDER_ERROR');
 }
