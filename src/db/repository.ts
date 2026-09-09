@@ -529,9 +529,9 @@ export class Repository {
   }
 
   async getUnclassifiedPosts(limit = 50, now = new Date()): Promise<SourcePost[]> {
-    const providerFailureCondition = `(classification_failure_kind IN (${providerFailureKindsSql()})
-      OR (classification_failure_kind IS NULL
-        AND (classification_error LIKE 'LLM API error:%' OR classification_error LIKE 'LLM request failed:%')))`;
+    const providerFailureCondition = `(COALESCE(classification_failure_kind, '') IN (${providerFailureKindsSql()})
+      OR (COALESCE(classification_error, '') LIKE 'LLM API error:%'
+        OR COALESCE(classification_error, '') LIKE 'LLM request failed:%'))`;
     const { results } = await this.db
       .prepare(`
         SELECT * FROM source_posts
@@ -575,9 +575,9 @@ export class Repository {
    * classified. It is deliberately D1-only; it never refetches from X.
    */
   async getDirectPostsWithoutEvents(limit = 50): Promise<SourcePost[]> {
-    const providerFailureCondition = `(sp.classification_failure_kind IN (${providerFailureKindsSql()})
-      OR (sp.classification_failure_kind IS NULL
-        AND (sp.classification_error LIKE 'LLM API error:%' OR sp.classification_error LIKE 'LLM request failed:%')))`;
+    const providerFailureCondition = `(COALESCE(sp.classification_failure_kind, '') IN (${providerFailureKindsSql()})
+      OR (COALESCE(sp.classification_error, '') LIKE 'LLM API error:%'
+        OR COALESCE(sp.classification_error, '') LIKE 'LLM request failed:%'))`;
     const { results } = await this.db
       .prepare(`
         SELECT sp.*

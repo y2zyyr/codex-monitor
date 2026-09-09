@@ -258,6 +258,8 @@ describe('D1 Repository', () => {
       const sql = String((db.prepare as any).mock.calls[0][0]);
       expect(sql).toContain('TRANSIENT_PROVIDER_ERROR');
       expect(sql).toContain('PERMANENT_OR_CONFIGURATION_ERROR');
+      expect(sql).toContain("COALESCE(classification_failure_kind, '')");
+      expect(sql).toContain("COALESCE(classification_error, '')");
       expect(sql).toContain('WHEN COALESCE(classification_attempts, 0) = 4 THEN 240');
       expect(sql).toContain('ELSE 360');
       expect(statement.bind).toHaveBeenCalledWith(
