@@ -185,6 +185,17 @@ export async function fetchEvidence(
     if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
       return { ok: false, status: 'DYNAMIC_UNSUPPORTED', requestedUrl, error: `Unsupported content type: ${contentType || 'missing'}.` };
     }
+    // Declared-length pre-check. Two properties make it a fast path rather than
+    // the authoritative bound:
+    //   1. under an identity encoding `content-length` equals the body length,
+    //      so this check and `readBoundedBody` below reject the same responses
+    //      and the earlier one simply avoids reading the body;
+    //   2. under a compressed encoding the runtime may strip the header, so
+    //      `0` (or a compressed length) is observed and the bounded read below
+    //      becomes the real enforcement. It is kept because it is the only
+    //      cheap rejection available before any body bytes are transferred, and
+    //      because the bounded read makes it non-load-bearing -- never treat a
+    //      missing or small `content-length` as proof that the body is small.
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (Number.isFinite(contentLength) && contentLength > maxBytes) {
       return { ok: false, status: 'SOURCE_TOO_LARGE', requestedUrl, error: `Response exceeded the ${maxBytes}-byte cap.` };

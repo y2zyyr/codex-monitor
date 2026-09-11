@@ -637,6 +637,14 @@ export interface Env {
   GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN?: string;
   GAMBIT_MAX_HTTP_REQUESTS_PER_RUN?: string;
   GAMBIT_MAX_SOURCE_BYTES?: string;
+  /**
+   * Byte cap for a fetched FEED document (a source with a `feedUrl`), separate
+   * from `GAMBIT_MAX_SOURCE_BYTES`, which caps HTML pages. Atom/RSS `<content>`
+   * may embed fully rendered HTML, which inflated one measured release note from
+   * 19,880 characters to 172,048 bytes. Defaults to 512000 in code, so an unset
+   * variable cannot re-create the SOURCE_TOO_LARGE drop.
+   */
+  GAMBIT_MAX_FEED_BYTES?: string;
   GAMBIT_HTTP_TIMEOUT_MS?: string;
   GAMBIT_MAX_ITEMS_PER_SOURCE?: string;
   GAMBIT_MAX_ITEM_AGE_DAYS?: string;

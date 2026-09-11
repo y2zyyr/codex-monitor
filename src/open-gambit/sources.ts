@@ -162,7 +162,20 @@ export async function discoverConfiguredSources(
     maxItemAgeDays?: number;
     rotationKey?: string;
     timeoutMs?: number;
+    /** Byte cap for a fetched HTML page (a source without a feed URL). */
     maxBytes?: number;
+    /**
+     * Byte cap for a fetched feed document (a source WITH a feed URL).
+     *
+     * Feeds need a larger cap than HTML pages: an atom `<content>` element may
+     * carry the fully rendered HTML of a release note, so a 19,880-character
+     * release becomes a 172,048-byte document (8.7x, measured on
+     * `openai-codex-releases` / `rust-v0.154.0`). The single 128,000-byte cap
+     * that applied to both classified that healthy feed as SOURCE_TOO_LARGE and
+     * silently dropped the source. The HTML cap is deliberately NOT raised: an
+     * ordinary page should still be rejected at 128,000 bytes.
+     */
+    maxFeedBytes?: number;
     budget?: GambitRunBudget;
     concurrency?: number;
   } = {},
@@ -187,11 +200,14 @@ export async function discoverConfiguredSources(
       return { source, result: null as never, budgetExceeded: true, fetchError: null as string | null };
     }
     try {
+      // The artifact that is actually fetched decides the byte cap: a source
+      // with a feed URL fetches the feed document, everything else fetches a
+      // page. Applying one cap to both is what misclassified healthy feeds.
       const result = await fetchEvidence(source.feedUrl || source.url, source, {
         fetchImpl: options.fetchImpl,
         now: options.now,
         timeoutMs: options.timeoutMs,
-        maxBytes: options.maxBytes,
+        maxBytes: source.feedUrl ? options.maxFeedBytes ?? options.maxBytes : options.maxBytes,
       });
       return { source, result, budgetExceeded: false, fetchError: null as string | null };
     } catch (error) {

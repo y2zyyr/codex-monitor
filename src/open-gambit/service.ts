@@ -163,6 +163,9 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
     rotationKey: windowKey,
     timeoutMs: readNumber(env.GAMBIT_HTTP_TIMEOUT_MS, 8_000),
     maxBytes: readNumber(env.GAMBIT_MAX_SOURCE_BYTES, 512_000),
+    // Feeds carry rendered HTML inside `<content>` and need their own cap; the
+    // HTML cap stays deliberately strict.
+    maxFeedBytes: readNumber(env.GAMBIT_MAX_FEED_BYTES, 512_000),
     concurrency: readNumber(env.GAMBIT_FETCH_CONCURRENCY, 4),
     budget,
   });

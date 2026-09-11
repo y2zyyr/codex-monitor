@@ -122,7 +122,13 @@
     "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_HTTP_REQUESTS_PER_RUN": "20",
-    "GAMBIT_MAX_SOURCE_BYTES": "512000",
+    // Byte cap for a fetched HTML page. Feeds are governed by
+    // GAMBIT_MAX_FEED_BYTES instead: an atom <content> element may embed fully
+    // rendered HTML, so one release note measured 172,048 bytes against a
+    // 19,880-character payload and was dropped as SOURCE_TOO_LARGE.
+    "GAMBIT_MAX_SOURCE_BYTES": "128000",
+    // Byte cap for a fetched feed document (a source with a feedUrl).
+    "GAMBIT_MAX_FEED_BYTES": "512000",
     "GAMBIT_HTTP_TIMEOUT_MS": "8000"
     // COMMUNITY_AGENT_SECRET is a server-side secret. Set it with
     // `wrangler secret put COMMUNITY_AGENT_SECRET` (or in .dev.vars for local).
