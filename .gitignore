@@ -15,3 +15,4 @@ wrangler.jsonc
 credentials*.json
 *.log
 test-results/
+probe-results/
