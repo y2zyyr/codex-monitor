@@ -47,6 +47,13 @@ export const GAMBIT_DEFAULT_LLM_SESSION_ID = 'gambit-open-gambit';
  */
 export const GAMBIT_MISSING_SESSION_CODE = 'MISSING_SESSION_ID';
 
+/**
+ * Documented default transport retry bound, shared by every role below.
+ * See `boundedAttemptCount()` for why an absent per-request value must resolve to
+ * this number rather than to zero attempts.
+ */
+const DEFAULT_ROLE_RETRY_LIMIT = 1;
+
 const DEFAULT_ROLE_CONFIG: Array<GambitModelRoleConfig> = [
   { role: 'triage', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 8_000, retryLimit: 1, tokenBudget: 900 },
   { role: 'fact_extraction', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 8_000, retryLimit: 1, tokenBudget: 1_200 },
@@ -202,7 +209,17 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
     // A single bounded retry is enough for a transient transport failure.
     // Repeated retries amplify cost and can hide a deterministic provider
     // incompatibility behind an apparently flaky workflow.
-    const maxAttempts = Math.min(2, Math.max(1, request.retryLimit + 1));
+    //
+    // `retryLimit` must be normalised before it reaches the loop below.
+    // `Math.min(2, Math.max(1, undefined + 1))` is NaN, and `for (attempt = 0;
+    // attempt < NaN; ...)` never runs its body -- and the body is the ONLY place
+    // that emits diagnostics and calls fetch. An omitted `retryLimit` therefore
+    // performed ZERO network calls, emitted ZERO diagnostics, and surfaced as a
+    // bare `provider_error`, which reads as a provider fault rather than as a
+    // missing field. This is the same fail-open class as the budget namespace
+    // defect fixed in Phase 1: an absent bound must degrade to the documented
+    // default (one retry), never to no attempt at all.
+    const maxAttempts = boundedAttemptCount(request.retryLimit);
     const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
     const stream = request.stream !== false;
     const requestPayload: Record<string, unknown> = {
@@ -949,6 +966,26 @@ function boundedNumber(value: unknown, fallback: number, min: number, max: numbe
 
 function finiteOptional(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
+}
+
+/**
+ * Normalise the transport attempt budget, derived from a RETRY limit.
+ *
+ * Returns the total number of attempts, not the retry count: `retryLimit = 1`
+ * means "one retry", which is TWO attempts. The distinction is load-bearing --
+ * a bound that degrades by one silently removes the retry the role config asks
+ * for, which is how an earlier revision of this fix broke the 429 retry path.
+ *
+ * The role configuration always supplies a bounded `retryLimit`, so this only
+ * matters for callers that bypass `getGambitModelRoleConfig`: a JS caller, a
+ * stale object literal, or a cast. Because `tsconfig` typechecks `src` only,
+ * such a caller cannot be caught at compile time. An absent value resolves to
+ * the documented default of one retry; it must never resolve to zero attempts,
+ * which would make the whole request a silent no-op.
+ */
+function boundedAttemptCount(value: unknown): number {
+  const retries = boundedNumber(value, DEFAULT_ROLE_RETRY_LIMIT, 0, 2);
+  return Math.min(2, Math.max(1, retries + 1));
 }
 
 async function boundedBackoff(attempt: number): Promise<void> {
