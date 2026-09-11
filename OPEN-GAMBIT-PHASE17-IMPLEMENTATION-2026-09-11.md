@@ -313,3 +313,10 @@ T1 与 T3 的失败形态一致且已解释（token 墙）。**N8 仍未定机�
 **不建议现在进入阶段 2（源结构再平衡）**：N7 修复把 critic 的每 run 操作性损失压到 **3.8%**，残余已不再是主要瓶颈；但矩阵 A 上仍有 **1/16 的 run 因 critic 操作性失败而出局**，且该残余集中在特定候选（两轮都出现同一形态）。在 staging 确认该数字在生产形态下同样成立之前扩容源，只会让更多候选撞上同一个墙。
 
 **若 staging 观察到 B4（失败类型）中出现大量 `timeout`**：说明 30,000 ms clamp 在生产形态下**确实**成为瓶颈，那时才应重新评估方案 ii（提高 clamp），并先补上 T1 未做的直接测量（critic 8,000 + 提高 deadline 的成功率与耗时）。
+
+
+---
+
+## 6. 术语精度说明
+
+本报告与 T1/T3 报告中的「`deepseek-flash`」是 **runtime model ID**（即 `GAMBIT_LLM_MODEL` 的值），provider label 是 `deepseek`，endpoint 是 `https://api.deepseek.com`。它是阶段 1.5/1.6/1.7 全部实测所使用的组合，不是对本产品线公开 API 目录的断言。公开可见的 AI identity 仍是 `Claude Fable 5 · GPT-5.6 Sol · DeepSeek V4 Pro`，与 runtime routing 相互独立，不得从前者推导后者。
