@@ -255,8 +255,25 @@ export class GambitRepository {
       .bind(bounded, now, id).run();
   }
 
-  /** Persist the policy decision that accompanied a triage/gate outcome. */
-  async recordPoliticalDecision(id: number, decision: GambitPoliticalDecision, now = new Date().toISOString()): Promise<void> {
+  /**
+   * Record how many bounded CRITIC OPERATIONAL re-samples a candidate consumed
+   * (migration 0030). Same contract as `recordCandidateAnalysisAttempts` and
+   * `recordCandidateTriageAttempts`: 0 means the first critic attempt decided
+   * the candidate, and the value is clamped so corrupted telemetry can never
+   * widen the retry bound or fail the run.
+   *
+   * This counts re-samples spent on an OPERATIONAL failure only. A critic that
+   * returned a usable verdict -- accepted or rejected -- spent no re-sample and
+   * records 0, even though the critic stage did run.
+   */
+  async recordCandidateCriticAttempts(id: number, attempts: number, now = new Date().toISOString()): Promise<void> {
+    const parsed = typeof attempts === 'number' && Number.isFinite(attempts) ? Math.floor(attempts) : 0;
+    const bounded = Math.min(10, Math.max(0, parsed));
+    await this.db.prepare('UPDATE gambit_candidates SET critic_attempts = ?, updated_at = ? WHERE id = ?')
+      .bind(bounded, now, id).run();
+  }
+
+  /** Persist the policy decision that accompanied a triage/gate outcome. */  async recordPoliticalDecision(id: number, decision: GambitPoliticalDecision, now = new Date().toISOString()): Promise<void> {
     await this.db.prepare(`
       UPDATE gambit_candidates
       SET political_topic = ?, political_reasons_json = ?,

@@ -60,6 +60,8 @@ export interface GambitStageResult {
   analysisAttempts?: number;
   /** Bounded triage re-samples actually spent (0 = the first attempt decided). */
   triageAttempts?: number;
+  /** Bounded critic OPERATIONAL re-samples actually spent (0 = the first attempt decided). */
+  criticAttempts?: number;
 }
 
 /**
@@ -94,6 +96,70 @@ const GAMBIT_ANALYSIS_RETRY_LIMIT = 1;
  * retry can only UPGRADE a rejection into an approval, never the reverse.
  */
 const GAMBIT_TRIAGE_RETRY_LIMIT = 1;
+
+/**
+ * How many bounded re-samples the CRITIC stage may spend when its call fails
+ * OPERATIONALLY (`timeout`, `empty_response`, `invalid_structured_json`,
+ * `network_error`, `stream_read_error`, or an `http_*` status).
+ *
+ * Phase 1.6 measured the critic truncated in 8 of 11 calls at a 3,000-token
+ * budget. Raising the budget to 6,000 cut that to about 4 of 12, but the
+ * residual tail CANNOT be removed by configuration: 8,000 is the hard clamp on
+ * `tokenBudget`, 30,000 ms is the hard clamp on non-translation `timeoutMs`, and
+ * Phase 1.7 measured the surviving failures still stopping at
+ * `finish_reason=length` with `reasoning = completion = 6,000` -- the model
+ * never reached its answer, so no deterministic gate ever saw a critique at all.
+ *
+ * This is a SAMPLING loss, not a judgement: the run dies with
+ * `PROVIDER_EMPTY_RESPONSE` and the candidate is discarded before the
+ * deterministic publication gate can rule on it. One bounded re-sample converts
+ * that coin flip into a measurable retry, exactly as the triage and analysis
+ * bounds already do.
+ *
+ * WHAT IS DELIBERATELY NOT RE-SAMPLED
+ * -----------------------------------
+ *  - A critic that returns a well-formed `accepted=false` with evidence-backed
+ *    concerns is a POLICY decision, not sampling noise. Re-rolling it would be
+ *    shopping for a different verdict on a judgement question -- the same reason
+ *    a political triage exclusion is never re-sampled.
+ *  - `GAMBIT_LLM_BUDGET_EXCEEDED` is DETERMINISTIC: the budget check happens
+ *    before any request is made, so an exhausted budget is still exhausted on
+ *    the next call. Re-sampling it would only burn wall clock and a call slot.
+ *    This is why `GAMBIT_LLM_BUDGET_EXCEEDED` is absent from the allowlist below.
+ *  - `CRITIC_PROVIDER_UNAVAILABLE` is a configuration fault, and any UNKNOWN code
+ *    fails closed: it is treated as not re-samplable.
+ *
+ * The bound stays at 1 so the worst-case extra cost is one critic call
+ * (6,000 tokens) per candidate, and the retry can only turn a SAMPLING FAILURE
+ * into a real verdict: a failed or unusable re-sample keeps the FIRST failure.
+ */
+const GAMBIT_CRITIC_RETRY_LIMIT = 1;
+
+/**
+ * The provider error codes that mean the critic stage never got to make a
+ * judgement. An UNRECOGNISED code fails closed -- it is treated as not
+ * re-samplable -- so a future provider error cannot silently acquire a retry.
+ *
+ * These are exactly the TRANSIENT transport outcomes. The comparison is against
+ * the provider's own bounded code vocabulary (`llm.ts`), not against free text.
+ */
+const GAMBIT_CRITIC_OPERATIONAL_CODES = new Set([
+  'timeout',
+  'network_error',
+  'stream_read_error',
+  'empty_response',
+  'invalid_structured_json',
+]);
+
+function criticFailureIsOperational(code: string | undefined): boolean {
+  if (!code) return false;
+  if (GAMBIT_CRITIC_OPERATIONAL_CODES.has(code)) return true;
+  // An HTTP-status failure is a transport outcome too, not a verdict: the
+  // provider never produced a critique to judge. An unrecognised code (for
+  // example `CRITIC_PROVIDER_UNAVAILABLE`, a configuration fault) is NOT
+  // re-sampled, so the set above stays the whole allowlist.
+  return code.startsWith('http_');
+}
 
 const DEFAULT_TRIAGE: GambitTriageResult = {
   eventImportance: 0.6,
@@ -335,39 +401,102 @@ export async function runGambitStages(
   }
 
   const criticRole = roleConfig('critic', roles);
+  // Built ONCE and reused byte-for-byte by the bounded re-sample: a re-sample
+  // changes only the provider's sampling, never the prompt, the evidence, the
+  // schema or the token budget. The critique is a function of the SAME analysis
+  // the first attempt saw, so the re-sample cannot silently re-judge a different
+  // thesis.
+  const criticRequest: GambitLLMRequest = {
+    role: 'critic',
+    schemaName: 'GambitCriticV1',
+    system: criticSystemPrompt(),
+    user: `${canonicalJson({ thesis: analysis.thesis, mechanism: analysis.mechanism, facts: analysis.facts, countercase: analysis.countercase, trajectories: analysis.trajectories })}\n\n${evidenceForModel(evidence, evidence.map(item => ({
+      id: item.snapshotId,
+      sourceId: item.sourceId,
+      requestedUrl: item.canonicalUrl,
+      finalUrl: item.canonicalUrl,
+      canonicalUrl: item.canonicalUrl,
+      title: item.title,
+      publisher: item.publisher,
+      publishedAt: item.publishedAt,
+      retrievedAt: now.toISOString(),
+      normalizedContent: item.quote,
+      contentHash: item.contentHash,
+      extractorVersion: 'gambit-html-1',
+      sourceQualityTier: item.sourceTier,
+    } as GambitSourceSnapshot)))}`,
+    tokenBudget: criticRole.tokenBudget,
+    timeoutMs: criticRole.timeoutMs,
+    retryLimit: criticRole.retryLimit,
+  };
   const criticResult = await optionalStage<GambitCriticResult>(
     'CRITIC',
     criticRole,
     dependencies.providers?.critic,
-    {
-      role: 'critic',
-      schemaName: 'GambitCriticV1',
-      system: criticSystemPrompt(),
-      user: `${canonicalJson({ thesis: analysis.thesis, mechanism: analysis.mechanism, facts: analysis.facts, countercase: analysis.countercase, trajectories: analysis.trajectories })}\n\n${evidenceForModel(evidence, evidence.map(item => ({
-        id: item.snapshotId,
-        sourceId: item.sourceId,
-        requestedUrl: item.canonicalUrl,
-        finalUrl: item.canonicalUrl,
-        canonicalUrl: item.canonicalUrl,
-        title: item.title,
-        publisher: item.publisher,
-        publishedAt: item.publishedAt,
-        retrievedAt: now.toISOString(),
-        normalizedContent: item.quote,
-        contentHash: item.contentHash,
-        extractorVersion: 'gambit-html-1',
-        sourceQualityTier: item.sourceTier,
-      } as GambitSourceSnapshot)))}`,
-      tokenBudget: criticRole.tokenBudget,
-      timeoutMs: criticRole.timeoutMs,
-      retryLimit: criticRole.retryLimit,
-    },
+    criticRequest,
     dependencies,
     candidateId,
   );
-  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis, analysisAttempts, triageAttempts };
-  if (!criticResult.value || typeof criticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis, analysisAttempts, triageAttempts };
-  const critic = normalizeCritic(criticResult.value);
+  let effectiveCriticResult = criticResult;
+  let criticAttempts = 0;
+  // CRITIC BOUNDED OPERATIONAL RE-SAMPLE
+  //
+  // Phase 1.7 (matrix B, critic 6,000, 4 candidates x 5 replicates) measured the
+  // residual critic tail as an OPERATIONAL loss, not a judgement: every failing
+  // call ended at `finish_reason=length` with `reasoning = completion = 6,000`
+  // and 0 bytes of content, i.e. the model was still reasoning when the token
+  // budget ran out and never emitted an answer. The run therefore died with
+  // `PROVIDER_EMPTY_RESPONSE` and the candidate was discarded before the
+  // deterministic publication gate could ever rule on it. That is exactly the
+  // class of loss the triage and analysis bounds already absorb.
+  //
+  // TWO failures are deliberately NOT re-sampled:
+  //  - a well-formed verdict (`accepted=true`, or `accepted=false` with
+  //    evidence-backed concerns): that is a POLICY judgement, and re-rolling it
+  //    would be shopping for a different answer to a judgement question;
+  //  - an error code outside the allowlist (`CRITIC_PROVIDER_UNAVAILABLE` is a
+  //    configuration fault, and an unknown code fails closed).
+  if (effectiveCriticResult.error && criticFailureIsOperational(effectiveCriticResult.error)
+    && criticAttempts < GAMBIT_CRITIC_RETRY_LIMIT
+    && criticRole.retryLimit > 0) {
+    criticAttempts += 1;
+    const retryResult = await optionalStage<GambitCriticResult>(
+      'CRITIC',
+      criticRole,
+      dependencies.providers?.critic,
+      criticRequest,
+      dependencies,
+      candidateId,
+    );
+    const retryUsable = !retryResult.error && !!retryResult.value && typeof retryResult.value === 'object';
+    if (retryUsable) {
+      // UPGRADE: a real critique replaces the sampling failure.
+      effectiveCriticResult = retryResult;
+    } else if (retryResult.error && !criticFailureIsOperational(retryResult.error)) {
+      // The re-sample hit a NON-retryable condition (budget exhausted, provider
+      // unavailable). Keep the FIRST failure's code so the reported reason still
+      // describes the operational loss that actually discarded the candidate,
+      // and release the bound so a real configuration fault cannot buy a retry.
+      criticAttempts = 0;
+    }
+  }
+  if (effectiveCriticResult.error) {
+    return {
+      status: 'FAILED',
+      candidateId,
+      // `effectiveCriticResult.error` is the FIRST failure's code whenever the
+      // re-sample only failed harder, so the reason a candidate is reported as
+      // lost is always the error that cost it the run.
+      reason: operationalProviderReason('CRITIC', effectiveCriticResult.error),
+      triage: usableTriage,
+      analysis,
+      analysisAttempts,
+      triageAttempts,
+      criticAttempts,
+    };
+  }
+  if (!effectiveCriticResult.value || typeof effectiveCriticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis, analysisAttempts, triageAttempts, criticAttempts };
+  const critic = normalizeCritic(effectiveCriticResult.value);
   const publicationGate = deterministicPublicationGate(candidate, analysis, critic, now);
   if (publicationGate.errors.length > 0) {
     const reviewRequired = publicationGate.decision === 'NEEDS_HUMAN_REVIEW';
@@ -397,6 +526,7 @@ export async function runGambitStages(
         politicalDecision,
         analysisAttempts,
         triageAttempts,
+        criticAttempts,
       };
     }
     return {
@@ -411,11 +541,12 @@ export async function runGambitStages(
       draft,
       analysisAttempts,
       triageAttempts,
+      criticAttempts,
     };
   }
 
   const draft = composeDraft(candidate, evidence, analysis, critic, dependencies, now, promptVersions);
-  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft, analysisAttempts, triageAttempts };
+  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft, analysisAttempts, triageAttempts, criticAttempts };
 }
 
 export async function runQualifiedGambitWorkflow(
@@ -460,6 +591,13 @@ export async function runQualifiedGambitWorkflow(
   // triage flip rate must be measurable from production data, not inferred.
   if (stageResult.triageAttempts) {
     await repository.recordCandidateTriageAttempts(input.candidateId, stageResult.triageAttempts);
+  }
+  // And for the critic operational re-sample (migration 0030): the critic's
+  // OPERATIONAL failure rate -- not its rejection rate -- is the number Phase
+  // 1.7 established as the thing eating candidates, so it must be measurable
+  // from production data rather than inferred from a local probe.
+  if (stageResult.criticAttempts) {
+    await repository.recordCandidateCriticAttempts(input.candidateId, stageResult.criticAttempts);
   }
   if (stageResult.status === 'FAILED') {
     await repository.setCandidateStatus(input.candidateId, 'DISCOVERED', null);

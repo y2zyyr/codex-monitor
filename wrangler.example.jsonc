@@ -113,6 +113,11 @@
     // reasoning-emitting model needs -- the exact N6 configuration mismatch
     // Phase 1.5/1.6 measured. `tests/open-gambit-role-budget.test.ts` pins these
     // numbers against the code's own 8,000-token clamp.
+    //
+    // `timeoutMs` is pinned at 30,000 for every non-translation role because
+    // that IS the code clamp: Phase 1.7 T1 measured successful critic calls up
+    // to 29.7s, so a larger value cannot be expressed and a larger token budget
+    // would collide with the deadline before it helped.
     "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":2000}}",
     "GAMBIT_LLM_PROVIDER": "",
     "GAMBIT_LLM_BASE_URL": "",
@@ -128,14 +133,18 @@
     "GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN": "3",
     "GAMBIT_MAX_LLM_CALLS_PER_RUN": "12",
     // Worst case for one candidate (one fresh Workflow budget) with the role
-    // budgets above: triage 2,400 x2 + analysis 8,000 x2 + critic 6,000 = 26,800
-    // tokens / 5 calls, against a best case of 16,400 / 3 calls. The ceiling must
-    // cover the WORST case, not the best one, because `consume()` charges the
-    // declared budget before each attempt.
-    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "28000",
-    // Translation has its own fail-closed quota. Measured worst case for one
-    // Workflow is 4 locales x 2 attempts x the 2,000-token translation role
-    // budget = 8 calls / 16,000 tokens; the code defaults are those bounds.
+    // budgets above: triage 2,400 x2 + analysis 8,000 x2 + critic 6,000 x2 (the
+    // Phase 1.7 T2 bounded critic OPERATIONAL re-sample) = 32,800 tokens /
+    // 6 calls, against a best case of 16,400 / 3 calls. The ceiling must cover
+    // the WORST case, not the best one, because `consume()` charges the declared
+    // budget before each attempt. 33,000 is the smallest round number that
+    // covers 32,800.
+    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "33000",
+    // Translation has its own fail-closed quota, declared explicitly rather than
+    // left to the code default so a future change to `gambitBudgetFromEnv()`
+    // cannot silently move this bound. Measured worst case for one Workflow is
+    // 4 locales x 2 attempts x the 2,000-token translation role budget = 8 calls
+    // / 16,000 tokens.
     "GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN": "8",
     "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "16000",
     "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",

@@ -92,13 +92,20 @@ function readShape(path: string, label: string): ProductionShape {
 }
 
 /**
- * Bounded re-samples, mirroring `GAMBIT_ANALYSIS_RETRY_LIMIT` and
- * `GAMBIT_TRIAGE_RETRY_LIMIT` in `pipeline.ts`. `budget.consume()` charges the
- * role's DECLARED `tokenBudget` before each attempt, so the worst case must be
- * computed from the bounds, not from measured usage.
+ * Bounded re-samples, mirroring `GAMBIT_ANALYSIS_RETRY_LIMIT`,
+ * `GAMBIT_TRIAGE_RETRY_LIMIT` and `GAMBIT_CRITIC_RETRY_LIMIT` in `pipeline.ts`.
+ * `budget.consume()` charges the role's DECLARED `tokenBudget` before each
+ * attempt, so the worst case must be computed from the bounds, not from
+ * measured usage.
  */
 const TRIAGE_RETRY_LIMIT = 1;
 const ANALYSIS_RETRY_LIMIT = 1;
+/**
+ * Phase 1.7 T2. The critic's residual ~1/3 operational failure rate (Phase 1.6
+ * ~35%, Phase 1.7 T1 33% over 21 calls) is a TOKEN wall that no configuration
+ * can lift, so one bounded re-sample absorbs it.
+ */
+const CRITIC_RETRY_LIMIT = 1;
 
 /** Locales that must pass translation validation, with the existing corrective retry. */
 const TRANSLATION_LOCALES = 4;
@@ -114,11 +121,11 @@ function roleBudget(shape: ProductionShape, role: string): number {
 function worstCaseTokens(shape: ProductionShape): number {
   return roleBudget(shape, 'triage') * (1 + TRIAGE_RETRY_LIMIT)
     + roleBudget(shape, 'gambit_analysis') * (1 + ANALYSIS_RETRY_LIMIT)
-    + roleBudget(shape, 'critic');
+    + roleBudget(shape, 'critic') * (1 + CRITIC_RETRY_LIMIT);
 }
 
 function worstCaseCalls(shape: ProductionShape): number {
-  return (1 + TRIAGE_RETRY_LIMIT) + (1 + ANALYSIS_RETRY_LIMIT) + 1;
+  return (1 + TRIAGE_RETRY_LIMIT) + (1 + ANALYSIS_RETRY_LIMIT) + (1 + CRITIC_RETRY_LIMIT);
 }
 
 /** The cheapest path that can still reach a publication decision. */
@@ -241,6 +248,11 @@ describe('Phase 1.6 T2: the documented production LLM shape is reasoning-budget-
   it('reports the per-candidate envelope the AGENTS.md table documents', () => {
     // Not an assertion about intent -- a guard that the documented numbers and
     // the configuration still agree. Update both together.
+    //
+    // Phase 1.7 T2 raised the worst case by one critic attempt (6,000 tokens /
+    // 1 call), because the critic's residual tail is a token wall that no
+    // configuration can lift: triage 2,400x2 + analysis 8,000x2 + critic
+    // 6,000x2 = 32,800 tokens / 6 calls.
     for (const shape of SHAPES) {
       // The ceiling is per fresh Workflow budget; the global run-wide bound is
       // the number of dispatched candidates, never a per-source Top-K.
@@ -250,14 +262,16 @@ describe('Phase 1.6 T2: the documented production LLM shape is reasoning-budget-
         worstCaseTokens: worstCaseTokens(shape),
         bestCaseTokens: bestCaseTokens(shape),
         worstCaseCalls: worstCaseCalls(shape),
-        maxLlmTokens: shape.maxLlmTokens,
-        maxLlmCalls: shape.maxLlmCalls,
       }).toMatchObject({
-        worstCaseTokens: 26_800,
+        worstCaseTokens: 32_800,
         bestCaseTokens: 16_400,
-        worstCaseCalls: 5,
-        maxLlmTokens: 28_000,
+        worstCaseCalls: 6,
       });
+      // The ceiling itself is asserted against the worst case by
+      // 'keeps one candidate inside the per-Workflow token ceiling on every
+      // path' above, so it is not re-pinned here.
+      expect(shape.maxLlmTokens, `${shape.label}: the ceiling must cover 32,800`).toBeGreaterThanOrEqual(32_800);
+      expect(shape.maxLlmCalls, `${shape.label}: the call ceiling must cover 6`).toBeGreaterThanOrEqual(6);
     }
   });
 });

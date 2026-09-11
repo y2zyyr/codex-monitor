@@ -1,0 +1,45 @@
+-- 0030_gambit_critic_attempts.sql
+-- Additive migration: how many BOUNDED critic OPERATIONAL re-samples a
+-- candidate consumed.
+--
+-- The critic stage is the last LLM call before the deterministic publication
+-- gate, so an operational failure there is the most expensive place in the
+-- pipeline to lose a candidate: triage passed, analysis produced a QUALIFIED
+-- thesis with trajectories, and then the run ends with no verdict at all.
+--
+-- Phase 1.6 measured the critic truncated in 8 of 11 calls at a 3,000-token
+-- budget, and about 4 of 12 at 6,000. Phase 1.7 T1 diagnosed the residual tail
+-- precisely: at critic 6,000 the surviving failures are NOT deadline kills but
+-- TOKEN walls -- every one ended at `finish_reason=length` with
+-- `reasoning_tokens = completion_tokens = 6,000` and 0-506 bytes of content, so
+-- the model was still reasoning when the budget ran out and never emitted an
+-- answer. 5 of 7 observed failures were this shape; 2 were deadline kills.
+--
+-- Neither limit can be raised: `tokenBudget` clamps at 8,000 and non-translation
+-- `timeoutMs` clamps at 30,000 ms, and the measured success tail already reaches
+-- 29.7 s at 6,000 tokens, so 8,000 would convert token-wall failures into
+-- deadline failures rather than remove them. Only a code change can absorb the
+-- tail.
+--
+-- Phase 1.7 adds at most one bounded critic re-sample, and only for an
+-- OPERATIONAL failure, following the same invariant as the analysis (0027) and
+-- triage (0029) re-samples: a re-sample can only turn a SAMPLING FAILURE into a
+-- real verdict. A failed or unusable re-sample keeps the FIRST failure, so
+-- retrying can never convert an operational failure into a definite rejection,
+-- and never the reverse.
+--
+-- A critic that returns a usable verdict -- accepted, or accepted=false with
+-- evidence-backed concerns -- is a POLICY judgement and is NEVER re-sampled.
+-- Re-rolling it would be shopping for a different answer to a judgement
+-- question, the same reason a political triage exclusion is never re-sampled.
+--
+-- Semantics: 0 = the first critic attempt decided the candidate (whether it
+--            approved, rejected, or succeeded on the first call),
+--            1 = one bounded operational re-sample was spent.
+-- It is a RETRY counter, not a total attempt counter.
+--
+-- Strictly additive: no old migration is edited and no historical row is
+-- rewritten. Rows written before this migration keep the DEFAULT 0, which
+-- correctly reads as "no retry was available in that code path".
+
+ALTER TABLE gambit_candidates ADD COLUMN critic_attempts INTEGER NOT NULL DEFAULT 0;

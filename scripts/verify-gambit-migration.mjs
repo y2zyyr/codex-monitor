@@ -125,14 +125,22 @@ try {
   const localeMigration = readFileSync(join(root, 'migrations', '0023_gambit_translation_locales.sql'), 'utf8');
   const provenanceMigration = readFileSync(join(root, 'migrations', '0024_gambit_political_provenance.sql'), 'utf8');
   const candidateColumns = query("PRAGMA table_info(gambit_candidates)").map(row => row.name);
+  // The bounded re-sample counters. 0027 (analysis), 0029 (triage) and 0030
+  // (critic) each added one; `runQualifiedGambitWorkflow` writes them on every
+  // outcome, including NO_GAMBIT and FAILED, so a missing column would turn a
+  // lost candidate into an unreported one. The column names are read from a
+  // fresh database, not assumed.
+  const retryCounterColumns = ['analysis_attempts', 'triage_attempts', 'critic_attempts']
+    .filter(name => candidateColumns.includes(name));
   const result = {
-    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && migrationRows.some(row => row.name === '0023_gambit_translation_locales.sql') && migrationRows.some(row => row.name === '0024_gambit_political_provenance.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && localeMigration.includes("'ja','fr','es'") && localeRows.includes("'ja','fr','es'") && provenanceMigration.includes('political_decision_source') && candidateColumns.includes('political_decision_source') && candidateColumns.includes('political_decision_confidence') && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
+    overall: foreignKeys.length === 0 && migrationRows.some(row => row.name === '0021_open_gambit.sql') && migrationRows.some(row => row.name === '0023_gambit_translation_locales.sql') && migrationRows.some(row => row.name === '0024_gambit_political_provenance.sql') && gambitTables.length >= 15 && indexes.length >= 12 && migrationFiles.includes('gambit_predictions') && localeMigration.includes("'ja','fr','es'") && localeRows.includes("'ja','fr','es'") && provenanceMigration.includes('political_decision_source') && candidateColumns.includes('political_decision_source') && candidateColumns.includes('political_decision_confidence') && retryCounterColumns.length === 3 && immutability.rejectedAttackCount === immutability.attackCount && immutability.appendOnlyWritesSucceeded,
     latestMigration: migrationRows.at(-1)?.name ?? null,
     migrationCount: migrationRows.length,
     gambitTableCount: gambitTables.length,
     gambitIndexCount: indexes.length,
     foreignKeyViolations: foreignKeys.length,
     politicalProvenanceColumns: candidateColumns.filter(name => name === 'political_decision_source' || name === 'political_decision_confidence'),
+    retryCounterColumns,
     translationLocales: ['en', 'zh', 'ja', 'fr', 'es'],
     immutability,
   };
