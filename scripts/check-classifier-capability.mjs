@@ -34,6 +34,8 @@ if (process.exitCode !== 2) {
       },
       body: JSON.stringify({
         model,
+        ...(new URL(baseUrl).origin === 'https://api.deepseek.com' ? { thinking: { type: 'disabled' } } : {}),
+        response_format: { type: 'json_object' },
         temperature: 0,
         max_tokens: 32,
         messages: [

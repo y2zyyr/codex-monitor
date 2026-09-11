@@ -1,3 +1,4 @@
+import { boundedCompletionOptions } from '../utils/llm-request';
 import type { Env } from '../types';
 import type { CommunityConfig } from './config';
 import { SITE_LOCALES, type SiteLocale } from '../i18n';
@@ -235,7 +236,7 @@ export class OpenAICompatibleTranslationProvider implements TranslationProvider 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.config.translationApiKey}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, ...boundedCompletionOptions(this.config.translationBaseUrl) }),
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Translation provider HTTP ${response.status}`);

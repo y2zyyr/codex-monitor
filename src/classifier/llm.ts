@@ -4,6 +4,7 @@
 import type { ClassificationFailureKind, ClassificationProvider, ClassificationOutcome, SourcePost, Env } from '../types';
 import { EVENT_CATEGORIES, PRODUCT_SCOPES, STATEMENT_NATURES } from '../types';
 import type { ProductScope, StatementNature } from '../types';
+import { boundedCompletionOptions } from '../utils/llm-request';
 import { getTrustedSourceContext } from './types';
 
 interface LLMRequestMessage {
@@ -156,6 +157,7 @@ If evidence quality is INDEXED, treat the snippet as provisional evidence and ke
         },
         body: JSON.stringify({
           model: this.model,
+          ...boundedCompletionOptions(this.baseUrl),
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },

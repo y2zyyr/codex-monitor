@@ -70,6 +70,15 @@ describe('LLM classifier coverage taxonomy', () => {
     expect(() => new LLMClassifier(env)).toThrow(/Classifier configuration is missing/);
   });
 
+  it.each(['https://api.deepseek.com', 'https://api.deepseek.com/v1', 'https://llm.example/v1'])('bounds final-text calls for %s', async (baseUrl) => {
+    const fetchMock = vi.fn(async () => response(baseResult({})));
+    vi.stubGlobal('fetch', fetchMock);
+    await new LLMClassifier({ LLM_API_KEY: 'test', LLM_BASE_URL: baseUrl, LLM_MODEL: 'deepseek-flash' } as Env).classify(post('Codex feedback'));
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request.thinking).toEqual(baseUrl.includes('api.deepseek.com') ? { type: 'disabled' } : undefined);
+    expect(request.max_tokens).toBe(2000);
+  });
+
   it('accepts product updates, roadmap questions, and feature discussions', async () => {
     const fetchMock = vi.fn(async () => response(baseResult({
       category: 'ROADMAP_HINT',
