@@ -48,6 +48,16 @@ const BASE_URL = process.env.GAMBIT_PHASE15_BASE_URL ?? 'https://api.deepseek.co
 const MODEL = process.env.GAMBIT_PHASE15_MODEL ?? 'deepseek-flash';
 
 /**
+ * Role budgets. The DEFAULTS are the Phase 1.5 values, so re-running this file
+ * without overrides reproduces the published Phase 1.5 baseline byte-for-byte;
+ * the overrides exist so Phase 1.6 T3 can re-measure the SAME probe after the N6
+ * fix (analysis 8,000 / critic 6,000) without forking the file or editing a
+ * frozen result.
+ */
+const ANALYSIS_BUDGET = Number(process.env.GAMBIT_PHASE15_ANALYSIS_BUDGET ?? 4_000);
+const CRITIC_BUDGET = Number(process.env.GAMBIT_PHASE15_CRITIC_BUDGET ?? 3_000);
+
+/**
  * Bypass deterministic admission ONLY, exactly as Phase 0 did and as the task
  * instructs: the 4 positive samples are Phase 1's T6-admitted candidates, but
  * re-running the *real* gate here would let an eligibility change confound the
@@ -270,8 +280,8 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.5 — downstream baseline redo', 
     const roles = getGambitModelRoleConfig({
       GAMBIT_MODEL_ROLES_JSON: JSON.stringify({
         triage: { timeoutMs: 60_000, tokenBudget: 2_400 },
-        gambit_analysis: { timeoutMs: 90_000, tokenBudget: 4_000 },
-        critic: { timeoutMs: 60_000, tokenBudget: 3_000 },
+        gambit_analysis: { timeoutMs: 90_000, tokenBudget: ANALYSIS_BUDGET },
+        critic: { timeoutMs: 60_000, tokenBudget: CRITIC_BUDGET },
       }),
       GAMBIT_LLM_MODEL: MODEL,
       GAMBIT_LLM_PROVIDER: 'deepseek',
@@ -282,6 +292,16 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.5 — downstream baseline redo', 
      * `timeout` can be distinguished from "the request never left the process".
      */
     const providerDiagnostics: Array<Record<string, unknown>> = [];
+
+    // A role budget that the clamp silently lowered would make this run measure
+    // a different configuration than the one it reports.
+    const effective = (roleName: string) => roles.find(item => item.role === roleName)!.tokenBudget;
+    console.log(`\n===== PHASE 1.5 PROBE CONFIG =====`);
+    console.log(`baseUrl=${BASE_URL} model=${MODEL} replicates=${REPLICATES} matrices=A,B targets=${ALL_TARGETS.length}`);
+    console.log(`role budgets: triage=${effective('triage')} analysis=${effective('gambit_analysis')} critic=${effective('critic')}`);
+    expect(effective('triage')).toBe(2_400);
+    expect(effective('gambit_analysis')).toBe(Math.min(8_000, ANALYSIS_BUDGET));
+    expect(effective('critic')).toBe(Math.min(8_000, CRITIC_BUDGET));
 
     /**
      * Wrap the REAL production provider so every call is recorded with its
