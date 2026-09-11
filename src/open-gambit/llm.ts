@@ -13,6 +13,30 @@ export const GAMBIT_PROMPT_VERSION = 'gambit-prompts-v2';
 /** Compatibility export; these are presentation identities, not model IDs. */
 export const GAMBIT_PUBLIC_MODEL_NAMES = GAMBIT_PUBLIC_AI_IDENTITIES;
 
+/**
+ * Stable operational session label sent as `x-opencode-session`.
+ *
+ * The configured gateway (`opencode.ai/zen/go`) rejects a completion without
+ * this header with HTTP 400 `MissingSessionID` -- "Request is missing
+ * x-opencode-session and cannot be routed efficiently." The value is an
+ * operations/routing label, never a credential: it carries no part of the API
+ * key, is not a per-request secret, and is safe to record in diagnostics.
+ *
+ * A single fixed identifier is deliberate. Per-run random values would defeat
+ * the gateway's routing affinity and make one production deployment
+ * indistinguishable from another in gateway-side logs. Deployments that share
+ * a gateway account can disambiguate themselves with `GAMBIT_LLM_SESSION_ID`
+ * (for example staging), which is why the header is configurable.
+ */
+export const GAMBIT_DEFAULT_LLM_SESSION_ID = 'gambit-open-gambit';
+
+/**
+ * Normalised provider error code meaning "the request never reached a model
+ * because the gateway could not route it". Recorded as its own bounded code so
+ * this failure is never reported as a generic `http_400`.
+ */
+export const GAMBIT_MISSING_SESSION_CODE = 'MISSING_SESSION_ID';
+
 const DEFAULT_ROLE_CONFIG: Array<GambitModelRoleConfig> = [
   { role: 'triage', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 8_000, retryLimit: 1, tokenBudget: 900 },
   { role: 'fact_extraction', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 8_000, retryLimit: 1, tokenBudget: 1_200 },
@@ -68,6 +92,11 @@ export interface GambitProviderOptions {
   baseUrl: string;
   modelId: string;
   providerName?: string;
+  /**
+   * Stable operational session label for the `x-opencode-session` header.
+   * Defaults to `GAMBIT_DEFAULT_LLM_SESSION_ID`.
+   */
+  sessionId?: string;
   fetchImpl?: typeof fetch;
   onDiagnostic?: (diagnostic: GambitProviderDiagnostic) => void;
 }
@@ -82,6 +111,13 @@ export interface GambitProviderDiagnostic {
   latencyMs: number;
   status?: number;
   errorCode?: string;
+  /**
+   * Bounded provider-issued machine-readable error code (for example
+   * `MISSING_SESSION_ID`), extracted from the error envelope's `type`/`code`
+   * field only. Never the provider's human-readable message, a prompt, or a
+   * response body.
+   */
+  providerErrorCode?: string;
   retryable: boolean;
   /** Privacy-safe request/transport metadata; never a prompt or response body. */
   startedAt: string;
@@ -137,9 +173,11 @@ interface StructuredContentShape {
 export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
   readonly name: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly sessionId: string;
 
   constructor(private readonly options: GambitProviderOptions) {
     this.name = options.providerName || 'compatible-llm';
+    this.sessionId = boundedSessionId(options.sessionId) ?? GAMBIT_DEFAULT_LLM_SESSION_ID;
     // Cloudflare's global fetch is receiver-sensitive. Calling the bare
     // function later as `this.fetchImpl(...)` can fail before DNS/TLS, while
     // the Workflow wrapper's `globalThis.fetch(...)` succeeds. Bind only the
@@ -229,6 +267,11 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${this.options.apiKey}`,
+              // Required by the configured gateway: without it the request is
+              // rejected with HTTP 400 MissingSessionID before any model work
+              // happens. Unknown headers are ignored by plain OpenAI-compatible
+              // endpoints, so this is safe for every configured provider.
+              'x-opencode-session': this.sessionId,
               'X-Tibo-Gambit-Request': requestHash.slice(0, 16),
             },
             body: requestBody,
@@ -238,6 +281,22 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
         responseReceived = true;
         if (!response.ok) {
           lastError = `http_${response.status}`;
+          const providerErrorCode = await providerErrorCodeFromResponse(response);
+          // 4xx stays non-retryable: it is a deterministic client/provider
+          // fault, and retrying it only burns budget. The one case that must
+          // not disappear into a bare status code is a rejected gateway
+          // session, because that is an operational configuration fault that
+          // silently produces "zero publication". It is annotated here and
+          // carried into the durable attempt code below.
+          if (providerErrorCode === GAMBIT_MISSING_SESSION_CODE) {
+            lastError = `http_${response.status}_missing_session_id`;
+            console.warn('[Open Gambit] provider_missing_session_header', {
+              endpointHost,
+              role: request.role,
+              status: response.status,
+              header: 'x-opencode-session',
+            });
+          }
           const retryable = response.status === 429 || response.status >= 500;
           this.emitDiagnostic({
             phase: 'HTTP',
@@ -248,7 +307,8 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
             attempt: attempt + 1,
             latencyMs: Date.now() - started,
             status: response.status,
-            errorCode: lastError,
+            errorCode: `http_${response.status}`,
+            providerErrorCode,
             retryable,
             startedAt,
             responseReceived,
@@ -685,7 +745,7 @@ export class MockGambitProvider implements GambitLLMProvider {
 
 export function providerForRole(
   role: GambitModelRoleConfig,
-  env: Pick<Env, 'GAMBIT_LLM_API_KEY' | 'GAMBIT_LLM_BASE_URL'>,
+  env: Pick<Env, 'GAMBIT_LLM_API_KEY' | 'GAMBIT_LLM_BASE_URL'> & { GAMBIT_LLM_SESSION_ID?: string },
   fetchImpl?: typeof fetch,
   onDiagnostic?: (diagnostic: GambitProviderDiagnostic) => void,
 ): GambitLLMProvider | null {
@@ -697,6 +757,7 @@ export function providerForRole(
     modelId,
     baseUrl: env.GAMBIT_LLM_BASE_URL?.trim() || 'https://api.openai.com/v1',
     providerName: role.runtimeProvider,
+    sessionId: env.GAMBIT_LLM_SESSION_ID,
     fetchImpl,
     onDiagnostic,
   });
@@ -708,6 +769,92 @@ function safeEndpointHost(endpoint: string): string {
   } catch {
     return 'invalid-endpoint';
   }
+}
+
+const PROVIDER_ERROR_BODY_BYTES = 2_048;
+const PROVIDER_ERROR_BODY_TIMEOUT_MS = 1_000;
+
+/**
+ * Read only the machine-readable error code from a provider error envelope.
+ *
+ * The configured gateway answers a rejected request with a structured body
+ * such as `{"type":"MissingSessionID","message":"..."}`. Only the structured
+ * `type`/`code` fields are read, and only for the client-error statuses that
+ * can mean a configuration fault. The human-readable message is never
+ * captured, logged, persisted, or returned -- the returned value is a bounded
+ * token, so no provider free text can travel further than this function.
+ */
+async function providerErrorCodeFromResponse(response: Response): Promise<string | undefined> {
+  if (response.status !== 400 && response.status !== 401 && response.status !== 403) return undefined;
+  let body: string;
+  try {
+    body = await boundedProviderErrorBody(response);
+  } catch {
+    return undefined;
+  }
+  if (!body) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    // A non-JSON error body carries no machine-readable code; the HTTP status
+    // remains the only recorded classification.
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  const envelope = parsed as Record<string, unknown>;
+  const nested = envelope.error && typeof envelope.error === 'object' && !Array.isArray(envelope.error)
+    ? envelope.error as Record<string, unknown>
+    : null;
+  // Field order matters, and was verified against the live gateway: the real
+  // 400 body is
+  //   {"type":"error","error":{"type":"MissingSessionID","message":"..."}}
+  // so the generic outer `type` must never win over the specific inner code.
+  // Some gateways instead answer with a flat {"type":"MissingSessionID"}.
+  for (const candidate of [nested?.type, nested?.code, envelope.type, envelope.code]) {
+    const code = boundedProviderErrorCode(candidate);
+    if (code && !GENERIC_PROVIDER_ERROR_CODES.has(code)) return code;
+  }
+  return undefined;
+}
+
+/** Placeholder codes that carry no diagnostic value on their own. */
+const GENERIC_PROVIDER_ERROR_CODES = new Set(['ERROR', 'ERRORS', 'FAILURE', 'FAILED', 'UNKNOWN']);
+
+/** Bounded, deadline-guarded read so a stalled gateway cannot extend a failure. */
+async function boundedProviderErrorBody(response: Response): Promise<string> {
+  const body = response.text();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<string>(resolve => {
+    timer = setTimeout(() => resolve(''), PROVIDER_ERROR_BODY_TIMEOUT_MS);
+  });
+  try {
+    const text = await Promise.race([body, deadline]);
+    return text.slice(0, PROVIDER_ERROR_BODY_BYTES);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** `MissingSessionID` -> `MISSING_SESSION_ID`; free text is rejected outright. */
+function boundedProviderErrorCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u.test(trimmed)) return null;
+  const normalized = trimmed
+    .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/gu, '_')
+    .replace(/^_+|_+$/gu, '')
+    .toUpperCase()
+    .slice(0, 48);
+  return normalized || null;
+}
+
+/** Operational session label: bounded, single-line, and never a credential. */
+function boundedSessionId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const label = value.trim().replace(/[\r\n]/gu, '');
+  return label ? label.slice(0, 80) : null;
 }
 
 function requestDiagnosticMetadata(request: GambitLLMRequest, requestBody: string): Pick<

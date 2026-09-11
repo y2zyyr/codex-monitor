@@ -615,6 +615,13 @@ export interface Env {
   /** Non-secret actual provider label for runtime provenance; never a public AI identity. */
   GAMBIT_LLM_PROVIDER?: string;
   GAMBIT_LLM_MODEL?: string;
+  /**
+   * Stable operational label for the `x-opencode-session` header the Gambit
+   * provider client sends. Not a secret: it is a routing/attribution label.
+   * Defaults to `gambit-open-gambit` in code, so an unset variable can never
+   * reproduce the missing-session rejection.
+   */
+  GAMBIT_LLM_SESSION_ID?: string;
   GAMBIT_CRON_WINDOWS?: string;
   GAMBIT_SCHEDULE_ENABLED?: string;
   GAMBIT_LOCAL_MEMORY_SNAPSHOTS?: string;

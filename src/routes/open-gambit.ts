@@ -590,6 +590,7 @@ function safeProviderDiagnostic(diagnostic: GambitProviderDiagnostic): Record<st
     latencyMs: diagnostic.latencyMs,
     status: diagnostic.status ?? null,
     errorCode: diagnostic.errorCode ?? null,
+    providerErrorCode: diagnostic.providerErrorCode ?? null,
     retryable: diagnostic.retryable,
     startedAt: diagnostic.startedAt,
     responseReceived: diagnostic.responseReceived,
