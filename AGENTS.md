@@ -120,7 +120,7 @@ all enabled sources
 | `GAMBIT_MAX_HTTP_REQUESTS_PER_RUN` | 20 |
 | `GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN` | `3, global` |
 | `GAMBIT_MAX_LLM_CALLS_PER_RUN` | `8 per fresh Workflow budget` |
-| `GAMBIT_MAX_LLM_TOKENS_PER_RUN` | `18,000 per fresh Workflow budget` |
+| `GAMBIT_MAX_LLM_TOKENS_PER_RUN` | `28,000 per fresh Workflow budget` |
 | `GAMBIT_MAX_ITEMS_PER_SOURCE` | 3 |
 | `GAMBIT_MAX_ITEM_AGE_DAYS` | 30 |
 
@@ -128,7 +128,35 @@ all enabled sources
 
 先去重 exact fingerprints，再对同一 strategic event 的 corroborating descriptions 进行 clustering。Ranking 必须是全局的，使用 strategic substance、event-family priority、source authority、recency 和 corroboration。昂贵分析上限 `GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN=3` 作用于整个 pool，是 `GLOBAL Top-K`，绝不是 `Top-K per source`，也绝不是每天一个 source。Routine items 即使其 source fetch/snapshot 可以被记录，也不得消耗 deep-analysis LLM calls。
 
-`GambitRunBudget` 分为 `gambit_llm`、`gambit_translation`、`gambit_http`、`gambit_search`、`gambit_x` 和 `gambit_github` namespaces，并在耗尽时 fail closed。`gambit_translation` 是独立配额（默认 8 calls / 16,000 tokens）：translation 与 deep analysis 是同一 Workflow 内两个顺序阶段，共用一个 18,000-token 上限时，只要有一个 locale 需要既有的 corrective 第二次尝试就会让整次发布以 `GAMBIT_LLM_BUDGET_EXCEEDED` 失败。每个 Workflow 的合计最坏情况因此是 `maxLlmTokens + maxTranslationLlmTokens`。构造函数会把缺失/非正的 limit 归一化为文档化的默认值，绝不解释为“无上限”。在 production Workflow path 中，每个 Workflow 内部都会创建 fresh budget；global run-wide analysis bound 是已 dispatch 的 3 个 candidates。重新检查 orchestration 之前，不得假定名为 `*_PER_RUN` 的 environment variable 是跨全部 3 个 Workflow instances 的 single global LLM cap。
+`GambitRunBudget` 分为 `gambit_llm`、`gambit_translation`、`gambit_http`、`gambit_search`、`gambit_x` 和 `gambit_github` namespaces，并在耗尽时 fail closed。`gambit_translation` 是独立配额（默认 8 calls / 16,000 tokens）：translation 与 deep analysis 是同一 Workflow 内两个顺序阶段，共用一个 `GAMBIT_MAX_LLM_TOKENS_PER_RUN` 上限时，只要有一个 locale 需要既有的 corrective 第二次尝试就会让整次发布以 `GAMBIT_LLM_BUDGET_EXCEEDED` 失败。每个 Workflow 的合计最坏情况因此是 `maxLlmTokens + maxTranslationLlmTokens`。构造函数会把缺失/非正的 limit 归一化为文档化的默认值，绝不解释为“无上限”。在 production Workflow path 中，每个 Workflow 内部都会创建 fresh budget；global run-wide analysis bound 是已 dispatch 的 3 个 candidates。重新检查 orchestration 之前，不得假定名为 `*_PER_RUN` 的 environment variable 是跨全部 3 个 Workflow instances 的 single global LLM cap。
+
+单候选（一个 fresh Workflow budget）的 token 账，按角色**声明**的预算预扣（`optionalStage` 在每次尝试前 `consume`，不是按实际用量）：
+
+```text
+最坏路径  triage 2,400×2 + analysis 8,000×2 + critic 6,000 = 26,800 tokens / 5 calls
+最佳路径  triage 2,400   + analysis 8,000   + critic 6,000 = 16,400 tokens / 3 calls
+```
+
+`GAMBIT_MAX_LLM_TOKENS_PER_RUN=28,000` 必须覆盖**最坏**路径（余量 1,200），`GAMBIT_MAX_LLM_CALLS_PER_RUN=8` 覆盖 5 次调用。上限不足时该 candidate 以 `GAMBIT_LLM_BUDGET_EXCEEDED` fail closed，绝不降级。
+
+### LLM 角色预算与两个不可配置的上限（N6）
+
+Role token budgets 是**模型属性**，不是风格偏好。在会先产出 `reasoning_content` 的模型上，答案只在 reasoning 之后输出；当 `tokenBudget` 低于 reasoning 需求时，`finish_reason=length`、content 为 0 字节，管线记 `empty_response`。这就是 N6：**配置失配，不是代码回归**。Phase 1.5/1.6 在 `deepseek-flash` 上的实测：
+
+| 角色 | 预算 | 实测 reasoning tokens | 结果 |
+| --- | ---: | --- | --- |
+| triage | 2,400 | 159–1,966，偶发 ≥2,400 | 12 次中 1 次截断 |
+| gambit_analysis | 4,000 | 3,000–4,000+ | 33 次中 26 次失败（N6 本体） |
+| gambit_analysis | **8,000** | 1,791–5,143 | **24/24 可用**（Phase 1.6 两轮各 12 次） |
+| critic | 3,000 | 可用者 1,840–2,545，其余 ≥3,000 | 11 次中 8 次截断 |
+| critic | **6,000** | 可用者 618–4,985，其余 ≥6,000 | 12 次中 4 次截断 |
+
+两个**无法由配置突破**的上限：
+
+1. `tokenBudget` 的 clamp 上限是 **8,000**（`getGambitModelRoleConfig`）。
+2. 非 translation 角色的 `timeoutMs` clamp 上限是 **30,000 ms**。critic 在 6,000 tokens 下实测有一次**成功**调用耗时 **29.4 s**，analysis 在 8,000 tokens 下实测最长 **27.1 s**；因此 critic 失败的形态在 3,000 时是 ~15 s 的纯 token 截断，在 6,000 时变成 **28.5–30.3 s 的 deadline 碰撞**（含一次硬 `timeout`）。
+
+结论：`analysis 8,000` 与 `critic 6,000` 是配置能达到的实际上限，**不能再靠改变量上调**（6,000→8,000 需要 >30 s，会先撞 deadline）。残余的截断尾部（critic 约 1/3）只能靠**代码变更**解决——有界 critic 操作失败重采样，与既有的 triage/analysis 有界重采样同构，并同样遵守“重试只能升级、不能降级”。在授权前不得修改这两个 clamp，也不得修改 `provider/model`。
 
 ### 早期资格判定不是发布
 
