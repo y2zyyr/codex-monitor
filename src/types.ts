@@ -632,6 +632,14 @@ export interface Env {
   GAMBIT_FETCH_CONCURRENCY?: string;
   GAMBIT_MAX_LLM_CALLS_PER_RUN?: string;
   GAMBIT_MAX_LLM_TOKENS_PER_RUN?: string;
+  /**
+   * Separate fail-closed quota for the translation phase of one Workflow
+   * (`gambit_translation`). Measured worst case: 4 locales x 2 attempts x the
+   * 2,000-token translation role budget. Code defaults are 8 calls / 16,000
+   * tokens, i.e. the smallest bounds that complete the measured worst case.
+   */
+  GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN?: string;
+  GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN?: string;
   GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN?: string;
   GAMBIT_MAX_X_REQUESTS_PER_RUN?: string;
   GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN?: string;

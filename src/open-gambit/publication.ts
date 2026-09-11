@@ -360,7 +360,10 @@ export async function translateGambit(
     for (let attempt = 0; attempt < 2 && !readyTranslation; attempt += 1) {
       const request = translationRequest(article, locale, translationRole, { corrective: attempt === 1 });
       const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
-      if (options.budget && !options.budget.consume('gambit_llm', request.tokenBudget)) {
+      // Translation draws on its own quota: the deep-analysis phase runs first,
+      // and a single locale needing its corrective second attempt used to exceed
+      // the shared ceiling and fail the whole publication.
+      if (options.budget && !options.budget.consume('gambit_translation', request.tokenBudget)) {
         await repository.recordLLMAttempt({
           runId: options.runId,
           candidateId: article.candidateId,

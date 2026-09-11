@@ -118,6 +118,11 @@
     "GAMBIT_MAX_SOURCES_PER_RUN": "20",
     "GAMBIT_MAX_LLM_CALLS_PER_RUN": "12",
     "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "24000",
+    // Translation has its own fail-closed quota. Measured worst case for one
+    // Workflow is 4 locales x 2 attempts x the 2,000-token translation role
+    // budget = 8 calls / 16,000 tokens; the code defaults are those bounds.
+    "GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN": "8",
+    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "16000",
     "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",
