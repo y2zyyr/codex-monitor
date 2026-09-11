@@ -1,0 +1,30 @@
+-- 0029_gambit_triage_attempts.sql
+-- Additive migration: how many BOUNDED triage re-samples a candidate consumed.
+--
+-- Triage is a sampling call over identical input, exactly like the analysis
+-- stage that 0027 already covers. Phase 1 measured 4 admitted candidates of
+-- which only 1 passed triage (`shouldDeepAnalysisRun=false` for two of them,
+-- `evidenceSufficient=false` for the third), and Phase 1.5 measured the SAME
+-- candidate and request returning `eventImportance` 0.5 on one replay and 0.62
+-- on another. Before this column existed, a single unlucky triage sample
+-- discarded a candidate before any expensive work ran, and the loss was
+-- invisible: the candidate simply left the pool with no retry and no counter.
+--
+-- Phase 1.5 adds at most one bounded triage re-sample, following the same
+-- invariant as the analysis re-sample: a re-sample can only UPGRADE a rejection
+-- into an approval. A rejected re-sample keeps the first verdict, and a
+-- re-sample that errors or returns an unusable schema also keeps the first
+-- verdict, so retrying can never convert a definite answer into an operational
+-- failure. This column makes the triage flip rate measurable from production
+-- data instead of inferred from a local experiment.
+--
+-- Semantics: 0 = the first attempt decided (no retry spent),
+--            1 = one bounded re-sample was spent.
+-- It is a RETRY counter, not a total attempt counter. A candidate that approved
+-- on the first attempt records 0 even though triage was called once.
+--
+-- Strictly additive: no old migration is edited and no historical row is
+-- rewritten. Rows written before this migration keep the DEFAULT 0, which
+-- correctly reads as "no retry was available in that code path".
+
+ALTER TABLE gambit_candidates ADD COLUMN triage_attempts INTEGER NOT NULL DEFAULT 0;

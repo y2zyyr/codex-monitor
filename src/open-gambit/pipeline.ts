@@ -58,6 +58,8 @@ export interface GambitStageResult {
   draft?: GambitDraft;
   /** Bounded analysis retries actually spent (0 = the first attempt decided). */
   analysisAttempts?: number;
+  /** Bounded triage re-samples actually spent (0 = the first attempt decided). */
+  triageAttempts?: number;
 }
 
 /**
@@ -75,6 +77,23 @@ export interface GambitStageResult {
  * the worst-case extra cost is one analysis call per candidate.
  */
 const GAMBIT_ANALYSIS_RETRY_LIMIT = 1;
+
+/**
+ * How many bounded re-samples the TRIAGE stage may spend when it rejects a
+ * candidate (`shouldDeepAnalysisRun=false` or `evidenceSufficient=false`).
+ *
+ * Triage is the same kind of call as analysis: a sampling call over identical
+ * input. Phase 1 measured 4 admitted candidates of which only 1 passed triage,
+ * and Phase 1.5 measured the same candidate returning `eventImportance` 0.5 and
+ * 0.62 on two replays of one request. Before this bound existed, one unlucky
+ * sample discarded a candidate before any expensive work happened, and the loss
+ * was invisible: the candidate simply left the pool.
+ *
+ * The bound stays at 1 for the same reason as the analysis bound -- the
+ * worst-case extra cost is one triage call (2,400 tokens) per candidate, and the
+ * retry can only UPGRADE a rejection into an approval, never the reverse.
+ */
+const GAMBIT_TRIAGE_RETRY_LIMIT = 1;
 
 const DEFAULT_TRIAGE: GambitTriageResult = {
   eventImportance: 0.6,
@@ -143,37 +162,83 @@ export async function runGambitStages(
     critic: await gambitPromptVersion('critic', criticSystemPrompt()),
   };
   const triageRole = roleConfig('triage', roles);
+  // The triage request is built once and reused byte-for-byte by the bounded
+  // retry: a re-sample changes only the provider's sampling, never the prompt,
+  // the evidence, the schema or the token budget.
+  const triageRequest: GambitLLMRequest = {
+    role: 'triage',
+    schemaName: 'GambitTriageV1',
+    system: triageSystemPrompt(),
+    user: `${candidate.headline}\n${candidate.summary}\n\n${evidenceForModel(evidence, evidence.map(item => ({
+      id: item.snapshotId,
+      sourceId: item.sourceId,
+      requestedUrl: item.canonicalUrl,
+      finalUrl: item.canonicalUrl,
+      canonicalUrl: item.canonicalUrl,
+      title: item.title,
+      publisher: item.publisher,
+      publishedAt: item.publishedAt,
+      retrievedAt: now.toISOString(),
+      normalizedContent: item.quote,
+      contentHash: item.contentHash,
+      extractorVersion: 'gambit-html-1',
+      sourceQualityTier: item.sourceTier,
+    } as GambitSourceSnapshot)))}`,
+    tokenBudget: triageRole.tokenBudget,
+    timeoutMs: triageRole.timeoutMs,
+    retryLimit: triageRole.retryLimit,
+  };
   const triage = await optionalStage<GambitTriageResult>(
     'TRIAGE',
     triageRole,
     dependencies.providers?.triage,
-    {
-      role: 'triage',
-      schemaName: 'GambitTriageV1',
-      system: triageSystemPrompt(),
-      user: `${candidate.headline}\n${candidate.summary}\n\n${evidenceForModel(evidence, evidence.map(item => ({
-        id: item.snapshotId,
-        sourceId: item.sourceId,
-        requestedUrl: item.canonicalUrl,
-        finalUrl: item.canonicalUrl,
-        canonicalUrl: item.canonicalUrl,
-        title: item.title,
-        publisher: item.publisher,
-        publishedAt: item.publishedAt,
-        retrievedAt: now.toISOString(),
-        normalizedContent: item.quote,
-        contentHash: item.contentHash,
-        extractorVersion: 'gambit-html-1',
-        sourceQualityTier: item.sourceTier,
-      } as GambitSourceSnapshot)))}`,
-      tokenBudget: triageRole.tokenBudget,
-      timeoutMs: triageRole.timeoutMs,
-      retryLimit: triageRole.retryLimit,
-    },
+    triageRequest,
     dependencies,
     candidateId,
   );
-  const usableTriage = triage.value ? normalizeTriage(triage.value) : DEFAULT_TRIAGE;
+  let usableTriage = triage.value ? normalizeTriage(triage.value) : DEFAULT_TRIAGE;
+  let triageAttempts = 0;
+  // TRIAGE BOUNDED RE-SAMPLE
+  //
+  // Triage is a sampling call, not a deterministic function: Phase 1 measured
+  // 4 admitted candidates of which only 1 passed triage, and Phase 1.5 measured
+  // the same candidate flipping between `eventImportance` 0.5 and 0.62 across
+  // replays. A single unlucky sample therefore discarded a strategically real
+  // candidate before analysis ever ran. This mirrors the analysis re-sample
+  // below and obeys the same invariant: a re-sample can only UPGRADE a
+  // rejection into an approval.
+  //
+  // A rejected re-sample consumes the bound and keeps the FIRST verdict. A
+  // re-sample that errors or returns an unusable schema also keeps the first
+  // verdict, so retrying can never turn a definite answer into an operational
+  // failure.
+  //
+  // Two rejections are deliberately NOT re-sampled:
+  //  - `triage.error`: there is no first valid verdict to preserve, and the
+  //    existing error path stays authoritative;
+  //  - a political exclusion: that is a deterministic POLICY decision on a
+  //    matter of scope, not sampling noise. Re-rolling it would be shopping for
+  //    a different answer to a policy question, which the fail-closed political
+  //    contract forbids.
+  const triageRejected = () => !triageAllowsDeepAnalysis(usableTriage)
+    && !(usableTriage.political?.excluded ?? usableTriage.politicsExcluded);
+  while (!triage.error && triageRejected() && triageAttempts < GAMBIT_TRIAGE_RETRY_LIMIT) {
+    triageAttempts += 1;
+    const retryResult = await optionalStage<GambitTriageResult>(
+      'TRIAGE',
+      triageRole,
+      dependencies.providers?.triage,
+      triageRequest,
+      dependencies,
+      candidateId,
+    );
+    const retryTriage = retryResult.error || !retryResult.value ? null : normalizeTriage(retryResult.value);
+    if (!retryTriage) break;
+    if (triageAllowsDeepAnalysis(retryTriage)) {
+      usableTriage = retryTriage;
+      break;
+    }
+  }
   if (!triageAllowsDeepAnalysis(usableTriage)) {
     const politicalDecision = usableTriage.political ?? politicalDecisionFromDeterministicPolicy({ excluded: usableTriage.politicsExcluded, reasons: [] });
     const reason = politicalDecision.excluded ? 'POLITICAL_TOPIC_EXCLUDED' : 'NO_GAMBIT_WORTH_PUBLISHING';
@@ -188,6 +253,7 @@ export async function runGambitStages(
         reason: 'POLICY_STATE_INCONSISTENT',
         triage: usableTriage,
         politicalDecision,
+        triageAttempts,
       };
     }
     return {
@@ -197,6 +263,7 @@ export async function runGambitStages(
       publicationDecision: politicalDecision.excluded ? 'POLITICAL_TOPIC_EXCLUDED' : 'NO_GAMBIT_WORTH_PUBLISHING',
       triage: usableTriage,
       politicalDecision,
+      triageAttempts,
     };
   }
   if (triage.error) {
@@ -238,9 +305,9 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (analysisResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('ANALYSIS', analysisResult.error), triage: usableTriage };
+  if (analysisResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('ANALYSIS', analysisResult.error), triage: usableTriage, triageAttempts };
   let analysis = normalizeAnalysis(analysisResult.value);
-  if (!analysis) return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage };
+  if (!analysis) return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, triageAttempts };
   let analysisAttempts = 0;
   while (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING' && analysisAttempts < GAMBIT_ANALYSIS_RETRY_LIMIT) {
     analysisAttempts += 1;
@@ -264,7 +331,7 @@ export async function runGambitStages(
     }
   }
   if (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING') {
-    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage, analysisAttempts };
+    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage, analysisAttempts, triageAttempts };
   }
 
   const criticRole = roleConfig('critic', roles);
@@ -298,8 +365,8 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis, analysisAttempts };
-  if (!criticResult.value || typeof criticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis, analysisAttempts };
+  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis, analysisAttempts, triageAttempts };
+  if (!criticResult.value || typeof criticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis, analysisAttempts, triageAttempts };
   const critic = normalizeCritic(criticResult.value);
   const publicationGate = deterministicPublicationGate(candidate, analysis, critic, now);
   if (publicationGate.errors.length > 0) {
@@ -329,6 +396,7 @@ export async function runGambitStages(
         critic,
         politicalDecision,
         analysisAttempts,
+        triageAttempts,
       };
     }
     return {
@@ -342,11 +410,12 @@ export async function runGambitStages(
       critic,
       draft,
       analysisAttempts,
+      triageAttempts,
     };
   }
 
   const draft = composeDraft(candidate, evidence, analysis, critic, dependencies, now, promptVersions);
-  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft, analysisAttempts };
+  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft, analysisAttempts, triageAttempts };
 }
 
 export async function runQualifiedGambitWorkflow(
@@ -386,6 +455,11 @@ export async function runQualifiedGambitWorkflow(
   // inferred, and is not lost when the candidate leaves the pool.
   if (stageResult.analysisAttempts) {
     await repository.recordCandidateAnalysisAttempts(input.candidateId, stageResult.analysisAttempts);
+  }
+  // Same telemetry contract for the triage re-sample (migration 0029): the
+  // triage flip rate must be measurable from production data, not inferred.
+  if (stageResult.triageAttempts) {
+    await repository.recordCandidateTriageAttempts(input.candidateId, stageResult.triageAttempts);
   }
   if (stageResult.status === 'FAILED') {
     await repository.setCandidateStatus(input.candidateId, 'DISCOVERED', null);
