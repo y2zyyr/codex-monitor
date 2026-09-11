@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from './canonical';
 import { GambitRunBudget } from './budget';
-import { GambitProviderError, GAMBIT_PROMPT_VERSION } from './llm';
+import { GambitProviderError } from './llm';
+import { gambitPromptVersion } from './prompts';
 import { GambitRepository } from './repository';
 import type {
   GambitDraft,
@@ -360,6 +361,11 @@ export async function translateGambit(
     for (let attempt = 0; attempt < 2 && !readyTranslation; attempt += 1) {
       const request = translationRequest(article, locale, translationRole, { corrective: attempt === 1 });
       const requestHash = await sha256Hex(canonicalJson({ role: request.role, system: request.system, user: request.user, schemaName: request.schemaName }));
+      // Translation provenance is per ATTEMPT, because the corrective prompt is
+      // a different text from the initial one. Deriving the version from
+      // `request.system` means an attempt row can never claim a text it did not
+      // send.
+      const promptVersion = await gambitPromptVersion('translation', request.system);
       // Translation draws on its own quota: the deep-analysis phase runs first,
       // and a single locale needing its corrective second attempt used to exceed
       // the shared ceiling and fail the whole publication.
@@ -372,7 +378,7 @@ export async function translateGambit(
           role: request.role,
           response: null,
           publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-          promptVersion: GAMBIT_PROMPT_VERSION,
+          promptVersion,
           requestHash,
           status: 'SKIPPED',
           errorCode: 'GAMBIT_LLM_BUDGET_EXCEEDED',
@@ -396,7 +402,7 @@ export async function translateGambit(
             role: request.role,
             response,
             publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-            promptVersion: GAMBIT_PROMPT_VERSION,
+            promptVersion,
             requestHash,
             status: 'SUCCESS',
             createdAt: nowIso,
@@ -413,7 +419,7 @@ export async function translateGambit(
           role: request.role,
           response,
           publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-          promptVersion: GAMBIT_PROMPT_VERSION,
+          promptVersion,
           requestHash,
           status: 'ERROR',
           errorCode: failureCode,
@@ -430,7 +436,7 @@ export async function translateGambit(
           role: request.role,
           response: null,
           publicAiIdentity: translationRole?.publicAiIdentity ?? 'DeepSeek V4 Pro',
-          promptVersion: GAMBIT_PROMPT_VERSION,
+          promptVersion,
           requestHash,
           status: 'ERROR',
           errorCode: failureCode,

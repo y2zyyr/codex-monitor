@@ -383,7 +383,11 @@ describe('Open Gambit local storage, models, and workflow stages', () => {
     expect(AI_OPERATION_SHORT_EN).not.toContain('human approval');
     expect(AI_OPERATION_DISCLOSURE_ZH).toContain('网站向访客呈现的 AI 身份');
     expect(AI_OPERATION_DISCLOSURE_ZH).toContain('底层模型与服务商');
-  expect(GAMBIT_PROMPT_VERSION).toBe('gambit-prompts-v2');
+  // Phase 1 replaced the single family constant with per-role revisions bound to
+  // a fingerprint of each prompt text (see tests/open-gambit-prompt-provenance.test.ts).
+  // This marker now describes the SCHEME, not a prompt text; rows stored as
+  // 'gambit-prompts-v2' predate per-role revisioning and stay as history.
+  expect(GAMBIT_PROMPT_VERSION).toBe('gambit-prompts-per-role-v1');
   });
 
   it('does not fall back to the existing Tibo LLM namespace', async () => {

@@ -9,7 +9,17 @@ import type {
 } from './types';
 import { GAMBIT_PUBLIC_AI_IDENTITIES } from './types';
 
-export const GAMBIT_PROMPT_VERSION = 'gambit-prompts-v2';
+/**
+ * Prompt provenance now lives in `prompts.ts`, where each role has its own
+ * revision bound to a fingerprint of its exact prompt text. Previously a single
+ * `gambit-prompts-v2` constant covered four different prompt texts, so a stored
+ * version could not identify the text that produced a published article.
+ * Re-exported here only so existing importers of this module keep working; new
+ * code should import from `./prompts`.
+ */
+export { GAMBIT_PROMPT_VERSION, GAMBIT_PROMPT_REVISIONS, GAMBIT_LEGACY_PROMPT_VERSION, gambitPromptVersion, parseGambitPromptVersion } from './prompts';
+export type { GambitPromptRole } from './prompts';
+
 /** Compatibility export; these are presentation identities, not model IDs. */
 export const GAMBIT_PUBLIC_MODEL_NAMES = GAMBIT_PUBLIC_AI_IDENTITIES;
 

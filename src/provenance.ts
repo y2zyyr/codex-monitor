@@ -1,5 +1,8 @@
 import { AI_OPERATION_DISCLOSURE_VERSION } from './open-gambit/disclosure';
-import { GAMBIT_PROMPT_VERSION } from './open-gambit/llm';
+// Family marker for the per-role prompt revision scheme. Per-role versions
+// (revision + prompt-text fingerprint) are recorded per LLM attempt and on each
+// draft; see `open-gambit/prompts.ts`.
+import { GAMBIT_PROMPT_VERSION } from './open-gambit/prompts';
 
 export const GAMBIT_SCHEMA_VERSION = '0021_open_gambit';
 
