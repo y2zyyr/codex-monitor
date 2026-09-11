@@ -3,7 +3,7 @@
 // ============================================================
 import type { SourcePost } from '../types';
 
-export type SearchPurpose = 'discovery' | 'confirmation';
+export type SearchPurpose = 'discovery' | 'confirmation' | 'reply_supplement';
 
 export interface SearchQuery {
   q: string;

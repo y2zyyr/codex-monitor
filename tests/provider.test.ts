@@ -68,7 +68,7 @@ describe('Provider Abstraction', () => {
       expect(url.pathname).toBe('/2/users/123/tweets');
       expect(url.searchParams.get('since_id')).toBe('100');
       expect(url.searchParams.get('max_results')).toBe('100');
-      expect(url.searchParams.get('exclude')).toBe('retweets,replies');
+      expect(url.searchParams.get('exclude')).toBe('retweets');
       expect(url.searchParams.get('tweet.fields')).toContain('edit_history_tweet_ids');
       return new Response(JSON.stringify({
         data: [{ id: '101', text: 'Codex usage reset is back', created_at: '2026-08-27T00:00:00.000Z', author_id: '123' }],

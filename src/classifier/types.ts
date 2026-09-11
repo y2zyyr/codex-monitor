@@ -171,13 +171,47 @@ function normalizedPostText(post: SourcePost): string {
 const TRUSTED_TIBO_ACCOUNT = 'thsottiaux';
 const TRUSTED_X_URL_PATTERN = /^https:\/\/(?:www\.)?x\.com\/thsottiaux\/status\/(\d{5,30})\/?$/i;
 const STRONG_RESET_PHRASE_PATTERN = /\b(?:full\s+)?banked\s+reset\b|\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b[\s\S]{0,80}\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b|\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?)\b[\s\S]{0,80}\b(?:usage|quotas?|credits?|allowance|limits?|rate\s+limits?)\b/i;
-const BROAD_RESET_AUDIENCE_PATTERN = /\b(?:for|to)\s+(?:(?:all|every|each)\s+)?(?:everyone|users?|accounts?|subscribers?|customers?|members?)\b|\b(?:all|every|everyone)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b|\beveryone\s+(?:should\s+be\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
+const BROAD_RESET_AUDIENCE_PATTERN = /\b(?:for|to)\s+(?:(?:all|every|each)\s+)?(?:everyone|users?|accounts?|subscribers?|customers?|members?)\b|\b(?:all|every|everyone)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b|\beveryone\s+(?:should\s+be\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b|\b(?:everyone|all|every|each)'?s?\s+(?:usage|limits?|quotas?|credits?|allowance)\b/i;
 const FUTURE_RESET_PATTERN = /\b(?:will|going\s+to|plan(?:ned)?|intend(?:ed)?|today|tomorrow|later|soon|end\s+of\s+day|upcoming|scheduled|coming)\b/i;
 const COMPLETED_RESET_PATTERN = /\b(?:has|have|had|was|were|is|are|just|already)\s+(?:been\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)|completed?|done|propagated)\b|\bfeeling\s+reset(?:ted|ed)?\b|\b(?:reset|usage|quotas?|limits?)\b[\s\S]{0,80}\b(?:propagated|completed?|done|restored|renewed|replenished|refreshed)\b/i;
-const SHORT_COMPLETION_RESET_PATTERN = /\ball\s+reset\s+for\s+everyone\b|\breset(?:ted|ed)?\s+(?:is\s+)?(?:done|complete|completed|finished)\s+for\s+everyone\b|\beveryone\s+(?:should\s+be\s+)?reset(?:ted|ed)?\s+now\b/i;
+const SHORT_COMPLETION_RESET_PATTERN = /\ball\s+reset\s+for\s+everyone\b|\breset(?:ted|ed)?\s+(?:is\s+)?(?:done|complete|completed|finished)\s+for\s+everyone\b|\beveryone\s+(?:should\s+be\s+)?reset(?:ted|ed)?\s+now\b|\bresets?\s+(?:have\s+)?(?:been\s+)?applied\s+for\s+(?:(?:all|every|each)\s+(?:users?|accounts?|subscribers?|members?)|everyone)\b|\bwe'?ve\s+reset\s+(?:it\s+)?for\s+everyone\b|\b(?:usage\s+)?limits?\s+(?:and\s+quotas?\s+)?(?:(?:have|has|are|is)\s+(?:been\s+)?)?(?:restored|reset)\s+for\s+(?:everyone|(?:all|every|each)\s+(?:users?|accounts?))\b|\bquota\s+reset\s+(?:is\s+)?(?:complete|completed|done)\s+for\s+everyone\b|\beveryone'?s\s+(?:usage|limits?|quotas?)\s+(?:are|is|have\s+been|has\s+been)\s+(?:reset|restored)\b/i;
 const NEGATED_RESET_PATTERN = /\b(?:not|never|didn't|did\s+not|hasn't|has\s+not|won't|will\s+not|cannot|can't)\s+(?:be\s+)?(?:fully\s+)?(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
 const NON_CODEX_PRODUCT_PATTERN = /\b(?:chatgpt(?:\s+work)?|sora|dall[-\s]?e|playground|openai\s+api|astra\s+sessions?|claude\s+sessions?|gemini\s+sessions?|router|demo\s+environment)\b/i;
 const RESET_LANGUAGE_PATTERN = /\b(?:reset(?:ted|ed)?|restor(?:ed|e)|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e))\b/i;
+
+// --- NEEDS_REVIEW signals (R4/R5) ---
+// Tibo's actual completed-announcement wording is looser than the deterministic
+// phrase library: "Limits lifted", "back to normal", "done", "fixed",
+// "everyone should be good", "resets are rolling out", "we just pushed the
+// reset". When a trusted direct post pairs that language with a broad
+// audience but lacks an explicit Codex noun/anchor, admission must not hard-
+// drop it: it is flagged NEEDS_REVIEW so an operator can adjudicate it. This
+// channel NEVER creates a public event — REVIEW is not a verification status
+// and the row stays event-less (OBSERVATION is still never published).
+const REVIEW_RESET_PHRASE_PATTERN = /\b(?:reset(?:ted|ed)?|restor(?:ed|e)|lift(?:ed)?|renew(?:ed|e)|replenish(?:ed|e)|refresh(?:ed|e)?|back\s+to\s+normal|done|fixed|good\s+now|working\s+again|rolling\s+out|just\s+pushed(?:\s+the)?\s+reset|should\s+be\s+good)\b/i;
+const REVIEW_AUDIENCE_PATTERN = /\beveryone\b|\b(?:all|every|each)\s+(?:users?|accounts?|subscribers?|customers?|members?)\b/i;
+
+/**
+ * A trusted direct X post that reads like a completed Codex reset but lacks
+ * the explicit Codex anchor that admission normally requires. Qualification
+ * is deliberately strict (trusted canonical source + strong phrase + broad
+ * audience + no negation + no explicit non-Codex product) so the review queue
+ * stays small; bare "Reset done." without any scope is still rejected as
+ * today. Marking for review is not a publication and never creates an event.
+ */
+export function isNeedsReviewStrongResetSignal(post: SourcePost): boolean {
+  const context = getTrustedSourceContext(post);
+  if (!context.trusted) return false;
+  const text = normalizedPostText(post);
+  if (NEGATED_RESET_PATTERN.test(text)) return false;
+  if (/\b(?:is|are|was|were|should\s+be)\s+(?:not|never)\b/.test(text)) return false;
+  if (hasConflictingNonCodexResetContext(text)) return false;
+  if (/\b(?:bugs?|features?|prs?|pull\s+requests?|deploy(?:ed|ment|ments|ing)?|typos?)\b|\bdone\s+for\s+(?:today|the\s+day)\b/i.test(text)) return false;
+  if (/\b(?:not|never|isn't|aren't|wasn't|weren't|hasn't|haven't)\b.{0,30}\b(?:done|fixed|lifted|normal|good|working|reset|restored)\b/i.test(text)) return false;
+  const hasAudience = BROAD_RESET_AUDIENCE_PATTERN.test(text) || REVIEW_AUDIENCE_PATTERN.test(text);
+  if (!hasAudience) return false;
+  return REVIEW_RESET_PHRASE_PATTERN.test(text);
+}
 
 export function hasExplicitCodexReference(text: string): boolean {
   return /\bcodex\b/i.test(text);
@@ -454,6 +488,15 @@ export function isCompletedResetHint(post: SourcePost): boolean {
     /\b(?:brand\s+new|new)\s+usage\b[\s\S]{0,120}\b(?:chatgpt\s+work|codex)\b/,
     /\b(?:usage|quotas?|limits?)\b[\s\S]{0,80}\b(?:have|has|were|was)\s+(?:been\s+)?(?:reset|restored|renewed|refreshed|replenished)\b/,
     /\b(?:reset|quotas?|limits?)\b[\s\S]{0,80}\b(?:propagated|completed|complete|done|restored|back)\b/,
+    // Short completed-state phrases anchored to the word "codex". These cover
+    // the terse announcements users report seeing on X: "resets applied",
+    // "quota reset complete", "usage limits restored". The explicit Codex noun
+    // keeps them inside the deterministic direct-completion rule without a
+    // trusted reset lifecycle having to supply the product anchor.
+    /\bcodex\s+resets?\s+(?:(?:have|has)\s+(?:been\s+)?)?applied\b/,
+    /\bcodex\s+(?:usage\s+)?quotas?\s+reset\s+(?:is\s+)?(?:complete|completed|done|propagated)\b/,
+    /\bcodex\s+usage\s+limits?\s+(?:(?:have|has)\s+(?:been\s+)?)?(?:restored|reset|renewed|refreshed|replenished)\b/,
+    /\b(?:usage|quotas?|limits?)\s+(?:(?:have|has|were|was)\s+(?:been\s+)?)?(?:restored|renewed|refreshed|replenished|reset|propagated)\s+for\s+(?:all|every|each)\s+codex\s+users\b/,
   ].some(pattern => pattern.test(text));
 }
 
@@ -475,11 +518,11 @@ export function buildCompletedResetHintResult(post: SourcePost): ClassificationR
     confidence: 0.82,
     title_en: `${author} indicates Codex usage has reset`,
     title_zh: `${author}表示Codex用户用量已重置`,
-    summary_en: `${author} said they felt reset and that ChatGPT Work and Codex users had brand-new usage, indicating the usage reset had taken effect.`,
-    summary_zh: `${author}表示自己感觉已重置，并称 ChatGPT Work 和 Codex 用户获得了全新用量，表明额度重置已经生效。`,
+    summary_en: `${author} reported completed-state reset language — such as “feeling reseted”, “brand new usage”, “resets applied” or “usage limits restored” — indicating the Codex usage reset had taken effect.`,
+    summary_zh: `${author}使用了已完成态的重置措辞（如“感觉已重置”“全新用量”“重置已应用”“用量额度已恢复”），表明 Codex 用量重置已经生效。`,
     effective_time: null,
     reset_time: null,
-    reason: 'The direct X post uses completed-state language such as “feeling reseted” and “brand new usage”; it does not announce a future reset.',
+    reason: 'The direct X post uses completed-state language indicating the reset already took effect; it does not announce a future reset.',
   };
 }
 

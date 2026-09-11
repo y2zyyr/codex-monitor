@@ -14,6 +14,13 @@ import {
 
 export const X_API_PROVIDER_KEY = 'x_api';
 export const MAX_X_PAGES_PER_SYNC = 3;
+export const MAX_X_BACKFILL_PAGES = 20;
+/**
+ * Single source of truth for the timeline `exclude` filter. Kept at
+ * 'retweets' (replies retained) so /api/health can report the actual value
+ * instead of a hardcoded flag that drifts when the filter is reverted.
+ */
+export const X_TIMELINE_EXCLUDE = 'retweets';
 
 interface TwitterUserResponse {
   data?: { id: string; name: string; username: string };
@@ -54,6 +61,8 @@ export interface XApiAccountBatch {
   complete: boolean;
   error?: string | null;
   rateLimit: XApiRateLimit;
+  /** How many timeline HTTP page requests were made for this account. */
+  pagesFetched: number;
 }
 
 export interface XApiFetchBatch {
@@ -99,6 +108,9 @@ export function canUseXApi(env: Env): boolean {
 
 /** Reserve one logical authoritative sync, not one HTTP subrequest. */
 export async function reserveXApiFetch(repo: Repository, env: Env, now = new Date()): Promise<XApiReservation | null> {
+  const remaining = await repo.getSetting('x_api_rate_limit_remaining');
+  const resetAt = await repo.getSetting('x_api_rate_limit_reset_at');
+  if (remaining === '0' && (!resetAt || Date.parse(resetAt) > now.getTime() || !Number.isFinite(Date.parse(resetAt)))) return null;
   const requestedAt = now.toISOString();
   const usageDate = providerUsageDate(now);
   const requestSlot = xApiSlotFor(now, getXApiPollIntervalMinutes(env));
@@ -112,6 +124,21 @@ export interface XApiFetchOptions {
   reservation?: XApiReservation;
   /** Compatibility override for callers that need one shared cursor. */
   sinceId?: string;
+  /**
+   * Historical backfill: ignore the durable since_id cursor so old posts
+   * (including replies that were once excluded) can be re-fetched. The cursor
+   * is never advanced by the provider, so forward incremental syncs remain
+   * unchanged. `sinceId` still applies when explicitly provided.
+   */
+  ignoreStoredCursor?: boolean;
+  /** Backfill page depth override; capped at MAX_X_BACKFILL_PAGES. */
+  backfillMaxPages?: number;
+  /**
+   * Absolute lower bound for a windowed fetch (X API `start_time`). Used by
+   * the ingestion-completeness probe to bound the timeline window; never
+   * combined with since_id by the provider.
+   */
+  startTime?: string;
   now?: Date;
 }
 
@@ -128,6 +155,8 @@ export class XApiProvider implements SocialSourceProvider {
   private readonly maxPages: number;
   private readonly repo?: Repository;
   private readonly env: Env;
+  httpRequestsUsed = 0;
+  timelineRequestsUsed = 0;
 
   constructor(env: Env, repo?: Repository) {
     if (!env.X_API_BEARER_TOKEN?.trim()) throw new Error('X_API_BEARER_TOKEN is required for XApiProvider');
@@ -148,6 +177,8 @@ export class XApiProvider implements SocialSourceProvider {
   }
 
   async fetchIncremental(options: XApiFetchOptions = {}): Promise<XApiFetchBatch> {
+    this.httpRequestsUsed = 0;
+    this.timelineRequestsUsed = 0;
     let reservation = options.reservation;
     if (this.repo && !options.reservationAlreadyHeld) {
       reservation = await reserveXApiFetch(this.repo, this.env, options.now ?? new Date()) ?? undefined;
@@ -159,23 +190,30 @@ export class XApiProvider implements SocialSourceProvider {
     const errors: string[] = [];
 
     for (const account of this.accounts) {
+      const timelineRequestsBefore = this.timelineRequestsUsed;
       let posts: SourcePost[] = [];
       let rateLimit = emptyRateLimit();
+      let pagesFetched = 0;
       try {
         let userId = await this.getOrResolveUserId(account);
         const storedSinceId = this.repo ? await this.repo.getSetting(`x_api_since_id:${account}`) : null;
-        const accountSinceId = options.sinceId ?? (storedSinceId || undefined);
+        const accountSinceId = options.sinceId
+          ?? (options.ignoreStoredCursor || options.startTime ? undefined : (storedSinceId || undefined));
+        const effectiveMaxPages = options.backfillMaxPages !== undefined
+          ? Math.max(1, Math.min(MAX_X_BACKFILL_PAGES, Math.floor(options.backfillMaxPages)))
+          : this.maxPages;
         let timeline: IncrementalTimeline;
         try {
-          timeline = await this.fetchIncrementalTimeline(account, userId, accountSinceId);
+          timeline = await this.fetchIncrementalTimeline(account, userId, accountSinceId, effectiveMaxPages, options.startTime);
         } catch (error) {
           rateLimit = mergeRateLimits(rateLimit, rateLimitFromError(error));
           if (!this.repo || !(error instanceof Error) || !error.message.includes('timeline user not found')) throw error;
           await this.repo.setSetting(`x_api_user_id:${account}`, '');
           userId = await this.getOrResolveUserId(account);
-          timeline = await this.fetchIncrementalTimeline(account, userId, accountSinceId);
+          timeline = await this.fetchIncrementalTimeline(account, userId, accountSinceId, effectiveMaxPages, options.startTime);
         }
         rateLimit = mergeRateLimits(rateLimit, timeline.rateLimit);
+        pagesFetched = timeline.pagesFetched;
         posts = [];
         for (const tweet of timeline.tweets) posts.push(await this.normalizeTweet(tweet, account, fetchedAt));
         batches.push({
@@ -185,13 +223,15 @@ export class XApiProvider implements SocialSourceProvider {
           complete: timeline.complete,
           error: timeline.complete ? null : 'pagination_limit_reached',
           rateLimit,
+          pagesFetched,
         });
         if (!timeline.complete) errors.push(`${account}: pagination limit reached before the incremental batch completed`);
       } catch (err) {
         rateLimit = mergeRateLimits(rateLimit, rateLimitFromError(err));
         const message = err instanceof Error ? err.message : String(err);
-        batches.push({ account, posts, newestId: newestPostId(posts), complete: false, error: message, rateLimit });
+        batches.push({ account, posts, newestId: newestPostId(posts), complete: false, error: message, rateLimit, pagesFetched: this.timelineRequestsUsed - timelineRequestsBefore });
         errors.push(`${account}: ${message}`);
+        if (err instanceof XApiRequestError && err.status === 429) break;
       }
     }
 
@@ -233,15 +273,15 @@ export class XApiProvider implements SocialSourceProvider {
     return data.data?.id ?? null;
   }
 
-  private async fetchIncrementalTimeline(account: string, userId: string, sinceId?: string): Promise<IncrementalTimeline> {
+  private async fetchIncrementalTimeline(account: string, userId: string, sinceId?: string, maxPages = this.maxPages, startTime?: string): Promise<IncrementalTimeline> {
     let pages = 0;
     let nextToken: string | undefined;
     const allTweets: TwitterTweet[] = [];
     let rateLimit = emptyRateLimit();
     let pageHasNextToken = false;
 
-    while (pages < this.maxPages) {
-      const page = await this.fetchUserTimeline(userId, sinceId, nextToken);
+    while (pages < maxPages) {
+      const page = await this.fetchUserTimeline(userId, sinceId, nextToken, startTime);
       pages++;
       rateLimit = mergeRateLimits(rateLimit, page.rateLimit);
       for (const tweet of page.tweets) {
@@ -256,6 +296,7 @@ export class XApiProvider implements SocialSourceProvider {
       }
       pageHasNextToken = true;
       nextToken = page.nextToken;
+      if (page.rateLimit.remaining === 0 && pages < maxPages) throw new XApiRequestError('X_RATE_LIMIT_EXHAUSTED', 429, page.rateLimit);
     }
 
     const newestId = allTweets
@@ -266,15 +307,20 @@ export class XApiProvider implements SocialSourceProvider {
       newestId,
       complete: !pageHasNextToken,
       rateLimit,
+      pagesFetched: pages,
     };
   }
 
-  private async fetchUserTimeline(userId: string, sinceId?: string, paginationToken?: string): Promise<TimelinePage> {
+  private async fetchUserTimeline(userId: string, sinceId?: string, paginationToken?: string, startTime?: string): Promise<TimelinePage> {
     const url = new URL(`${this.baseUrl}/users/${encodeURIComponent(userId)}/tweets`);
     url.searchParams.set('max_results', String(this.maxResults));
     url.searchParams.set('tweet.fields', 'created_at,author_id,edit_history_tweet_ids');
-    url.searchParams.set('exclude', 'retweets,replies');
+    // Replies are kept deliberately: many reset announcements are replies to
+    // others or later posts in a thread. Noise is filtered at classification,
+    // not dropped at ingestion. Retweets are still excluded as pure noise.
+    url.searchParams.set('exclude', X_TIMELINE_EXCLUDE);
     if (sinceId) url.searchParams.set('since_id', sinceId);
+    if (startTime) url.searchParams.set('start_time', new Date(startTime).toISOString());
     if (paginationToken) url.searchParams.set('pagination_token', paginationToken);
 
     let response = await this.request(url.toString());
@@ -307,7 +353,10 @@ export class XApiProvider implements SocialSourceProvider {
   }
 
   private async request(url: string): Promise<Response> {
+    this.httpRequestsUsed++;
+    if (new URL(url).pathname.endsWith('/tweets')) this.timelineRequestsUsed++;
     return fetch(url, {
+      signal: AbortSignal.timeout(20_000),
       headers: {
         Authorization: `Bearer ${this.bearerToken}`,
         'Content-Type': 'application/json',
@@ -357,6 +406,7 @@ interface IncrementalTimeline {
   newestId: string | null;
   complete: boolean;
   rateLimit: XApiRateLimit;
+  pagesFetched: number;
 }
 
 function emptyRateLimit(): XApiRateLimit {

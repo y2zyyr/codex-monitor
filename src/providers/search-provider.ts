@@ -13,12 +13,17 @@ import type { Env, SourcePost } from '../types';
 import type { SearchQuery, SearchResult, SocialSourceProvider, WebSearchProvider } from './types';
 import { Repository } from '../db/repository';
 import { beijingDateParts, providerUsageDate } from '../utils/schedule';
-import { getWebSearchDailyLimit, getWebSearchIntervalHours } from '../utils/search-schedule';
+import { getWebSearchDailyLimit, getWebSearchActiveModeDailyLimit, getWebSearchSupplementDailyLimit, getWebSearchIntervalHours } from '../utils/search-schedule';
 import type { WebSearchMode } from '../utils/search-schedule';
 
 const MAX_DEFAULT_RESULTS = 10;
 const X_EPOCH_MS = 1288834974657n;
 export const WEB_SEARCH_PROVIDER_KEY = 'web_search';
+/**
+ * The reply-supplement channel reserves on its own small daily pool so quiet
+ * NORMAL periods cannot consume the discovery budget (see search-schedule.ts).
+ */
+export const WEB_SEARCH_SUPPLEMENT_PROVIDER_KEY = 'web_search_supplement';
 export { DEFAULT_WEB_SEARCH_DAILY_LIMIT, getWebSearchDailyLimit } from '../utils/search-schedule';
 
 interface GoogleSearchItem {
@@ -180,6 +185,30 @@ export function getConfirmationQueries(now: Date = new Date()): SearchQuery[] {
   return [{ q: templates[offset], purpose: 'confirmation', maxResults: MAX_DEFAULT_RESULTS }];
 }
 
+/**
+ * Reply/thread-tail discovery queries for the supplemental search channel.
+ * Web search engines do not honor X's native `from:`/`filter:replies`
+ * operators, so these stay host-scoped and rotate between a broad keyword set
+ * and a few narrow phrasings that replies are most likely to contain.
+ */
+export function getReplySupplementQueries(accounts: string[], now: Date = new Date()): SearchQuery[] {
+  const safeAccounts = (accounts.length > 0 ? accounts : ['thsottiaux'])
+    .map(account => account.toLowerCase());
+  const templates: Array<{ q: string; account?: string }> = safeAccounts.flatMap(account => [
+    { q: `site:x.com/${account}/status reset`, account },
+    { q: `site:x.com/${account}/status (reset OR restored OR "limit" OR "quota")`, account },
+    { q: `"${account}" "reset" ("everyone" OR "all users" OR "done")`, account },
+  ]);
+  const offset = beijingDateParts(now).hour % Math.max(1, templates.length);
+  const item = templates[offset];
+  return [{
+    q: item.q,
+    purpose: 'reply_supplement',
+    account: item.account,
+    maxResults: MAX_DEFAULT_RESULTS,
+  }];
+}
+
 /** Strictly validate that a result is a status from the monitored account. */
 export function extractCanonicalXPost(url: string, account: string): { platform: 'x'; postId: string; canonicalUrl: string } | null {
   try {
@@ -297,7 +326,20 @@ export class SearchProvider implements WebSearchProvider, SocialSourceProvider {
     const usageDate = providerUsageDate(now);
     const slot = `${usageDate}@${query.purpose}:${query.q}`;
     if (this.repo) {
-      const reserved = await this.repo.reserveProviderUsage(WEB_SEARCH_PROVIDER_KEY, usageDate, getWebSearchDailyLimit(this.env), requestedAt, slot);
+      // Purpose-routed pools: reply-supplement searches draw on their own small
+      // daily pool; discovery/confirmation draw on the discovery pool. The
+      // provider reservation is a second hard guard and must accept the larger
+      // active-mode pool, otherwise an admitted active-mode search would be
+      // rejected here before any HTTP request.
+      const isSupplement = query.purpose === 'reply_supplement';
+      const poolKey = isSupplement ? WEB_SEARCH_SUPPLEMENT_PROVIDER_KEY : WEB_SEARCH_PROVIDER_KEY;
+      const hardLimit = isSupplement
+        ? getWebSearchSupplementDailyLimit(this.env)
+        : Math.max(
+          getWebSearchDailyLimit(this.env),
+          getWebSearchActiveModeDailyLimit(this.env),
+        );
+      const reserved = await this.repo.reserveProviderUsage(poolKey, usageDate, hardLimit, requestedAt, slot);
       if (!reserved) throw new ProviderBudgetExceededError();
     }
 

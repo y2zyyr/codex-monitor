@@ -711,4 +711,107 @@ describe('Direct reset hint classification', () => {
       },
     }, activeContext)).toMatchObject({ applied: false, sourceContext: 'UNTRUSTED_SOURCE' });
   });
+
+  it('admits terse codex-anchored completion phrases as direct completed resets', () => {
+    const terseCompletions = [
+      'Codex resets applied.',
+      'Codex quota reset complete.',
+      'Codex usage limits restored.',
+      'Usage has been restored for all Codex users.',
+    ];
+    for (const text of terseCompletions) {
+      const candidate = post({ text });
+      expect(isCompletedResetHint(candidate)).toBe(true);
+      expect(isSoftResetHint(candidate)).toBe(false);
+      const result = buildCompletedResetHintResult(candidate);
+      expect(result).toMatchObject({
+        relevant: true,
+        category: 'RESET_COMPLETED',
+        product_scope: 'CODEX',
+        statement_nature: 'FACT',
+        confidence: 0.82,
+        reset_time: null,
+      });
+      // Template summaries satisfy the localized-content gate for indexability.
+      expect(result.summary_en.length).toBeGreaterThanOrEqual(80);
+      expect(result.summary_zh.length).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it('does not admit terse non-codex completion phrasing as a direct Codex reset', () => {
+    const rejected = [
+      'Resets applied.',
+      'Quota reset complete.',
+      'Usage limits restored.',
+      'Usage has been restored for all users.',
+    ];
+    for (const text of rejected) {
+      expect(isCompletedResetHint(post({ text }))).toBe(false);
+    }
+  });
+
+  it('extends the short-completion library within the trusted active lifecycle', () => {
+    const activeContext = { activeCodexReset: true };
+    const shortCompletions = [
+      'All reset for everyone.',
+      'Reset done for everyone.',
+      'Everyone should be reset now.',
+      'Resets applied for everyone.',
+      'We\'ve reset for everyone.',
+      'Quota reset complete for everyone.',
+      'Usage limits restored for everyone.',
+      'Everyone\'s usage has been reset.',
+    ];
+    for (const text of shortCompletions) {
+      const candidate = post({ text });
+      expect(getContextualResetCompletionSignal(candidate)).toMatchObject({
+        strong: true,
+        hasCompletionLanguage: true,
+        category: 'RESET_COMPLETED',
+      });
+      // The short-completion supplement itself always requires the trusted
+      // active lifecycle. A phrase may additionally be independently strong
+      // (usage/quota noun + restore/reset + broad scope); those pass the
+      // pre-existing strong rule even without the short-supplement context.
+      expect(isTrustedContextualReset(candidate)).toBe(getStrongResetSignal(candidate).strong);
+      expect(isTrustedContextualReset(candidate, activeContext)).toBe(true);
+    }
+    // The expanded library still fails closed without a trusted lifecycle when
+    // the phrase is not independently strong.
+    expect(isTrustedContextualReset(post({ text: 'Resets applied for everyone.' }), { activeCodexReset: false })).toBe(false);
+  });
+
+  it('creates an event for a terse codex-anchored completion even when the LLM is unavailable', async () => {
+    const completed = post({
+      id: 210,
+      source_post_id: '2097000000000000210',
+      source_url: 'https://x.com/thsottiaux/status/2097000000000000210',
+      canonical_post_id: '2097000000000000210',
+      text: 'Codex resets applied.',
+    });
+    const repo = {
+      recordProviderStatus: vi.fn(async () => undefined),
+      updateClassificationRetry: vi.fn(async () => undefined),
+      markClassified: vi.fn(async () => undefined),
+      insertEvent: vi.fn(async () => 2101),
+      getEventById: vi.fn(async () => ({ id: 2101, source_post_id: 210, category: 'RESET_COMPLETED' })),
+      handleResetEvent: vi.fn(async () => undefined),
+    };
+    const classifier = {
+      classify: vi.fn(async () => ({
+        status: 'ERROR' as const,
+        error: 'temporary outage',
+        category: 'ERROR' as const,
+      })),
+    };
+
+    const outcome = await classifyAndCreateEvent(repo as any, classifier as any, completed);
+    expect(outcome.outcome).toMatchObject({ status: 'SUCCESS', result: { category: 'RESET_COMPLETED' } });
+    expect(repo.insertEvent).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'RESET_COMPLETED',
+      confidence: 0.82,
+      reset_at: null,
+    }));
+    expect(repo.handleResetEvent).toHaveBeenCalled();
+  });
 });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   getAdaptiveSearchQueries,
+  getReplySupplementQueries,
   ProviderBudgetExceededError,
   SearchProvider,
 } from '../src/providers/search-provider';
@@ -15,6 +16,7 @@ import {
   isStaleApproximateReset,
   isWebSearchOverdue,
   nextWebSearchAt,
+  shouldRunSupplementalWebSearch,
   shouldRunWebSearch,
 } from '../src/utils/search-schedule';
 import { shouldRunXApiSync } from '../src/utils/schedule';
@@ -102,7 +104,7 @@ describe('Adaptive Web Search modes and cadence', () => {
       .toBe('2026-08-26T16:00:00.000Z');
   });
 
-  it('keeps a normal 24-hour simulation near 12 requests', () => {
+  it('keeps a normal 24-hour simulation near 6 requests on the NORMAL budget', () => {
     const e = env();
     let lastAttempt: string | null = null;
     let requests = 0;
@@ -117,7 +119,7 @@ describe('Adaptive Web Search modes and cadence', () => {
     expect(requests).toBe(6);
   });
 
-  it('keeps an all-day reset simulation within the 24-request hard limit', () => {
+  it('draws active reset modes on the larger mode-aware budget instead of exhausting after six hours', () => {
     const e = env();
     let lastAttempt: string | null = null;
     let requests = 0;
@@ -129,9 +131,136 @@ describe('Adaptive Web Search modes and cadence', () => {
         lastAttempt = now.toISOString();
       }
     }
-    expect(requests).toBe(6);
+    expect(requests).toBe(24);
     expect(shouldRunWebSearch(new Date('2026-08-26T23:00:00.000Z'), 'CONFIRMING_RESET', lastAttempt, { request_count: requests }, e).reason)
       .toBe('daily_budget_exhausted');
+  });
+
+  it('keeps the active-mode budget configurable and fails closed when exhausted', () => {
+    const restricted = env({ WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: '2' });
+    let lastAttempt: string | null = null;
+    let requests = 0;
+    for (let hour = 0; hour < 4; hour++) {
+      const now = new Date(Date.UTC(2026, 7, 26, hour, 0, 0));
+      const decision = shouldRunWebSearch(now, 'WATCHING_RESET', lastAttempt, { request_count: requests }, restricted);
+      if (decision.allowed) {
+        requests++;
+        lastAttempt = now.toISOString();
+      }
+    }
+    expect(requests).toBe(2);
+    expect(shouldRunWebSearch(new Date('2026-08-26T03:00:00.000Z'), 'WATCHING_RESET', lastAttempt, { request_count: requests }, restricted).allowed)
+      .toBe(false);
+  });
+
+  it('allows a supplemental reply search on its own cooldown and fails closed on budget', () => {
+    const e = env({ WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS: '1' });
+    const first = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T01:00:00.000Z'),
+      'WATCHING_RESET',
+      null,
+      { request_count: 1 },
+      e,
+    );
+    expect(first.allowed).toBe(true);
+    expect(first.trigger).toBe('active_mode');
+    const withinCooldown = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T01:30:00.000Z'),
+      'WATCHING_RESET',
+      '2026-08-26T01:00:00.000Z',
+      { request_count: 1 },
+      e,
+    );
+    expect(withinCooldown).toMatchObject({ allowed: false, reason: 'interval_not_elapsed' });
+    const afterCooldown = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T02:00:00.000Z'),
+      'WATCHING_RESET',
+      '2026-08-26T01:00:00.000Z',
+      { request_count: 1 },
+      e,
+    );
+    expect(afterCooldown.allowed).toBe(true);
+    const exhausted = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T03:00:00.000Z'),
+      'WATCHING_RESET',
+      '2026-08-26T02:00:00.000Z',
+      { request_count: 2 },
+      e,
+    );
+    expect(exhausted).toMatchObject({ allowed: false, reason: 'daily_budget_exhausted' });
+    const disabled = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T03:00:00.000Z'),
+      'WATCHING_RESET',
+      '2026-08-26T02:00:00.000Z',
+      { request_count: 0 },
+      env({ WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT: '0' }),
+    );
+    expect(disabled).toMatchObject({ allowed: false, reason: 'disabled' });
+    expect(getReplySupplementQueries(['thsottiaux'], new Date('2026-08-26T02:00:00.000Z'))[0].purpose)
+      .toBe('reply_supplement');
+  });
+
+  it('keeps the supplement away from the discovery pool: NORMAL draws at most 2/day on the separate supplement budget', () => {
+    const e = env({ WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS: '0.25' });
+    let lastSupplemental: string | null = null;
+    let supplementRequests = 0;
+    let discoveryRequests = 0;
+    for (let hour = 0; hour < 24; hour += 0.5) {
+      const now = new Date(Date.UTC(2026, 7, 26, Math.floor(hour), (hour % 1) * 60, 0));
+      const discovery = shouldRunWebSearch(now, 'NORMAL', '2026-08-26T00:00:00.000Z', { request_count: discoveryRequests }, e);
+      if (discovery.allowed) {
+        discoveryRequests++;
+        // not tracked here; regular cadence is covered by the 24h simulation above
+      }
+      const supplement = shouldRunSupplementalWebSearch(
+        now,
+        'NORMAL',
+        lastSupplemental,
+        { request_count: supplementRequests },
+        e,
+        { lastMainSearchAt: '2026-08-26T00:00:00.000Z', recentResetWithoutEvent: false },
+      );
+      if (supplement.allowed) {
+        supplementRequests++;
+        lastSupplemental = now.toISOString();
+      }
+    }
+    // The separate supplement pool caps NORMAL at 2/day regardless of how stale
+    // the regular search becomes; NORMAL discovery stays at its own 6/day.
+    expect(supplementRequests).toBeLessThanOrEqual(2);
+  });
+
+  it('triggers the supplement in NORMAL on a stale regular search, a recent reset signal, or not at all', () => {
+    const e = env({ WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS: '2' });
+    const stale = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T03:00:00.000Z'),
+      'NORMAL',
+      '2026-08-26T02:00:00.000Z',
+      { request_count: 0 },
+      e,
+      { lastMainSearchAt: '2026-08-26T00:00:00.000Z', recentResetWithoutEvent: false },
+    );
+    expect(stale).toMatchObject({ allowed: true, trigger: 'normal_stale' });
+
+    const recentSignal = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T00:15:00.000Z'),
+      'NORMAL',
+      null,
+      { request_count: 0 },
+      e,
+      { lastMainSearchAt: '2026-08-26T00:10:00.000Z', recentResetWithoutEvent: true },
+    );
+    expect(recentSignal).toMatchObject({ allowed: true, trigger: 'recent_reset_signal' });
+
+    const noTrigger = shouldRunSupplementalWebSearch(
+      new Date('2026-08-26T00:15:00.000Z'),
+      'NORMAL',
+      null,
+      { request_count: 0 },
+      e,
+      { lastMainSearchAt: '2026-08-26T00:10:00.000Z', recentResetWithoutEvent: false },
+    );
+    expect(noTrigger).toMatchObject({ allowed: false, reason: 'no_trigger' });
   });
 
   it('does not mark a normal four-hour skip as stale, but does mark an overdue success', () => {
@@ -163,7 +292,8 @@ describe('Adaptive Web Search modes and cadence', () => {
     expect(getEstimatedMonthlyRequests('NORMAL', e)).toBe(180);
     expect(getEstimatedMonthlyGrossCostUsd('NORMAL', e)).toBe(0.9);
     expect(getBraveMonthlyCreditUsd(e)).toBe(5);
-    expect(getEstimatedMonthlyRequests('WATCHING_RESET', e)).toBe(180);
+    // Active modes search hourly and draw on the 24/day pool.
+    expect(getEstimatedMonthlyRequests('WATCHING_RESET', e)).toBe(720);
   });
 });
 
@@ -187,7 +317,14 @@ describe('Brave request budget accounting', () => {
       headers: { 'Content-Type': 'application/json' },
     }));
     vi.stubGlobal('fetch', fetchMock);
-    const provider = new SearchProvider(env({ BRAVE_SEARCH_API_KEY: 'test', MAX_WEB_SEARCH_REQUESTS_PER_DAY: '2' }), repo as any);
+    // The provider reservation is the hard ceiling (the max of the configured
+    // pools); cron performs the mode-aware gating. With both pools at 2 the
+    // third request must fail closed before any HTTP call.
+    const provider = new SearchProvider(env({
+      BRAVE_SEARCH_API_KEY: 'test',
+      MAX_WEB_SEARCH_REQUESTS_PER_DAY: '2',
+      WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: '2',
+    }), repo as any);
 
     await provider.search({ q: 'one', purpose: 'discovery' });
     await provider.search({ q: 'two', purpose: 'discovery' });
@@ -195,5 +332,38 @@ describe('Brave request budget accounting', () => {
 
     expect(reserved).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts the larger active-mode pool as the provider ceiling so cron-gated searches are not double-rejected', async () => {
+    let reserved = 0;
+    const repo = {
+      async reserveProviderUsage(_provider: string, _date: string, limit: number) {
+        if (reserved >= limit) return false;
+        reserved++;
+        return true;
+      },
+      async recordProviderUsageSuccess() {},
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ web: { results: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = new SearchProvider(env({
+      BRAVE_SEARCH_API_KEY: 'test',
+      MAX_WEB_SEARCH_REQUESTS_PER_DAY: '6',
+      WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: '24',
+    }), repo as any);
+
+    // The provider reservation only ever blocks at the largest configured pool
+    // (24 here); cron performs the mode-aware gating below that ceiling.
+    for (let i = 0; i < 24; i++) {
+      await provider.search({ q: `discovery-${i}`, purpose: 'discovery' });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(24);
+    // The 25th must fail closed once the ceiling is reached.
+    await expect(provider.search({ q: 'overflow', purpose: 'reply_supplement' }))
+      .rejects.toBeInstanceOf(ProviderBudgetExceededError);
+    expect(reserved).toBe(24);
   });
 });

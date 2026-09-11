@@ -4,8 +4,10 @@
 // ============================================================
 import { Hono } from 'hono';
 import type { Env, MonitorEvent } from './types';
+import { CLASSIFICATION_REASON_CODES } from './types';
 import api from './routes/api';
-import { executeCron } from './cron';
+import { resolveReview, ReviewError } from './review';
+import { backfillHistoricalXTimeline, executeCron, probeXIngestionCompleteness } from './cron';
 import { backfillMonitorEventTranslations } from './event-translations';
 import { Repository } from './db/repository';
 import { CommunityRepository } from './community/repository';
@@ -256,11 +258,133 @@ app.post('/__cron/trigger', async (c) => {
   if (!secret) {
     return c.json({ error: 'Cron trigger not configured - set CRON_SECRET env var' }, 503);
   }
-  const providedSecret = c.req.query('secret') || (await c.req.formData()).get('secret');
+  const providedSecret = c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret') || (c.req.header('Content-Type')?.includes('form') ? (await c.req.formData()).get('secret') : null);
   if (providedSecret !== secret) {
     return c.json({ error: 'Unauthorized - invalid or missing secret' }, 401);
   }
   return handleCron(c.env);
+});
+
+// ── One-shot X historical backfill ──
+// Re-fetches the recent X timeline window without the stored since_id cursor so
+// posts that predate the reply-retention fix can be ingested. The cursor is
+// never advanced and ingestion goes through the normal dedup/upgrade path; new
+// posts enter the classifier queue as classification_pending. Like the cron
+// trigger, it is gated by CRON_SECRET. Budget metering: the whole run counts
+// as one X daily reservation (up to `maxPages` HTTP page requests under it);
+// a `since` bound older than the default 14-day lookback is refused unless
+// force=true. Running it against production is a production mutation and
+// requires explicit operator authorization (AGENTS.md).
+app.post('/__cron/backfill-x', async (c) => {
+  const secret = c.env.CRON_SECRET;
+  if (!secret) {
+    return c.json({ error: 'Cron trigger not configured - set CRON_SECRET env var' }, 503);
+  }
+  const providedSecret = c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret') || (c.req.header('Content-Type')?.includes('form') ? (await c.req.formData()).get('secret') : null);
+  if (providedSecret !== secret) {
+    return c.json({ error: 'Unauthorized - invalid or missing secret' }, 401);
+  }
+  const sinceId = c.req.query('since')?.trim() || undefined;
+  const maxPages = Number(c.req.query('maxPages'));
+  const force = c.req.query('force') === 'true' || c.req.query('force') === '1';
+  try {
+    const result = await backfillHistoricalXTimeline(c.env, {
+      sinceId,
+      maxPages: Number.isFinite(maxPages) && maxPages > 0 ? maxPages : undefined,
+      force,
+    });
+    return c.json({ ok: result.errors.length === 0, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ ok: false, error: message }, 500);
+  }
+});
+
+// ── Ingestion-completeness probe (manual trigger) ──
+// Runs the read-only timeline-vs-stored comparison once (respecting the same
+// gates as the scheduled path unless force=true bypasses the interval gates;
+// the probe must still be enabled via X_INGESTION_PROBE_ENABLED). Consumes one
+// X reservation, never writes source_posts, never advances any cursor.
+app.post('/__cron/x-ingestion-probe', async (c) => {
+  const secret = c.env.CRON_SECRET;
+  if (!secret) {
+    return c.json({ error: 'Cron trigger not configured - set CRON_SECRET env var' }, 503);
+  }
+  const providedSecret = c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret') || (c.req.header('Content-Type')?.includes('form') ? (await c.req.formData()).get('secret') : null);
+  if (providedSecret !== secret) {
+    return c.json({ error: 'Unauthorized - invalid or missing secret' }, 401);
+  }
+  const force = c.req.query('force') === 'true' || c.req.query('force') === '1';
+  try {
+    const result = await probeXIngestionCompleteness(c.env, { force });
+    return c.json({ ok: result.probeRun, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ ok: false, error: message }, 500);
+  }
+});
+
+// ── NEEDS_REVIEW adjudication backlog ──
+// Operator-facing queue of trusted direct posts that read like a completed
+// Codex reset but lacked the explicit Codex anchor. They are never public
+// events; this endpoint only lists them for manual adjudication.
+app.get('/__cron/review-queue', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  const secret = c.env.CRON_SECRET;
+  if (!secret) {
+    return c.json({ error: 'Cron trigger not configured - set CRON_SECRET env var' }, 503);
+  }
+  const providedSecret = c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret') || (c.req.header('Content-Type')?.includes('form') ? (await c.req.formData()).get('secret') : null);
+  if (providedSecret !== secret) {
+    return c.json({ error: 'Unauthorized - invalid or missing secret' }, 401);
+  }
+  try {
+    const repo = new Repository(c.env.DB);
+    const limit = Math.max(1, Math.min(200, Number(c.req.query('limit')) || 50));
+    const posts = await repo.getPostsNeedingReview(limit);
+    return c.json({
+      ok: true,
+      count: posts.length,
+      queue: await repo.getReviewQueueStats(),
+      alert: await repo.getSetting('review_queue_alert'),
+      posts: posts.map(post => ({
+        id: post.id,
+        source_account: post.source_account,
+        source_post_id: post.source_post_id,
+        source_url: post.source_url,
+        published_at: post.published_at,
+        fetched_at: post.fetched_at,
+        text: post.text,
+        classification_label: post.classification_label,
+        classification_source_context: post.classification_source_context,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ ok: false, error: message }, 500);
+  }
+});
+
+app.get('/__cron/rejection-samples', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  if (!c.env.CRON_SECRET) return c.json({ error: 'NOT_CONFIGURED' }, 503);
+  if ((c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret')) !== c.env.CRON_SECRET) return c.json({ error: 'UNAUTHORIZED' }, 401);
+  const reason = c.req.query('reason') ?? '';
+  if (!(CLASSIFICATION_REASON_CODES as readonly string[]).includes(reason)) return c.json({ error: 'INVALID_REASON_CODE' }, 400);
+  return c.json({ reason, samples: await new Repository(c.env.DB).getRejectionSamples(reason) });
+});
+
+app.post('/__cron/review-resolve', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  if (!c.env.CRON_SECRET) return c.json({ error: 'NOT_CONFIGURED' }, 503);
+  const secret = c.req.header('Authorization')?.replace(/^Bearer /, '') || c.req.query('secret');
+  if (secret !== c.env.CRON_SECRET) return c.json({ error: 'UNAUTHORIZED' }, 401);
+  if (Number(c.req.header('Content-Length') ?? 0) > 4096) return c.json({ error: 'REQUEST_TOO_LARGE' }, 400);
+  let body: unknown;
+  try { const text = await c.req.text(); if (text.length > 4096) return c.json({ error: 'REQUEST_TOO_LARGE' }, 400); body = JSON.parse(text); }
+  catch { return c.json({ error: 'INVALID_JSON' }, 400); }
+  try { return c.json({ ok: true, ...await resolveReview(new Repository(c.env.DB), { classify: post => new LLMClassifier(c.env).classify(post) }, body) }); }
+  catch (error) { return error instanceof ReviewError ? c.json({ error: error.code }, error.status) : c.json({ error: 'REVIEW_RESOLVE_FAILED' }, 500); }
 });
 
 // ── Telegram operator webhook ──

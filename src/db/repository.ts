@@ -163,6 +163,7 @@ function mapMonitorRun(row: D1MonitorRunRow): MonitorRun {
     id: row.id,
     started_at: row.started_at,
     finished_at: row.finished_at,
+    duration_ms: row.finished_at ? Math.max(0, Date.parse(row.finished_at) - Date.parse(row.started_at)) : null,
     status: row.status as 'running' | 'completed' | 'failed',
     posts_checked: row.posts_checked,
     candidates_found: row.candidates_found,
@@ -358,6 +359,8 @@ export class Repository {
           indexed_at = COALESCE(indexed_at, ?),
           verification_status = ?,
           classification_pending = CASE
+            WHEN classification_reason_code = 'OPERATOR_REJECTED' THEN 0
+            WHEN classification_decision = 'REVIEW' THEN 0
             WHEN ? = 1 THEN 1
             WHEN ? = 1 THEN classification_pending
             ELSE 1
@@ -536,6 +539,9 @@ export class Repository {
       .prepare(`
         SELECT * FROM source_posts
         WHERE classification_pending = 1
+          AND COALESCE(verification_status, '') <> 'REJECTED'
+          AND COALESCE(classification_decision, '') <> 'REVIEW'
+          AND COALESCE(classification_reason_code, '') <> 'OPERATOR_REJECTED'
           AND (
             (
               ${providerFailureCondition}
@@ -561,7 +567,8 @@ export class Repository {
               )
             )
           )
-        ORDER BY COALESCE(last_classification_attempt_at, published_at, fetched_at) ASC
+        ORDER BY CASE WHEN first_discovered_via = 'backfill' THEN 1 ELSE 0 END ASC,
+          COALESCE(last_classification_attempt_at, published_at, fetched_at) ASC
         LIMIT ?
       `)
       .bind(now.toISOString(), now.toISOString(), limit)
@@ -584,6 +591,8 @@ export class Repository {
         FROM source_posts sp
         LEFT JOIN monitor_events e ON e.source_post_id = sp.id
         WHERE e.id IS NULL
+          AND COALESCE(sp.classification_reason_code, '') <> 'OPERATOR_REJECTED'
+          AND COALESCE(sp.classification_decision, '') <> 'REVIEW'
           AND sp.canonical_platform = 'x'
           AND COALESCE(sp.source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
           AND COALESCE(sp.verification_status, 'DIRECT_VERIFIED') <> 'REJECTED'
@@ -597,6 +606,196 @@ export class Repository {
       .bind(limit)
       .all<D1SourcePostRow>();
     return results.map(mapSourcePost);
+  }
+
+  /**
+   * Count authoritative direct X posts ingested within the last `days` that
+   * still have no event. Used by the missed-detection monitor: a growing count
+   * in a window where Tibo announced resets is the exact "seen on X, missing on
+   * the site" symptom this repair targets. Bounded and read-only.
+   */
+  async countDirectPostsWithoutEventsWithin(days = 7, now = new Date()): Promise<number> {
+    const providerFailureCondition = `(COALESCE(sp.classification_failure_kind, '') IN (${providerFailureKindsSql()})
+      OR (COALESCE(sp.classification_error, '') LIKE 'LLM API error:%'
+        OR COALESCE(sp.classification_error, '') LIKE 'LLM request failed:%'))`;
+    const rows = await this.db
+      .prepare(`
+        SELECT COUNT(*) AS count
+        FROM source_posts sp
+        LEFT JOIN monitor_events e ON e.source_post_id = sp.id
+        WHERE e.id IS NULL
+          AND sp.canonical_platform = 'x'
+          AND COALESCE(sp.source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
+          AND COALESCE(sp.verification_status, 'DIRECT_VERIFIED') <> 'REJECTED'
+          AND COALESCE(sp.published_at, sp.fetched_at) >= datetime(?, ?)
+          AND (
+            COALESCE(sp.classification_attempts, 0) < 5
+            OR ${providerFailureCondition}
+          )
+      `)
+      .bind(now.toISOString(), `-${Math.max(1, Math.min(90, Math.floor(days)))} days`)
+      .first<{ count: number }>();
+    return Number(rows?.count) || 0;
+  }
+
+  /**
+   * True when a direct/official X post containing reset-family language was
+   * ingested in the last `withinHours` without producing an event. The reply-
+   * supplement search triggers on this so a bare “Reset done.” with no prior
+   * plan is re-checked through web indexes instead of waiting for the next
+   * 4-hour discovery slot. Read-only and bounded; never refetches from X.
+   */
+  async hasRecentDirectResetSignalWithoutEvent(withinHours = 24, now = new Date()): Promise<boolean> {
+    const rows = await this.db
+      .prepare(`
+        SELECT 1 AS hit
+        FROM source_posts sp
+        LEFT JOIN monitor_events e ON e.source_post_id = sp.id
+        WHERE e.id IS NULL
+          AND sp.canonical_platform = 'x'
+          AND COALESCE(sp.source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
+          AND COALESCE(sp.verification_status, 'DIRECT_VERIFIED') <> 'REJECTED'
+          AND (
+            LOWER(COALESCE(sp.text, '')) LIKE '%reset%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%restor%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%renew%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%replenish%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%refresh%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%quota%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%limit%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%codex%'
+            OR LOWER(COALESCE(sp.text, '')) LIKE '%lifted%'
+          )
+          AND COALESCE(sp.published_at, sp.fetched_at) >= datetime(?, ?)
+        LIMIT 1
+      `)
+      .bind(now.toISOString(), `-${Math.max(1, Math.min(168, Math.floor(withinHours)))} hours`)
+      .first<{ hit: number }>();
+    return rows?.hit === 1;
+  }
+
+  /**
+   * Count direct X posts ingested (by the API channel) within the given window.
+   * Used by the ingestion-completeness probe to compare against a fresh raw
+   * timeline count: stored posts may be fewer than the timeline when an intake
+   * filter (e.g. exclude=replies) is reintroduced.
+   */
+  async countIngestedDirectXPostsWithin(windowStart: string, now = new Date(), accounts = ['thsottiaux']): Promise<number> {
+    if (!accounts.length) return 0;
+    const rows = await this.db
+      .prepare(`
+        SELECT COUNT(*) AS count
+        FROM source_posts
+        WHERE source = 'x_api'
+          AND canonical_platform = 'x'
+          AND COALESCE(source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
+          AND julianday(published_at) >= julianday(?)
+          AND julianday(published_at) < julianday(?)
+          AND LOWER(source_account) IN (${accounts.map(() => '?').join(',')})
+      `)
+      .bind(windowStart, now.toISOString(), ...accounts)
+      .first<{ count: number }>();
+    return Number(rows?.count) || 0;
+  }
+
+  /**
+   * Rejection-reason aggregate for the missed-detection monitor: counts of
+   * event-less posts by classification_reason_code over the last `days`. Lets
+   * operators tell a systemic intake miss (one code exploding) from intended
+   * rejects at a glance.
+   */
+  async countRejectionReasonsWithoutEventsWithin(days = 7, now = new Date()): Promise<Record<string, number>> {
+    const { results } = await this.db
+      .prepare(`
+        SELECT COALESCE(sp.classification_reason_code, 'UNKNOWN') AS code, COUNT(*) AS count
+        FROM source_posts sp
+        LEFT JOIN monitor_events e ON e.source_post_id = sp.id
+        WHERE e.id IS NULL
+          AND COALESCE(sp.classification_reason_code, '') <> ''
+          AND COALESCE(sp.fetched_at, sp.published_at) >= datetime(?, ?)
+        GROUP BY sp.classification_reason_code
+        ORDER BY count DESC, code ASC
+      `)
+      .bind(now.toISOString(), `-${Math.max(1, Math.min(90, Math.floor(days)))} days`)
+      .all<{ code: string; count: number }>();
+    const breakdown: Record<string, number> = {};
+    for (const row of results ?? []) breakdown[row.code] = Number(row.count) || 0;
+    return breakdown;
+  }
+
+  /**
+   * Manual-review queue: posts marked NEEDS_REVIEW (classification_decision =
+   * 'REVIEW') are never public events; this is the operator-facing backlog to
+   * adjudicate them. Bounded and read-only.
+   */
+  async getPostsNeedingReview(limit = 50): Promise<SourcePost[]> {
+    const { results } = await this.db
+      .prepare(`
+        SELECT * FROM source_posts
+        WHERE classification_decision = 'REVIEW'
+          AND classification_reason_code = 'NEEDS_REVIEW'
+          AND verification_status <> 'REJECTED'
+        ORDER BY COALESCE(last_classification_attempt_at, fetched_at) ASC
+        LIMIT ?
+      `)
+      .bind(limit)
+      .all<D1SourcePostRow>();
+    return results.map(mapSourcePost);
+  }
+
+  async getRejectionSamples(reason: string, now = new Date()): Promise<Array<{ id: number; url: string }>> {
+    const { results } = await this.db.prepare(`SELECT sp.id, sp.canonical_post_id AS postId, sp.source_account AS account
+      FROM source_posts sp LEFT JOIN monitor_events e ON e.source_post_id = sp.id
+      WHERE e.id IS NULL AND sp.classification_reason_code = ?
+      AND julianday(sp.fetched_at) >= julianday(?, '-7 days') AND julianday(sp.fetched_at) <= julianday(?)
+      AND sp.canonical_platform = 'x'
+      ORDER BY julianday(sp.fetched_at) DESC, sp.id DESC LIMIT 3`)
+      .bind(reason, now.toISOString(), now.toISOString()).all<{ id: number; postId: string; account: string }>();
+    return results.filter(row => /^\d{1,30}$/.test(row.postId) && /^[a-zA-Z0-9_]{1,15}$/.test(row.account))
+      .map(row => ({ id: row.id, url: `https://x.com/${row.account}/status/${row.postId}` }));
+  }
+
+  async getReviewQueueStats(): Promise<{ count: number; oldestAt: string | null }> {
+    const row = await this.db.prepare(`SELECT COUNT(*) AS count,
+      MIN(COALESCE(last_classification_attempt_at, fetched_at)) AS oldestAt FROM source_posts
+      WHERE classification_decision = 'REVIEW' AND classification_reason_code = 'NEEDS_REVIEW'
+      AND verification_status <> 'REJECTED'`).first<{ count: number; oldestAt: string | null }>();
+    return { count: Number(row?.count) || 0, oldestAt: row?.oldestAt ?? null };
+  }
+
+  async rejectReview(id: number, reason: string): Promise<boolean> {
+    const { meta } = await this.db.prepare(`UPDATE source_posts SET classification_decision = 'NO_EVENT',
+      classification_reason_code = 'OPERATOR_REJECTED', classification_label = ?, classification_pending = 0
+      WHERE id = ? AND classification_decision = 'REVIEW' AND verification_status <> 'REJECTED'
+      AND NOT EXISTS (SELECT 1 FROM monitor_events WHERE source_post_id = source_posts.id)`)
+      .bind(reason, id).run();
+    return meta.changes > 0;
+  }
+
+  async getReviewEvent(sourceId: number): Promise<MonitorEvent | null> {
+    const row = await this.db.prepare(`SELECT e.*, sp.source_quality, sp.source_account, sp.text AS source_text
+      FROM monitor_events e JOIN source_posts sp ON sp.id = e.source_post_id WHERE e.source_post_id = ?`)
+      .bind(sourceId).first<D1MonitorEventRow>();
+    return row ? mapMonitorEvent(row) : null;
+  }
+
+  /**
+   * The oldest known authoritative X source_post_id, used as a bounded lower
+   * bound for historical backfill. Snowflake IDs are compared by length then
+   * lexicographically, matching numeric order for same-length IDs.
+   */
+  async getOldestDirectXSourcePostId(): Promise<string | null> {
+    const row = await this.db
+      .prepare(`
+        SELECT source_post_id FROM source_posts
+        WHERE source = 'x_api'
+          AND canonical_platform = 'x'
+          AND COALESCE(source_quality, 'DIRECT') IN ('DIRECT', 'OFFICIAL')
+        ORDER BY length(source_post_id) ASC, source_post_id ASC
+        LIMIT 1
+      `)
+      .first<{ source_post_id: string }>();
+    return row?.source_post_id ?? null;
   }
 
   async markClassified(id: number): Promise<void> {
@@ -649,6 +848,8 @@ export class Repository {
         classification_event_created = ?,
         classifier_version = ?
       WHERE id = ?
+        AND COALESCE(verification_status, '') <> 'REJECTED'
+        AND COALESCE(classification_reason_code, '') <> 'OPERATOR_REJECTED'
     `).bind(
       trace.classification_label,
       trace.classification_decision,
@@ -772,12 +973,16 @@ export class Repository {
     return Number(row?.count) || 0;
   }
 
-  async insertEvent(event: Omit<MonitorEvent, 'id' | 'created_at' | 'updated_at'>): Promise<number | null> {
+  async insertEvent(event: Omit<MonitorEvent, 'id' | 'created_at' | 'updated_at'>, reviewOnly = false): Promise<number | null> {
     const { meta } = await this.db
       .prepare(
         `INSERT OR IGNORE INTO monitor_events
           (source_post_id, category, title_en, title_zh, summary_en, summary_zh, confidence, published_at, effective_at, reset_at, source_url, evidence_quality, verification_status, verified_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (SELECT 1 FROM source_posts WHERE id = ?
+            AND COALESCE(verification_status, '') <> 'REJECTED'
+            AND COALESCE(classification_reason_code, '') <> 'OPERATOR_REJECTED'
+            AND (? = 0 OR (classification_decision = 'REVIEW' AND source_quality = 'DIRECT' AND verification_status = 'DIRECT_VERIFIED')))`
       )
       .bind(
         event.source_post_id,
@@ -793,7 +998,9 @@ export class Repository {
         event.source_url,
         event.source_quality ?? event.evidence_quality ?? 'DIRECT',
         event.verification_status ?? (event.source_quality === 'INDEXED' ? 'INDEXED_ONLY' : 'DIRECT_VERIFIED'),
-        event.verified_at ?? null
+        event.verified_at ?? null,
+        event.source_post_id,
+        reviewOnly ? 1 : 0
       )
       .run();
 

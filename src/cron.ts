@@ -10,6 +10,7 @@ import type {
   SourcePost,
 } from './types';
 import { Repository } from './db/repository';
+import { recordReviewAlert } from './review';
 import {
   buildCompletedResetHintResult,
   buildObviousIrrelevantResult,
@@ -22,6 +23,7 @@ import {
   hasExplicitCodexReference,
   isCompletedResetHint,
   isCodexProductSignalAdmissible,
+  isNeedsReviewStrongResetSignal,
   isObviousIrrelevant,
   isSoftResetHint,
   isTrustedContextualResetWithContext,
@@ -38,14 +40,18 @@ import {
   reserveXApiFetch,
   X_API_PROVIDER_KEY,
   XApiPartialFailureError,
+  MAX_X_BACKFILL_PAGES,
   type XApiAccountBatch,
 } from './providers/x-api';
 import {
   getAdaptiveSearchQueries,
+  getReplySupplementQueries,
+  getXPostPublishedAt,
   monitoredAccounts,
   normalizeDiscoveryResults,
   ProviderBudgetExceededError,
   WEB_SEARCH_PROVIDER_KEY,
+  WEB_SEARCH_SUPPLEMENT_PROVIDER_KEY,
 } from './providers/search-provider';
 import { evaluateCommunityEvidence } from './confirmation';
 import {
@@ -60,12 +66,21 @@ import {
   getWebSearchFallbackBackoffMinutes,
   getWebSearchMode,
   getWebSearchIntervalHours,
+  getWebSearchSupplementDailyLimit,
   nextWebSearchAt,
+  shouldRunSupplementalWebSearch,
   shouldRunWebSearch,
 } from './utils/search-schedule';
 import type { WebSearchMode } from './utils/search-schedule';
 
-const MAX_CLASSIFICATIONS_PER_RUN = 5;
+// Bound sequential classifier wall time: at most eight 30-second calls.
+// Realtime posts precede backfill; reset hints rank first within each group.
+const MAX_CLASSIFICATIONS_PER_RUN = 8;
+
+export function getClassificationBudgetPerRun(env: Env): number {
+  const configured = Number(env.CLASSIFICATIONS_PER_RUN ?? MAX_CLASSIFICATIONS_PER_RUN);
+  return Number.isFinite(configured) ? Math.max(0, Math.min(MAX_CLASSIFICATIONS_PER_RUN, Math.floor(configured))) : MAX_CLASSIFICATIONS_PER_RUN;
+}
 
 type XUsageSnapshot = NonNullable<Awaited<ReturnType<Repository['getProviderUsage']>>> & {
   rate_limit_remaining: number | null;
@@ -96,6 +111,7 @@ export interface CronResult {
     reason: string | null;
     nextSearchAt: string | null;
   };
+  xIngestionProbe: XIngestionProbeResult | null;
   errorMessage: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -119,7 +135,7 @@ export async function executeCron(
   options: CronOptions = {},
 ): Promise<CronResult> {
   const repo = new Repository(env.DB);
-  const startedAt = (options.now ?? new Date()).toISOString();
+  const startedAt = new Date().toISOString();
   const now = options.now ?? new Date(startedAt);
   const errors: string[] = [];
   let runId: number | null = null;
@@ -130,7 +146,7 @@ export async function executeCron(
   let webSearchCalls = 0;
   let llmClassifications = 0;
   const classificationByCategory: Record<string, number> = {};
-  let classificationBudget = MAX_CLASSIFICATIONS_PER_RUN;
+  let classificationBudget = getClassificationBudgetPerRun(env);
   let searchStatus: 'ok' | 'degraded' | 'not_configured' = options.searchProvider ? 'ok' : 'not_configured';
   let searchError: string | null = null;
   let xSyncReason: string | null = null;
@@ -140,12 +156,15 @@ export async function executeCron(
   let xLastSuccessAt: string | null = null;
   let xSyncFailedThisRun = false;
   let xFailureCount = 0;
+  let xApiNewPostsThisRun = 0;
   let xUsage: XUsageSnapshot | null = null;
   let searchMode: WebSearchMode = 'NORMAL';
   let searchSkipped = !!options.searchProvider;
   let searchSkipReason: string | null = options.searchProvider ? 'not_due' : 'not_configured';
   let searchLastAttemptAt: string | null = null;
+  let searchSupplementalLastAt: string | null = null;
   let searchUsage: { request_count?: number; usedToday?: number; last_request_at?: string | null; last_request_slot?: string | null } | null = null;
+  let ingestionProbe: XIngestionProbeResult | null = null;
 
   try {
     runId = await repo.insertRun({
@@ -174,6 +193,18 @@ export async function executeCron(
     const accounts = monitoredAccounts(env);
     const discoveryResults: SearchResult[] = [];
     const newCandidates: SourcePost[] = [];
+    // A due probe takes this slot before normal intake. Otherwise a healthy
+    // 15-minute poll consumes every slot and the probe can never run. Both
+    // share the unchanged daily cap; next intake catches up from its cursor.
+    if (options.xApiProvider && isXApiAutomaticSyncEnabled(env)) {
+      const lastProbeAt = await repo.getSetting('x_ingestion_probe_last_at');
+      const lastProbeAttemptAt = await repo.getSetting('x_ingestion_probe_last_attempt_at');
+      if (shouldRunXIngestionProbe(now, lastProbeAt, lastProbeAttemptAt, env).allowed) {
+        ingestionProbe = await probeXIngestionCompleteness(env, { now });
+      }
+    }
+
+    if (ingestionProbe?.reservationsUsed) xApiCalls += ingestionProbe.reservationsUsed;
     xUsage = await getXUsageSnapshot(repo, providerUsageDate(now));
     xLastSuccessAt = await repo.getSetting('x_api_last_success_at') ?? xUsage?.last_success_at ?? null;
     xFailureCount = parseCounter(await repo.getSetting('x_api_consecutive_failures'));
@@ -197,7 +228,7 @@ export async function executeCron(
             } else {
               xSyncAttempted = true;
               xSyncSkipped = false;
-              xApiCalls = 1;
+              xApiCalls += 1;
               lastXFetchAt = now.toISOString();
               await repo.setSetting('x_api_last_attempt_at', lastXFetchAt);
 
@@ -223,6 +254,7 @@ export async function executeCron(
                 await repo.setSetting('web_search_fallback_last_attempt', '');
                 xLastSuccessAt = now.toISOString();
                 xFailureCount = 0;
+                xApiNewPostsThisRun = persisted.newPosts;
                 if (persisted.newPosts > 0) await repo.setSetting('x_api_last_new_post_at', now.toISOString());
                 await repo.recordProviderStatus(X_API_PROVIDER_KEY, 'ok', now.toISOString(), null);
               } catch (error) {
@@ -240,6 +272,7 @@ export async function executeCron(
                   await persistXRateLimit(repo, error.accounts);
                   errors.push(`X authoritative sync degraded: ${message}`);
                   await repo.recordProviderStatus(X_API_PROVIDER_KEY, 'degraded', null, message);
+                  xApiNewPostsThisRun = Math.max(xApiNewPostsThisRun, persisted.newPosts);
                   if (persisted.newPosts > 0) await repo.setSetting('x_api_last_new_post_at', now.toISOString());
                 } else {
                   errors.push(`X authoritative sync failed: ${message}`);
@@ -256,8 +289,10 @@ export async function executeCron(
       xSyncReason = 'automatic_sync_disabled';
     }
 
+
     xUsage = await getXUsageSnapshot(repo, providerUsageDate(now));
     searchLastAttemptAt = await repo.getSetting('web_search_last_attempt');
+    searchSupplementalLastAt = await repo.getSetting('web_search_supplemental_last_attempt');
     searchUsage = await repo.getProviderUsage(WEB_SEARCH_PROVIDER_KEY, providerUsageDate(now));
 
     // 2. Indexed search is a low-frequency backstop. It may run on its normal
@@ -343,6 +378,72 @@ export async function executeCron(
       }
     }
 
+    // 2b. Reply-supplement search. The direct X timeline is the primary channel
+    // and now keeps replies (x-api.ts), but web indexes are the only backstop
+    // for posts the API never returned before replies were retained. The gate
+    // is wider than the old active-mode-only check so a bare "Reset done."
+    // reply with no prior plan is re-checked through web indexes in NORMAL
+    // mode too (see shouldRunSupplementalWebSearch). It draws on its own small
+    // daily pool, shares the per-run cooldown, never double-runs the normal
+    // cadence search in the same tick (searchSkipped), and fails closed.
+    if (options.searchProvider && xApiAutomaticSync && !xSyncFailedThisRun && searchSkipped) {
+      const supplementUsage = await repo.getProviderUsage(WEB_SEARCH_SUPPLEMENT_PROVIDER_KEY, providerUsageDate(now));
+      const recentResetWithoutEvent = await repo.hasRecentDirectResetSignalWithoutEvent(24, now);
+      const supplementalDecision = shouldRunSupplementalWebSearch(
+        now,
+        searchMode,
+        searchSupplementalLastAt,
+        supplementUsage,
+        env,
+        { lastMainSearchAt: searchLastAttemptAt, recentResetWithoutEvent },
+      );
+      if (!supplementalDecision.allowed && supplementalDecision.reason !== 'interval_not_elapsed') {
+        // The supplement is a backstop, not the primary channel: when it is
+        // actively disabled/exhausted or has no trigger, keep the run's
+        // skipped state as-is (the regular search remains the visible reason).
+        searchSkipReason = searchSkipReason ?? supplementalDecision.reason;
+      }
+      if (supplementalDecision.allowed) {
+        const remainingBudget = Math.max(0, getWebSearchSupplementDailyLimit(env) - (supplementUsage?.request_count ?? 0));
+        const queries = getReplySupplementQueries(accounts, now).slice(0, remainingBudget);
+        if (queries.length === 0) {
+          searchSkipReason = 'daily_budget_exhausted';
+        } else {
+          searchSkipped = false;
+          searchSkipReason = null;
+          searchSupplementalLastAt = now.toISOString();
+          await repo.setSetting('web_search_supplemental_last_attempt', searchSupplementalLastAt);
+          try {
+            for (const query of queries) {
+              try {
+                discoveryResults.push(...await options.searchProvider.search(query, now));
+                // Increment only after the provider call was made. A budget
+                // rejection happens before HTTP and must not be counted.
+                webSearchCalls++;
+              } catch (error) {
+                if (!(error instanceof ProviderBudgetExceededError)) webSearchCalls++;
+                throw error;
+              }
+            }
+            searchStatus = 'ok';
+            await repo.setSetting('web_search_last_success', now.toISOString());
+            await repo.recordProviderStatus(WEB_SEARCH_PROVIDER_KEY, 'ok', now.toISOString(), null);
+          } catch (error) {
+            if (error instanceof ProviderBudgetExceededError) {
+              searchSkipped = true;
+              searchSkipReason = 'daily_budget_exhausted_or_concurrent_trigger';
+              searchError = null;
+            } else {
+              searchStatus = 'degraded';
+              searchError = error instanceof Error ? error.message : String(error);
+              errors.push(`Web search degraded (reply supplement): ${searchError}`);
+              await repo.recordProviderStatus(WEB_SEARCH_PROVIDER_KEY, 'degraded', null, searchError);
+            }
+          }
+        }
+      }
+    }
+
     searchUsage = await repo.getProviderUsage(WEB_SEARCH_PROVIDER_KEY, providerUsageDate(now));
 
     const fetchedAt = now.toISOString();
@@ -376,8 +477,8 @@ export async function executeCron(
       classificationBudget--;
     }
     if (classificationBudget > 0) {
-      const pending = await repo.getUnclassifiedPosts(20, now);
-      for (const post of pending) {
+      const pending = await repo.getUnclassifiedPosts(50, now);
+      for (const post of prioritizeCandidates(pending)) {
         if (classificationBudget <= 0) break;
         if (post.id !== undefined && classifiedPostIds.has(post.id)) continue;
         if (!isClassificationRetryEligible(post, now)) continue;
@@ -419,7 +520,9 @@ export async function executeCron(
       await processConfirmationSearch(repo, activeCycle, discoveryResults, now);
     }
 
+    try { await recordReviewAlert(repo, env); } catch { errors.push('REVIEW_ALERT_FAILED'); }
     const finishedAt = new Date().toISOString();
+    try { await recordRunDuration(repo, env, startedAt, finishedAt); } catch { errors.push('MONITOR_DURATION_WRITE_FAILED'); }
     const nextSearchAt = nextWebSearchAt(now, searchMode, searchLastAttemptAt, searchUsage, env);
     const errorMessage = errors.length > 0 ? errors.join(' | ') : null;
     console.info('[Cron] classification_by_category', classificationByCategory);
@@ -462,6 +565,7 @@ export async function executeCron(
         reason: searchSkipReason,
         nextSearchAt,
       },
+      xIngestionProbe: ingestionProbe,
       errorMessage,
       startedAt,
       finishedAt,
@@ -469,6 +573,7 @@ export async function executeCron(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const finishedAt = new Date().toISOString();
+    try { await recordRunDuration(repo, env, startedAt, finishedAt); } catch { errors.push('MONITOR_DURATION_WRITE_FAILED'); }
     if (runId !== null) {
       await repo.updateRun(runId, {
         finished_at: finishedAt,
@@ -508,6 +613,7 @@ export async function executeCron(
         reason: searchSkipReason,
         nextSearchAt: nextWebSearchAt(now, searchMode, searchLastAttemptAt, searchUsage, env),
       },
+      xIngestionProbe: ingestionProbe,
       errorMessage: message,
       startedAt,
       finishedAt,
@@ -580,6 +686,24 @@ export async function classifyAndCreateEvent(
       || result.category === 'IRRELEVANT'
       || !isCodexProductSignalAdmissible(result)
       || (result.product_scope === 'CODEX' && !hasCodexAnchor)) {
+      // R4/R5: a trusted direct post that reads like a completed Codex reset
+      // (strong phrase + broad audience) but lacks the explicit Codex anchor
+      // must not be hard-dropped. It is flagged for operator review instead —
+      // REVIEW is never a public event, so OBSERVATION stays unpublished and
+      // the AGENTS.md "no Codex inference from author alone" invariant is not
+      // violated (nothing is published from the flag).
+      if (isNeedsReviewStrongResetSignal(post)) {
+        await repo.markClassified(post.id!);
+        await persistClassificationTrace(repo, post, {
+          classification_label: outcome.status === 'SUCCESS' ? outcome.result.category : 'NEEDS_REVIEW',
+          classification_decision: 'REVIEW',
+          classification_reason_code: 'NEEDS_REVIEW',
+          classification_source_context: contextualClassification.sourceContext,
+          classification_event_created: false,
+          classifier_version: CLASSIFIER_VERSION,
+        });
+        return { created: false, outcome };
+      }
       await repo.markClassified(post.id!);
       await persistClassificationTrace(repo, post, buildClassificationTrace(
         post,
@@ -743,6 +867,7 @@ export async function persistXAccountBatches(
   repo: Repository,
   batches: XApiAccountBatch[],
   now: Date,
+  options: { advanceCursor?: boolean; backfill?: boolean } = {},
 ): Promise<{
   postsChecked: number;
   newPosts: number;
@@ -750,6 +875,7 @@ export async function persistXAccountBatches(
   newCandidates: SourcePost[];
   errors: string[];
 }> {
+  const advanceCursor = options.advanceCursor ?? true;
   const fetchedAt = now.toISOString();
   let postsChecked = 0;
   let newPosts = 0;
@@ -762,7 +888,7 @@ export async function persistXAccountBatches(
     try {
       for (const post of batch.posts) {
         postsChecked++;
-        const upserted = await repo.upsertSourcePost(post, fetchedAt);
+        const upserted = await repo.upsertSourcePost(options.backfill ? { ...post, first_discovered_via: 'backfill' } : post, fetchedAt);
         if (upserted.isNew) {
           newPosts++;
           newlyPersistedPosts.push({ ...post, id: upserted.id });
@@ -771,7 +897,7 @@ export async function persistXAccountBatches(
 
       if (!batch.complete) {
         errors.push(`${batch.account}: X batch incomplete; cursor was not advanced`);
-      } else if (batch.newestId) {
+      } else if (batch.newestId && advanceCursor) {
         // This is deliberately the last operation for the account. If any
         // raw D1 write above fails, the cursor remains unchanged and the next
         // slot safely refetches the batch.
@@ -788,14 +914,317 @@ export async function persistXAccountBatches(
   return { postsChecked, newPosts, candidatesFound, newCandidates, errors };
 }
 
-/** Put likely product/usage signals first, while retaining every new post. */
-function prioritizeCandidates(posts: SourcePost[]): SourcePost[] {
+/**
+ * One-shot historical backfill. Re-fetches the recent X timeline window
+ * WITHOUT the stored since_id cursor so posts that predate the reply-retention
+ * fix (x-api.ts) can be ingested. Safety properties:
+ *
+ * 1. The cursor is never advanced (persistXAccountBatches runs with
+ *    advanceCursor=false), so forward incremental syncs are untouched.
+ * 2. Ingestion goes through upsertSourcePost, which deduplicates by canonical
+ *    post id and preserves the indexed->direct upgrade path; duplicate events
+ *    are impossible because monitor_events UNIQUE(source_post_id).
+ * 3. `sinceId` (when provided) acts as a bounded lower bound; otherwise the
+ *    oldest stored direct X post id is used, and if none exists the provider
+ *    fetches the most recent window (bounded by backfill max pages).
+ * 4. Newly ingested posts are left classification_pending=true and flow into
+ *    the normal classifier queue; no events are fabricated here.
+ *
+ * Budget metering: one X daily reservation covers the whole run (the provider
+ * may still issue up to `maxPages` HTTP page requests plus a user resolution
+ * under that single reservation). The run default is 5 pages so a single
+ * backfill cannot blow the daily X budget; a `since` bound older than the
+ * lookback window is refused unless `force=true` because the required page
+ * count is unknowable without first fetching.
+ */
+export async function backfillHistoricalXTimeline(
+  env: Env,
+  options: { sinceId?: string; now?: Date; maxPages?: number; force?: boolean } = {},
+): Promise<{
+  fetchedAt: string;
+  newPosts: number;
+  postsChecked: number;
+  cursorAdvanced: boolean;
+  pagesFetched: number;
+  reservationsUsed: number;
+  httpRequestsUsed: number;
+  errors: string[];
+}> {
+  const repo = new Repository(env.DB);
+  const now = options.now ?? new Date();
+  const sinceId = options.sinceId ?? (await repo.getOldestDirectXSourcePostId()) ?? undefined;
+  if (sinceId && !options.force) {
+    const sinceDate = getXPostPublishedAt(sinceId);
+    if (!sinceDate || now.getTime() - new Date(sinceDate).getTime() > getBackfillLookbackLimitDays(env) * 86400000) {
+      throw new Error(
+        `BACKFILL_SINCE_TOO_OLD: since=${sinceId} is from before the ${getBackfillLookbackLimitDays(env)}-day lookback window; pass force=true to backfill it anyway`,
+      );
+    }
+  }
+
+  const provider = new XApiProvider(env, repo);
+  const effectiveMaxPages = options.maxPages !== undefined
+    ? Math.max(1, Math.min(MAX_X_BACKFILL_PAGES, Math.floor(options.maxPages)))
+    : Math.max(1, Math.min(MAX_X_BACKFILL_PAGES, parseCounter(env.X_API_BACKFILL_MAX_PAGES ?? '') || DEFAULT_X_BACKFILL_MAX_PAGES));
+
+  const reservation = await reserveXApiFetch(repo, env, now);
+  if (!reservation) return { fetchedAt: now.toISOString(), newPosts: 0, postsChecked: 0, cursorAdvanced: false,
+    pagesFetched: 0, reservationsUsed: 0, httpRequestsUsed: 0, errors: ['X_BUDGET_EXHAUSTED'] };
+  let batches: XApiAccountBatch[];
+  try {
+    const batch = await provider.fetchIncremental({ sinceId, ignoreStoredCursor: options.sinceId === undefined,
+      backfillMaxPages: effectiveMaxPages, now, reservationAlreadyHeld: true, reservation });
+    batches = batch.accounts;
+  } catch (error) {
+    if (error instanceof XApiPartialFailureError && error.accounts.every(account => account.complete || account.error === 'pagination_limit_reached')) {
+      batches = error.accounts;
+    } else {
+      const accounts = error instanceof XApiPartialFailureError ? error.accounts : [];
+      await persistXRateLimit(repo, accounts);
+      const code = accounts.some(account => /429|X_RATE_LIMIT_EXHAUSTED/.test(account.error ?? '')) ? 'X_BACKFILL_RATE_LIMITED' : 'X_BACKFILL_FETCH_FAILED';
+      await repo.setSetting('x_backfill_warning', code);
+      await repo.recordProviderStatus('x-backfill', 'degraded', null, code);
+      return { fetchedAt: now.toISOString(), newPosts: 0, postsChecked: 0, cursorAdvanced: false,
+        pagesFetched: provider.timelineRequestsUsed, reservationsUsed: 1, httpRequestsUsed: provider.httpRequestsUsed, errors: [code] };
+    }
+  }
+  await persistXRateLimit(repo, batches);
+  const persisted = await persistXAccountBatches(repo, batches, now, { advanceCursor: false, backfill: true });
+  await repo.setSetting('x_backfill_warning', persisted.errors.length ? 'X_BACKFILL_INCOMPLETE' : '');
+  await repo.recordProviderStatus('x-backfill', persisted.errors.length ? 'degraded' : 'ok', now.toISOString(), persisted.errors.length ? 'X_BACKFILL_INCOMPLETE' : null);
+  const pagesFetched = batches.reduce((sum, account) => sum + (account.pagesFetched ?? 0), 0);
+  return {
+    fetchedAt: now.toISOString(),
+    newPosts: persisted.newPosts,
+    postsChecked: persisted.postsChecked,
+    cursorAdvanced: false,
+    pagesFetched,
+    reservationsUsed: 1,
+    httpRequestsUsed: provider.httpRequestsUsed,
+    errors: persisted.errors,
+  };
+}
+
+// ==================== Ingestion-completeness probe (R3/M1) ====================
+
+export const DEFAULT_X_BACKFILL_MAX_PAGES = 5;
+export const DEFAULT_X_INGESTION_PROBE_INTERVAL_HOURS = 24;
+export const DEFAULT_X_INGESTION_PROBE_WINDOW_HOURS = 24;
+export const DEFAULT_X_INGESTION_PROBE_MAX_PAGES = 2;
+export const DEFAULT_X_INGESTION_PROBE_RETRY_HOURS = 4;
+export const DEFAULT_X_BACKFILL_LOOKBACK_DAYS = 14;
+
+export function getBackfillLookbackLimitDays(env: Env): number {
+  const configured = Number(env.X_BACKFILL_MAX_LOOKBACK_DAYS);
+  return Number.isFinite(configured)
+    ? Math.max(1, Math.min(90, Math.floor(configured)))
+    : DEFAULT_X_BACKFILL_LOOKBACK_DAYS;
+}
+
+export function isXIngestionProbeEnabled(env: Env): boolean {
+  return env.X_INGESTION_PROBE_ENABLED?.trim().toLowerCase() === 'true';
+}
+
+export function getXIngestionProbeIntervalHours(env: Env): number {
+  const configured = Number(env.X_INGESTION_PROBE_INTERVAL_HOURS);
+  return Number.isFinite(configured)
+    ? Math.max(1, Math.min(168, Math.floor(configured)))
+    : DEFAULT_X_INGESTION_PROBE_INTERVAL_HOURS;
+}
+
+export function getXIngestionProbeWindowHours(env: Env): number {
+  const configured = Number(env.X_INGESTION_PROBE_WINDOW_HOURS);
+  return Number.isFinite(configured)
+    ? Math.max(1, Math.min(168, Math.floor(configured)))
+    : DEFAULT_X_INGESTION_PROBE_WINDOW_HOURS;
+}
+
+export function getXIngestionProbeMaxPages(env: Env): number {
+  const configured = Number(env.X_INGESTION_PROBE_MAX_PAGES);
+  return Number.isFinite(configured)
+    ? Math.max(1, Math.min(5, Math.floor(configured)))
+    : DEFAULT_X_INGESTION_PROBE_MAX_PAGES;
+}
+
+export function getXIngestionProbeRetryHours(env: Env): number {
+  const configured = Number(env.X_INGESTION_PROBE_RETRY_HOURS);
+  return Number.isFinite(configured)
+    ? Math.max(1, Math.min(48, Math.floor(configured)))
+    : DEFAULT_X_INGESTION_PROBE_RETRY_HOURS;
+}
+
+export interface XIngestionProbeDecision {
+  allowed: boolean;
+  reason: 'allowed' | 'probe_disabled' | 'interval_not_elapsed' | 'retry_backoff';
+}
+
+/**
+ * The completeness probe runs at most once per interval (default 24h) and
+ * backoffs its retries after a failure so an X outage cannot burn the budget
+ * by itself. Fail closed: disabled unless X_INGESTION_PROBE_ENABLED=true.
+ */
+export function shouldRunXIngestionProbe(
+  now: Date,
+  lastProbeAt: string | null,
+  lastAttemptAt: string | null,
+  env: Env,
+): XIngestionProbeDecision {
+  if (!isXIngestionProbeEnabled(env)) return { allowed: false, reason: 'probe_disabled' };
+  if (lastProbeAt) {
+    const last = new Date(lastProbeAt).getTime();
+    if (!Number.isNaN(last) && now.getTime() - last < getXIngestionProbeIntervalHours(env) * 3600000) {
+      return { allowed: false, reason: 'interval_not_elapsed' };
+    }
+  }
+  if (lastAttemptAt) {
+    const last = new Date(lastAttemptAt).getTime();
+    if (!Number.isNaN(last) && now.getTime() - last < getXIngestionProbeRetryHours(env) * 3600000) {
+      return { allowed: false, reason: 'retry_backoff' };
+    }
+  }
+  return { allowed: true, reason: 'allowed' };
+}
+
+export interface XIngestionProbeResult {
+  probeRun: boolean;
+  skippedReason: string | null;
+  windowStart: string | null;
+  timelineWindowStart: string | null;
+  timelineWindowEnd: string | null;
+  storedWindowStart: string | null;
+  storedWindowEnd: string | null;
+  discrepancyRatio: number | null;
+  warning: string | null;
+  timelineCount: number | null;
+  storedCount: number | null;
+  missedCount: number | null;
+  pagesFetched: number;
+  reservationsUsed: number;
+  lastProbeAt: string | null;
+}
+
+/**
+ * Read-only ingestion-completeness probe: fetch the raw recent timeline
+ * (replies included) with a start_time lower bound and compare its post count
+ * against what is actually stored in D1. The probe NEVER writes source_posts
+ * and never advances any cursor; it consumes one X reservation for the whole
+ * bounded (max 2 pages) fetch and only persists metering settings. A positive
+ * missedCount with replies retained is the symptom of an intake-layer filter
+ * (e.g. exclude=replies) being reintroduced that monitorGap cannot see.
+ */
+export async function probeXIngestionCompleteness(
+  env: Env,
+  options: { now?: Date; force?: boolean } = {},
+): Promise<XIngestionProbeResult> {
+  const repo = new Repository(env.DB);
+  const now = options.now ?? new Date();
+  const lastProbeAt = await repo.getSetting('x_ingestion_probe_last_at');
+  const lastAttemptAt = await repo.getSetting('x_ingestion_probe_last_attempt_at');
+  const decision = shouldRunXIngestionProbe(now, lastProbeAt, lastAttemptAt, env);
+  const empty = {
+    probeRun: false,
+    skippedReason: decision.reason,
+    windowStart: null,
+    timelineWindowStart: null, timelineWindowEnd: null, storedWindowStart: null, storedWindowEnd: null,
+    discrepancyRatio: null, warning: null,
+    timelineCount: null,
+    storedCount: null,
+    missedCount: null,
+    pagesFetched: 0,
+    reservationsUsed: 0,
+    lastProbeAt,
+  };
+  if (!decision.allowed && !options.force) return empty;
+  if (!isXIngestionProbeEnabled(env)) return empty;
+
+  const windowStart = new Date(now.getTime() - getXIngestionProbeWindowHours(env) * 3600000).toISOString();
+  const maxPages = getXIngestionProbeMaxPages(env);
+  const provider = new XApiProvider(env, repo);
+  const reservation = await reserveXApiFetch(repo, env, now);
+  if (!reservation) {
+    return { ...empty, skippedReason: 'daily_budget_exhausted_or_concurrent_trigger' };
+  }
+  await repo.setSetting('x_ingestion_probe_last_attempt_at', now.toISOString());
+  try {
+    const batch = await provider.fetchIncremental({
+      reservationAlreadyHeld: true,
+      reservation,
+      startTime: windowStart,
+      backfillMaxPages: maxPages,
+      now,
+    });
+    const windowStartMs = new Date(windowStart).getTime();
+    const timelineCount = new Set(batch.accounts
+      .flatMap(account => account.posts)
+      .filter(post => {
+        if (!post.published_at) return false;
+        const published = new Date(post.published_at).getTime();
+        return !Number.isNaN(published) && published >= windowStartMs && published < now.getTime();
+      }).map(post => `${post.source_account}:${post.canonical_post_id ?? post.source_post_id}`)).size;
+    const storedCount = await repo.countIngestedDirectXPostsWithin(windowStart, now, monitoredAccounts(env));
+    const missedCount = Math.max(0, timelineCount - storedCount);
+    const discrepancyRatio = Math.abs(timelineCount - storedCount) / Math.max(1, timelineCount, storedCount);
+    const warning = discrepancyRatio > 0.01 ? 'INGESTION_COUNT_DISCREPANCY' : null;
+    await repo.setSetting('x_ingestion_probe_window_end', now.toISOString());
+    await repo.setSetting('x_ingestion_probe_discrepancy_ratio', String(discrepancyRatio));
+    await repo.setSetting('x_ingestion_probe_warning', warning ?? '');
+    const pagesFetched = batch.accounts.reduce((sum, account) => sum + (account.pagesFetched ?? 0), 0);
+    await repo.recordProviderUsageSuccess(X_API_PROVIDER_KEY, providerUsageDate(now), now.toISOString());
+    await repo.setSetting('x_ingestion_probe_last_at', now.toISOString());
+    await repo.setSetting('x_ingestion_probe_window_start', windowStart);
+    await repo.setSetting('x_ingestion_probe_timeline_count', String(timelineCount));
+    await repo.setSetting('x_ingestion_probe_stored_count', String(storedCount));
+    await repo.setSetting('x_ingestion_probe_missed_count', String(missedCount));
+    await repo.setSetting('x_ingestion_probe_pages', String(pagesFetched));
+    return {
+      probeRun: true,
+      skippedReason: null,
+      windowStart,
+      timelineWindowStart: windowStart, timelineWindowEnd: now.toISOString(),
+      storedWindowStart: windowStart, storedWindowEnd: now.toISOString(), discrepancyRatio, warning,
+      timelineCount,
+      storedCount,
+      missedCount,
+      pagesFetched,
+      reservationsUsed: 1,
+      lastProbeAt: now.toISOString(),
+    };
+  } catch (error) {
+    console.error('[Cron] X ingestion probe failed:', error);
+    return {
+      ...empty,
+      skippedReason: 'probe_fetch_failed',
+      windowStart,
+      reservationsUsed: 1,
+    };
+  }
+}
+
+/**
+ * Put likely product/usage signals first, while retaining every new post.
+ * Deterministic reset hints (completed-state or soft-hint language) rank above
+ * the keyword prefilter because they are the exact "seen on X, missing on the
+ * site" candidates this repair targets; the classifier budget spends on those
+ * first.
+ */
+export function prioritizeCandidates(posts: SourcePost[]): SourcePost[] {
+  if (posts.some(post => post.first_discovered_via === 'backfill') && posts.some(post => post.first_discovered_via !== 'backfill')) {
+    return [...prioritizeCandidates(posts.filter(post => post.first_discovered_via !== 'backfill')),
+      ...prioritizeCandidates(posts.filter(post => post.first_discovered_via === 'backfill'))];
+  }
+  const resetHints: SourcePost[] = [];
   const priority: SourcePost[] = [];
   const ordinary: SourcePost[] = [];
   for (const post of posts) {
-    (keywordPrefilter(post.text) ? priority : ordinary).push(post);
+    if (isCompletedResetHint(post) || isSoftResetHint(post) || isTrustedContextualResetWithContext(post, { activeCodexReset: true })) {
+      resetHints.push(post);
+    } else if (keywordPrefilter(post.text)) {
+      priority.push(post);
+    } else {
+      ordinary.push(post);
+    }
   }
-  return [...priority, ...ordinary];
+  return [...resetHints, ...priority, ...ordinary];
 }
 
 async function getXUsageSnapshot(repo: Repository, usageDate: string): Promise<XUsageSnapshot | null> {
@@ -916,4 +1345,12 @@ function resultToLegacyPost(result: SearchResult): SourcePost | null {
     content_hash: result.url,
     classification_pending: true,
   };
+}
+
+export async function recordRunDuration(repo: Repository, env: Env, startedAt: string, finishedAt: string) {
+  const elapsedMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
+  const configured = Number(env.MONITOR_RUN_WARN_MS ?? '240000');
+  const threshold = Number.isFinite(configured) && configured >= 0 ? configured : 240000;
+  await repo.setSetting('monitor_run_duration', JSON.stringify({ elapsedMs, thresholdMs: threshold, warning: elapsedMs > threshold, finishedAt }));
+  await repo.recordProviderStatus('monitor-runtime', elapsedMs > threshold ? 'degraded' : 'ok', finishedAt, elapsedMs > threshold ? 'MONITOR_RUN_SLOW' : null);
 }

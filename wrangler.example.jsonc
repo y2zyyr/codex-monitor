@@ -57,6 +57,38 @@
     "WEB_SEARCH_ENABLED": "false",
     "MAX_WEB_SEARCH_REQUESTS_PER_DAY": "6",
     "NORMAL_SEARCH_INTERVAL_HOURS": "4",
+    // Optional knobs (code defaults apply when unset):
+    //   WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: active reset modes (WATCHING /
+    //     CONFIRMING) draw on this larger pool (default 24/day) instead of the
+    //     NORMAL 6 so hourly confirmation searches are not exhausted after a
+    //     few hours.
+    //   WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS: cooldown (default 1h) for the
+    //     reply-supplement search that backstops the direct X timeline.
+    //   WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT: separate small pool for the reply
+    //     supplement (default 2/day), so NORMAL totals 6 discovery + up to 2
+    //     supplement searches per day and one channel cannot exhaust the other.
+    //   WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS: in NORMAL mode the supplement
+    //     also fires when the last regular search is older than this (default 2h)
+    //     or when a direct X reset signal was ingested without an event.
+    //   CLASSIFICATIONS_PER_RUN: per-run classifier budget (default/hard cap 8; 0 disables).
+    //   REVIEW_ALERT_AFTER_HOURS: queue age alert threshold (default 6h).
+    //   REVIEW_ALERT_PROVIDER_STATUS: true opts into provider status alerts;
+    //     default only stores review_queue_alert in settings, no Telegram sends.
+    //   MONITOR_RUN_WARN_MS: wall-time alert threshold (default 240000ms).
+    //   X_API_BACKFILL_MAX_PAGES: page depth for the one-shot /__cron/backfill-x
+    //     historical backfill (default 5; the whole run costs one X reservation).
+    //   X_BACKFILL_MAX_LOOKBACK_DAYS: oldest allowed `since` bound for backfill
+    //     without force=true (default 14).
+    //   RELEASE CHECK REQUIRED: explicitly set X_INGESTION_PROBE_ENABLED=true
+    //     in an authorized deployment; health warns while disabled.
+    //   X_INGESTION_PROBE_ENABLED: opt-in completeness probe ('true'). Compares
+    //     the raw recent timeline (replies included) against stored posts once
+    //     per X_INGESTION_PROBE_INTERVAL_HOURS (default 24) and reports
+    //     missedCount via /api/health ingestionGap. Consumes one X reservation;
+    //     never writes source_posts and never advances any cursor.
+    //   X_INGESTION_PROBE_WINDOW_HOURS / X_INGESTION_PROBE_MAX_PAGES /
+    //     X_INGESTION_PROBE_RETRY_HOURS: probe window (24h), page depth (2) and
+    //     failure retry backoff (4h).
     "BRAVE_SEARCH_PRICE_PER_1000_USD": "5",
     "BRAVE_MONTHLY_CREDIT_USD": "5",
     "COMMUNITY_POSTING_ENABLED": "false",

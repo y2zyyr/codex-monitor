@@ -1,3 +1,4 @@
+import { evaluateReviewAlert } from '../review';
 // ============================================================
 // Codex Usage Monitor - API Routes
 // ============================================================
@@ -13,11 +14,13 @@ import {
   effectiveManualResetReport,
 } from '../utils/reset-source';
 import { canUseSearchProvider, monitoredAccounts, WEB_SEARCH_PROVIDER_KEY } from '../providers/search-provider';
+import { X_TIMELINE_EXCLUDE as X_TIMELINE_EXCLUDE_VALUE } from '../providers/x-api';
 import {
   providerUsageDate,
 } from '../utils/schedule';
 import { DEFAULT_TIMEZONE_BY_LOCALE, isDisplayTimeZone } from '../utils/timezone';
 import { getXApiStatusSnapshot } from '../utils/x-api-status';
+import { isXIngestionProbeEnabled, getXIngestionProbeWindowHours } from '../cron';
 import {
   getBraveMonthlyCreditUsd,
   getEstimatedMonthlyGrossCostUsd,
@@ -571,6 +574,51 @@ api.get('/health', async (c) => {
     const activeCycle = await repo.getActiveResetCycle({ advance: false });
     const lastSearchAttempt = await repo.getSetting('web_search_last_attempt');
     const lastSearchSuccess = await repo.getSetting('web_search_last_success');
+    // Missed-detection monitor: direct X posts ingested in the last 7 days that
+    // still have no event. A growing value while Tibo is announcing resets is
+    // the "seen on X, missing on the site" symptom; it stays bounded and is
+    // read-only diagnostics, never a public dashboard field. The rejection
+    // breakdown lets operators tell a systemic intake miss (one reason code
+    // exploding) from intended rejects at a glance. Both timeline flags are
+    // derived from the provider's single exclude constant so they cannot drift.
+    const [rejectionBreakdownLast7d, probeSettingRows] = await Promise.all([
+      xApiSnapshot.automaticSync ? repo.countRejectionReasonsWithoutEventsWithin(7, now) : Promise.resolve<Record<string, number>>({}),
+      Promise.all([
+        repo.getSetting('x_ingestion_probe_last_at'),
+        repo.getSetting('x_ingestion_probe_window_start'),
+        repo.getSetting('x_ingestion_probe_timeline_count'),
+        repo.getSetting('x_ingestion_probe_stored_count'),
+        repo.getSetting('x_ingestion_probe_missed_count'),
+        repo.getSetting('x_ingestion_probe_pages'),
+        repo.getSetting('x_ingestion_probe_window_end'),
+        repo.getSetting('x_ingestion_probe_discrepancy_ratio'),
+        repo.getSetting('x_ingestion_probe_warning'),
+      ]),
+    ]);
+    const probeEnabled = isXIngestionProbeEnabled(c.env);
+    const monitorGap = {
+      directXPostsWithoutEventsLast7d: xApiSnapshot.automaticSync
+        ? await repo.countDirectPostsWithoutEventsWithin(7, now)
+        : null,
+      rejectionBreakdownLast7d: xApiSnapshot.automaticSync ? rejectionBreakdownLast7d : null,
+      repliesIncludedInTimeline: X_TIMELINE_EXCLUDE_VALUE === 'retweets',
+      lastTimelineFetchExclude: X_TIMELINE_EXCLUDE_VALUE,
+    };
+    const [probeLastAt, probeWindowStart, probeTimelineCount, probeStoredCount, probeMissedCount, probePages, probeWindowEnd, probeDiscrepancy, probeWarning] = probeSettingRows;
+    const ingestionGap = {
+      probeEnabled,
+      windowHours: getXIngestionProbeWindowHours(c.env),
+      lastProbeAt: probeLastAt,
+      windowStart: probeWindowStart,
+      timelineWindowStart: probeWindowStart, timelineWindowEnd: probeWindowEnd,
+      storedWindowStart: probeWindowStart, storedWindowEnd: probeWindowEnd,
+      discrepancyRatio: probeDiscrepancy === null ? null : Number(probeDiscrepancy),
+      warning: probeWarning || null,
+      timelineCount24h: probeTimelineCount === null ? null : Number(probeTimelineCount),
+      storedCount24h: probeStoredCount === null ? null : Number(probeStoredCount),
+      missedCount: probeMissedCount === null ? null : Number(probeMissedCount),
+      pagesFetched: probePages === null ? null : Number(probePages),
+    };
 
     // Determine overall status
     let overallStatus: string;
@@ -680,6 +728,13 @@ api.get('/health', async (c) => {
         ? xApiSnapshot.lastSuccessAt
         : searchLastSuccessAt,
       lastEventAt: latestEvent?.published_at ?? latestEvent?.created_at ?? null,
+      monitorGap,
+      reviewQueue: evaluateReviewAlert(await repo.getReviewQueueStats(), c.env, now),
+      ingestionGap,
+      warnings: [
+        ...(!probeEnabled ? ['ingestion probe disabled'] : !probeLastAt ? ['ingestion probe has never completed'] : []),
+        ...(probeWarning ? [probeWarning] : []),
+      ],
       checkedAt: now.toISOString(),
       provenance: buildProvenance(c.env),
     });
@@ -739,6 +794,25 @@ api.get('/health', async (c) => {
       lastSuccessfulCron: null,
       lastSourceFetch: null,
       lastEventAt: null,
+      monitorGap: {
+        directXPostsWithoutEventsLast7d: null,
+        rejectionBreakdownLast7d: null,
+        repliesIncludedInTimeline: true,
+        lastTimelineFetchExclude: 'retweets',
+      },
+      warnings: ['health diagnostics unavailable', ...(isXIngestionProbeEnabled(c.env) ? [] : ['ingestion probe disabled'])],
+      ingestionGap: {
+        probeEnabled: isXIngestionProbeEnabled(c.env),
+        windowHours: getXIngestionProbeWindowHours(c.env),
+        timelineWindowStart: null, timelineWindowEnd: null, storedWindowStart: null, storedWindowEnd: null,
+        discrepancyRatio: null, warning: null,
+        lastProbeAt: null,
+        windowStart: null,
+        timelineCount24h: null,
+        storedCount24h: null,
+        missedCount: null,
+        pagesFetched: null,
+      },
       checkedAt: new Date().toISOString(),
     }, 500);
   }

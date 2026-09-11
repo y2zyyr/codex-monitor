@@ -80,6 +80,22 @@ describe('API Endpoints', () => {
       uptime: null,
       lastRun: null,
       dbConnected: true,
+      monitorGap: {
+        directXPostsWithoutEventsLast7d: 0,
+        rejectionBreakdownLast7d: { MISSING_PRODUCT_CONTEXT: 1 },
+        repliesIncludedInTimeline: true,
+        lastTimelineFetchExclude: 'retweets',
+      },
+      ingestionGap: {
+        probeEnabled: true,
+        windowHours: 24,
+        lastProbeAt: '2026-09-10T00:00:00.000Z',
+        windowStart: '2026-09-09T00:00:00.000Z',
+        timelineCount24h: 2,
+        storedCount24h: 1,
+        missedCount: 1,
+        pagesFetched: 1,
+      },
     };
 
     expect(mockResponse).toHaveProperty('status');
@@ -87,6 +103,14 @@ describe('API Endpoints', () => {
     expect(mockResponse).toHaveProperty('uptime');
     expect(mockResponse).toHaveProperty('lastRun');
     expect(mockResponse).toHaveProperty('dbConnected');
+    expect(mockResponse.monitorGap).toHaveProperty('directXPostsWithoutEventsLast7d');
+    expect(mockResponse.monitorGap).toHaveProperty('rejectionBreakdownLast7d');
+    expect(mockResponse.monitorGap).toHaveProperty('repliesIncludedInTimeline');
+    expect(mockResponse.monitorGap).toHaveProperty('lastTimelineFetchExclude');
+    expect(mockResponse.ingestionGap).toHaveProperty('probeEnabled');
+    expect(mockResponse.ingestionGap).toHaveProperty('missedCount');
+    expect(mockResponse.ingestionGap).toHaveProperty('timelineCount24h');
+    expect(mockResponse.ingestionGap).toHaveProperty('storedCount24h');
   });
 
   it('events paginated response has required fields', () => {

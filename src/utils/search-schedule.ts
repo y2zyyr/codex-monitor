@@ -6,6 +6,23 @@ import { beijingDateParts } from './schedule';
 
 export const DEFAULT_NORMAL_SEARCH_INTERVAL_HOURS = 4;
 export const DEFAULT_WEB_SEARCH_DAILY_LIMIT = 6;
+// Active reset modes search hourly (see getWebSearchIntervalHours). A six-request
+// daily budget would be exhausted after six hours of watching, exactly when the
+// monitor needs the most confirmation/discovery headroom. Active modes therefore
+// draw on a separate, larger budget pool; NORMAL keeps the conservative default.
+export const DEFAULT_WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT = 24;
+// Supplemental searches are a backstop for reply/thread posts that the direct X
+// timeline used to exclude. They draw on their own small daily pool (separate
+// from the discovery/confirmation pool) so a healthy direct source or a NORMAL
+// quiet period cannot burn the 6/day discovery budget. NORMAL therefore stays
+// at 6/day discovery + up to 2/day reply supplement (7-8 total), fail closed.
+export const DEFAULT_WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT = 2;
+// Never run twice within this window.
+export const DEFAULT_WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS = 1;
+// In NORMAL mode the supplement also fires when the last regular discovery
+// search is this old: a reset announced as a bare reply with no prior plan
+// must not wait for the next 4-hour discovery slot.
+export const DEFAULT_WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS = 2;
 export const DEFAULT_BRAVE_SEARCH_PRICE_PER_1000_USD = 5;
 export const DEFAULT_BRAVE_MONTHLY_CREDIT_USD = 5;
 export const DEFAULT_WEB_SEARCH_FALLBACK_BACKOFF_MINUTES = 30;
@@ -44,7 +61,8 @@ export function isStaleApproximateReset(
 export type WebSearchSkipReason =
   | 'disabled'
   | 'daily_budget_exhausted'
-  | 'interval_not_elapsed';
+  | 'interval_not_elapsed'
+  | 'no_trigger';
 
 export interface WebSearchDecision {
   allowed: boolean;
@@ -73,6 +91,34 @@ function usageCount(usage: WebSearchUsageSnapshot | null | undefined): number {
 
 export function getWebSearchDailyLimit(env: Env | { MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string }): number {
   return Math.max(0, integerFromEnv(env.MAX_WEB_SEARCH_REQUESTS_PER_DAY, DEFAULT_WEB_SEARCH_DAILY_LIMIT));
+}
+
+/** Active reset modes get a larger, separately configurable daily budget. */
+export function getWebSearchActiveModeDailyLimit(env: Env | { WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string }): number {
+  return Math.max(0, integerFromEnv(env.WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT, DEFAULT_WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT));
+}
+
+/** The reply-supplement channel has its own small daily pool (default 2/day). */
+export function getWebSearchSupplementDailyLimit(env: Env | { WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT?: string }): number {
+  return Math.max(0, integerFromEnv(env.WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT, DEFAULT_WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT));
+}
+
+/** NORMAL stale-trigger window between the last regular search and a supplement. */
+export function getWebSearchSupplementNormalStaleHours(env: Env | { WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS?: string }): number {
+  return Math.max(1, Math.min(24,
+    integerFromEnv(env.WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS, DEFAULT_WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS)));
+}
+
+/**
+ * The mode-aware daily limit. NORMAL stays conservative; WATCHING/CONFIRMING
+ * draw on the active-mode pool so hourly confirmation searches do not exhaust
+ * the budget after a few hours. Fail closed on zero.
+ */
+export function getWebSearchDailyLimitForMode(
+  mode: WebSearchMode,
+  env: Env | { MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string; WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string },
+): number {
+  return mode === 'NORMAL' ? getWebSearchDailyLimit(env) : getWebSearchActiveModeDailyLimit(env);
 }
 
 /** NORMAL is configurable, while active reset modes keep a one-hour cadence. */
@@ -139,9 +185,9 @@ export function nextWebSearchAt(
   mode: WebSearchMode,
   lastAttemptAt: string | null | undefined,
   usage: WebSearchUsageSnapshot | null | undefined,
-  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string },
+  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string; WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string },
 ): string | null {
-  const dailyLimit = getWebSearchDailyLimit(env);
+  const dailyLimit = getWebSearchDailyLimitForMode(mode, env);
   if (dailyLimit <= 0) return null;
   if (usageCount(usage) >= dailyLimit) return nextBeijingMidnight(now);
   if (!lastAttemptAt) return now.toISOString();
@@ -157,9 +203,9 @@ export function shouldRunWebSearch(
   mode: WebSearchMode,
   lastAttemptAt: string | null | undefined,
   usage: WebSearchUsageSnapshot | null | undefined,
-  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string },
+  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string; WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string },
 ): WebSearchDecision {
-  const dailyLimit = getWebSearchDailyLimit(env);
+  const dailyLimit = getWebSearchDailyLimitForMode(mode, env);
   const intervalHours = getWebSearchIntervalHours(mode, env);
   const nextSearchAt = nextWebSearchAt(now, mode, lastAttemptAt, usage, env);
   const base = { mode, intervalHours, dailyLimit, nextSearchAt };
@@ -177,16 +223,113 @@ export function shouldRunWebSearch(
   return { allowed: true, reason: 'allowed', ...base };
 }
 
+/**
+ * Supplemental search trigger: the direct X timeline is healthy and up to date,
+ * but replies/thread tails may have been missed before replies were re-enabled,
+ * and web indexes are slower than the API. The trigger set is intentionally
+ * wider than the old active-mode-only gate so a bare “Reset done.” reply with
+ * no prior plan cannot sit unseen for the whole 4-hour NORMAL discovery window:
+ *
+ *  - active reset mode (WATCHING/CONFIRMING); or
+ *  - NORMAL and the last regular discovery search is older than
+ *    WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS (default 2h); or
+ *  - a direct X post containing reset-family language was ingested in the last
+ *    24h without producing an event (recentResetWithoutEvent).
+ *
+ * The channel draws on its OWN small daily pool (WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT,
+ * default 2/day), never the discovery pool, so NORMAL goes from 6/day to at most
+ * 8/day. It never runs twice within the cooldown interval, and it fails closed
+ * on disabled/exhausted budgets. With no trigger active it returns no_trigger.
+ */
+export interface WebSearchSupplementDecision {
+  allowed: boolean;
+  reason: 'allowed' | WebSearchSkipReason;
+  trigger: 'active_mode' | 'normal_stale' | 'recent_reset_signal' | null;
+  intervalHours: number;
+  dailyLimit: number;
+  nextSupplementalAt: string | null;
+}
+
+export function getWebSearchSupplementIntervalHours(
+  env: Env | { WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS?: string },
+): number {
+  return Math.max(0.25, Math.min(24,
+    numberFromEnv(env.WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS, DEFAULT_WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS)));
+}
+
+export interface SupplementalTriggerContext {
+  /** Last regular (discovery/confirmation) search attempt, for the NORMAL stale window. */
+  lastMainSearchAt?: string | null;
+  /** True when a direct X post with reset language was ingested recently without an event. */
+  recentResetWithoutEvent?: boolean;
+}
+
+export function shouldRunSupplementalWebSearch(
+  now: Date,
+  mode: WebSearchMode,
+  lastSupplementalAt: string | null | undefined,
+  usage: WebSearchUsageSnapshot | null | undefined,
+  env: Env | {
+    WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS?: string;
+    WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT?: string;
+    WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS?: string;
+  },
+  triggerContext: SupplementalTriggerContext = {},
+): WebSearchSupplementDecision {
+  // Fail closed first: the supplement pool is the hard ceiling for this channel.
+  const dailyLimit = getWebSearchSupplementDailyLimit(env);
+  const intervalHours = getWebSearchSupplementIntervalHours(env);
+  const nextSupplementalAt = (() => {
+    if (dailyLimit <= 0) return null;
+    if (usageCount(usage) >= dailyLimit) return nextBeijingMidnight(now);
+    if (!lastSupplementalAt) return now.toISOString();
+    const last = new Date(lastSupplementalAt);
+    if (Number.isNaN(last.getTime())) return now.toISOString();
+    const candidate = new Date(last.getTime() + intervalHours * 3600000);
+    return candidate.getTime() <= now.getTime() ? now.toISOString() : candidate.toISOString();
+  })();
+  const base = { intervalHours, dailyLimit, nextSupplementalAt };
+
+  if (dailyLimit <= 0) return { allowed: false, reason: 'disabled', trigger: null, ...base };
+  if (usageCount(usage) >= dailyLimit) {
+    return { allowed: false, reason: 'daily_budget_exhausted', trigger: null, ...base };
+  }
+  if (lastSupplementalAt) {
+    const last = new Date(lastSupplementalAt).getTime();
+    if (!Number.isNaN(last) && now.getTime() < last + intervalHours * 3600000) {
+      return { allowed: false, reason: 'interval_not_elapsed', trigger: null, ...base };
+    }
+  }
+
+  // Trigger selection. Active reset modes always qualify; NORMAL needs a stale
+  // regular search or a fresh direct reset signal without an event.
+  let trigger: WebSearchSupplementDecision['trigger'] = null;
+  if (mode !== 'NORMAL') {
+    trigger = 'active_mode';
+  } else if (triggerContext.recentResetWithoutEvent === true) {
+    trigger = 'recent_reset_signal';
+  } else if (triggerContext.lastMainSearchAt) {
+    const lastMain = new Date(triggerContext.lastMainSearchAt).getTime();
+    if (!Number.isNaN(lastMain)
+      && now.getTime() >= lastMain + getWebSearchSupplementNormalStaleHours(env) * 3600000) {
+      trigger = 'normal_stale';
+    }
+  }
+
+  if (trigger === null) return { allowed: false, reason: 'no_trigger', trigger: null, ...base };
+  return { allowed: true, reason: 'allowed', trigger, ...base };
+}
+
 /** Health must use the last successful cycle, not the last attempt. */
 export function isWebSearchOverdue(
   now: Date,
   lastSuccessAt: string | null | undefined,
   mode: WebSearchMode,
-  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string },
+  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string; WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string },
   usage?: WebSearchUsageSnapshot | null,
 ): boolean {
-  if (getWebSearchDailyLimit(env) <= 0) return false;
-  if (usageCount(usage) >= getWebSearchDailyLimit(env)) return false;
+  if (getWebSearchDailyLimitForMode(mode, env) <= 0) return false;
+  if (usageCount(usage) >= getWebSearchDailyLimitForMode(mode, env)) return false;
   if (!lastSuccessAt) return true;
   const last = new Date(lastSuccessAt).getTime();
   if (Number.isNaN(last)) return true;
@@ -198,13 +341,13 @@ export function isWebSearchOverdue(
 /** One query per cycle is the default; active modes rotate focused queries. */
 export function getEstimatedMonthlyRequests(
   mode: WebSearchMode,
-  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string },
+  env: Env | { NORMAL_SEARCH_INTERVAL_HOURS?: string; MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string; WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string },
   queriesPerCycle = 1,
   days = 30,
 ): number {
   const cyclesPerDay = 24 / getWebSearchIntervalHours(mode, env);
   const requestsPerCycle = Math.max(1, Math.floor(queriesPerCycle));
-  const dailyLimit = getWebSearchDailyLimit(env);
+  const dailyLimit = getWebSearchDailyLimitForMode(mode, env);
   return Math.ceil(Math.min(cyclesPerDay * requestsPerCycle, dailyLimit) * days);
 }
 

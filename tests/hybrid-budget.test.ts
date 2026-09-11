@@ -30,6 +30,7 @@ function fakeRepo() {
   const rows = new Map<string, { request_count: number; last_request_slot: string | null }>();
   return {
     rows,
+    async getSetting() { return null; },
     async reserveProviderUsage(provider: string, usageDate: string, limit: number, _at: string, slot: string) {
       const key = `${provider}:${usageDate}`;
       const row = rows.get(key) ?? { request_count: 0, last_request_slot: null };

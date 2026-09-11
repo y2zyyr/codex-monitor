@@ -177,6 +177,8 @@ export interface ManualResetReportPublic {
 
 // --- Monitor Run ---
 export interface MonitorRun {
+  /** Derived from persisted started_at/finished_at; wall time, not CPU. */
+  duration_ms?: number | null;
   id?: number;
   started_at: string;
   finished_at: string | null;
@@ -223,7 +225,7 @@ export interface ClassificationResult {
  * Bounded, operator-facing classification audit fields. These values are
  * deliberately enums/codes rather than model reasoning or source text.
  */
-export const CLASSIFICATION_DECISIONS = ['EVENT_CREATED', 'NO_EVENT', 'RETRY'] as const;
+export const CLASSIFICATION_DECISIONS = ['EVENT_CREATED', 'NO_EVENT', 'RETRY', 'REVIEW'] as const;
 export type ClassificationDecision = typeof CLASSIFICATION_DECISIONS[number];
 
 export const CLASSIFICATION_REASON_CODES = [
@@ -240,6 +242,9 @@ export const CLASSIFICATION_REASON_CODES = [
   'UNTRUSTED_SOURCE_CONTEXT',
   'WEAK_RESET_SIGNAL',
   'CLASSIFIER_ERROR',
+  'NEEDS_REVIEW',
+  'OPERATOR_REJECTED',
+  'REVIEW_PUBLISHED',
 ] as const;
 export type ClassificationReasonCode = typeof CLASSIFICATION_REASON_CODES[number];
 
@@ -522,6 +527,33 @@ export interface Env {
   WEB_SEARCH_ENABLED?: string;
   MAX_WEB_SEARCH_REQUESTS_PER_DAY?: string;
   NORMAL_SEARCH_INTERVAL_HOURS?: string;
+  /** Separate daily budget for active reset modes (WATCHING/CONFIRMING). */
+  WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT?: string;
+  /** Cooldown between reply-supplement searches (hours, default 1). */
+  WEB_SEARCH_SUPPLEMENT_INTERVAL_HOURS?: string;
+  /** Small daily pool for the reply-supplement search channel (default 2). */
+  WEB_SEARCH_SUPPLEMENT_DAILY_LIMIT?: string;
+  /** NORMAL-mode stale window between the last regular search and a supplement (default 2h). */
+  WEB_SEARCH_SUPPLEMENT_NORMAL_STALE_HOURS?: string;
+  /** Per-run classifier budget override (default/hard cap 8, 0 disables). */
+  CLASSIFICATIONS_PER_RUN?: string;
+  /** Page depth cap for the one-shot historical X backfill (default 5). */
+  X_API_BACKFILL_MAX_PAGES?: string;
+  /** Oldest allowed `since` bound for backfill without force (default 14 days). */
+  X_BACKFILL_MAX_LOOKBACK_DAYS?: string;
+  /** Opt-in ingestion-completeness probe ('true' enables; default off). */
+  REVIEW_ALERT_AFTER_HOURS?: string;
+  REVIEW_ALERT_PROVIDER_STATUS?: string;
+  MONITOR_RUN_WARN_MS?: string;
+  X_INGESTION_PROBE_ENABLED?: string;
+  /** How often the completeness probe runs (hours, default 24). */
+  X_INGESTION_PROBE_INTERVAL_HOURS?: string;
+  /** Time window the probe compares (hours, default 24). */
+  X_INGESTION_PROBE_WINDOW_HOURS?: string;
+  /** Max timeline pages per probe run (default 2, capped 5). */
+  X_INGESTION_PROBE_MAX_PAGES?: string;
+  /** Retry backoff after a failed probe attempt (hours, default 4). */
+  X_INGESTION_PROBE_RETRY_HOURS?: string;
   BRAVE_SEARCH_PRICE_PER_1000_USD?: string;
   BRAVE_MONTHLY_CREDIT_USD?: string;
   X_API_AUTOMATIC_SYNC?: string;
