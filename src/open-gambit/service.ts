@@ -42,6 +42,8 @@ export interface GambitDiscoveryResult {
   rawItemsFound: number;
   staleItems: number;
   malformedItems: number;
+  /** Items discarded by the version-noise pre-filter (T6.4). */
+  versionNoiseItems: number;
   admittedItems: number;
   selectedSourceIds: string[];
   candidatesFound: number;
@@ -83,6 +85,7 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
       rawItemsFound: 0,
       staleItems: 0,
       malformedItems: 0,
+      versionNoiseItems: 0,
       admittedItems: 0,
       selectedSourceIds: [],
       candidatesFound: 0,
@@ -114,6 +117,7 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
     rawItemsFound: 0,
     staleItems: 0,
     malformedItems: 0,
+    versionNoiseItems: 0,
     admittedItems: 0,
     selectedSourceIds: [],
     candidatesFound: 0,
@@ -175,6 +179,7 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
   result.rawItemsFound = discovered.rawItemsFound;
   result.staleItems = discovered.staleItems;
   result.malformedItems = discovered.malformedItems;
+  result.versionNoiseItems = discovered.versionNoiseItems;
   result.admittedItems = discovered.admittedItems;
   result.selectedSourceIds = discovered.selectedSourceIds;
   result.fetchFailures += discovered.failures.length;
@@ -302,6 +307,7 @@ export async function runGambitDiscovery(env: Env, options: GambitDiscoveryOptio
       rawItemsObserved: discovered.rawItemsFound,
       staleItems: discovered.staleItems,
       malformedItems: discovered.malformedItems,
+      versionNoiseItems: discovered.versionNoiseItems,
       admittedItems: discovered.admittedItems,
       exactDuplicates: result.duplicates,
       routineNoiseRejects: result.routineNoiseRejects,

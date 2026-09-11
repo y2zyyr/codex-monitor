@@ -898,12 +898,12 @@ export class GambitRepository {
     await this.db.prepare(`
       INSERT INTO gambit_discovery_stats (
         run_id, sources_attempted, sources_succeeded, sources_failed,
-        raw_items_observed, stale_items, malformed_items, admitted_items,
-        exact_duplicates, routine_noise_rejects, strategic_eligible,
+        raw_items_observed, stale_items, malformed_items, version_noise_items,
+        admitted_items, exact_duplicates, routine_noise_rejects, strategic_eligible,
         event_duplicates, global_pool_size, global_top_k_selected,
         workflow_dispatches, workflow_failures, partial_source_failure,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(run_id) DO UPDATE SET
         sources_attempted = excluded.sources_attempted,
         sources_succeeded = excluded.sources_succeeded,
@@ -911,6 +911,7 @@ export class GambitRepository {
         raw_items_observed = excluded.raw_items_observed,
         stale_items = excluded.stale_items,
         malformed_items = excluded.malformed_items,
+        version_noise_items = excluded.version_noise_items,
         admitted_items = excluded.admitted_items,
         exact_duplicates = excluded.exact_duplicates,
         routine_noise_rejects = excluded.routine_noise_rejects,
@@ -930,6 +931,7 @@ export class GambitRepository {
       stats.rawItemsObserved,
       stats.staleItems,
       stats.malformedItems,
+      stats.versionNoiseItems,
       stats.admittedItems,
       stats.exactDuplicates,
       stats.routineNoiseRejects,
@@ -956,6 +958,9 @@ export class GambitRepository {
       rawItemsObserved: numberValue(row.raw_items_observed),
       staleItems: numberValue(row.stale_items),
       malformedItems: numberValue(row.malformed_items),
+      // NULL for rows written before migration 0028; those runs genuinely had
+      // no version-noise filter, so 0 is the honest reading.
+      versionNoiseItems: numberValue(row.version_noise_items),
       admittedItems: numberValue(row.admitted_items),
       exactDuplicates: numberValue(row.exact_duplicates),
       routineNoiseRejects: numberValue(row.routine_noise_rejects),

@@ -60,8 +60,19 @@ describe('early strategic qualification', () => {
       const candidate = makeCandidateFromDecision({ fingerprint: 'fixture', headline: row.text, summary: row.text, canonicalUrl: 'https://example.com/fact', snapshotIds: [1], sourceIds: ['test-official'], discoveredAt: '2026-09-07', decision });
       const provider = new MockGambitProvider(request => ({ value: request.role === 'triage' ? { eventImportance: 0.8, aiTechRelevance: true, political: { excluded: false, reasons: [] }, evidenceSufficient: true, shouldDeepAnalysisRun: true } : { decision: 'NO_GAMBIT_WORTH_PUBLISHING', reason: 'No defensible forecast.' }, provider: 'mock', modelId: 'TEST_ONLY', latencyMs: 0 } as GambitLLMResponse<never>));
       const result = await runGambitStages(candidate, [evidence(row.text)], { providers: { triage: provider, gambit_analysis: provider } });
-      expect(provider.requests.map(request => request.role)).toEqual(['triage', 'gambit_analysis']);
+      // Phase 1 (T2) added ONE bounded analysis re-sample when the model answers
+      // NO_GAMBIT, because the stage samples and Phase 0 measured ~50% flipping
+      // on identical input. The invariant this test protects is unchanged --
+      // every golden scenario reaches analysis, and nothing downstream (critic,
+      // composition) runs without a usable thesis -- so the retry is asserted as
+      // BOUNDED rather than forbidden.
+      const roles = provider.requests.map(request => request.role);
+      expect(roles[0]).toBe('triage');
+      expect(roles.slice(1).every(role => role === 'gambit_analysis')).toBe(true);
+      expect(roles.filter(role => role === 'gambit_analysis').length).toBeLessThanOrEqual(2);
+      expect(roles).not.toContain('critic');
       expect(result.status).toBe('NO_GAMBIT');
+      expect(result.analysisAttempts).toBe(1);
     }
   });
 });

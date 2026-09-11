@@ -1,0 +1,21 @@
+-- 0028_gambit_version_noise_stats.sql
+-- Additive migration: durable per-run count of items discarded by the
+-- version-noise pre-filter.
+--
+-- Phase 1 added a pre-fetch-stage filter that drops pre-release titles
+-- (nightly/rc/alpha/beta/dev) and version-only titles whose body is too short to
+-- carry a strategic event. Without its own counter, a future run with
+-- strategic_eligible = 0 would be indistinguishable between:
+--
+--   * the sources genuinely published nothing strategic, and
+--   * the new filter discarded the whole corpus.
+--
+-- That blind spot is exactly what made the previous zero-publication state take
+-- a full audit round to characterise, so the counter is persisted rather than
+-- inferred.
+--
+-- Strictly additive: no old migration is edited, no historical row is rewritten.
+-- Rows written before this migration keep the DEFAULT 0; migration 0025 already
+-- established that pre-migration history is NULL-or-default stats, not evidence.
+
+ALTER TABLE gambit_discovery_stats ADD COLUMN version_noise_items INTEGER NOT NULL DEFAULT 0;

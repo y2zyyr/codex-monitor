@@ -1,0 +1,716 @@
+{
+  "fixtureVersion": 1,
+  "generatedAt": "2026-09-11T08:48:19.723083+00:00",
+  "source": "read-only SELECT against production D1 codex-monitor-db gambit_candidates (id, headline, source_ids_json, status, rejection_reason, strategic_value, evidence_sufficient, discovered_at)",
+  "purpose": "Phase 0 baseline: freezes the production candidate funnel as of 2026-09-11. Sanitized: no summaries, no evidence quotes, no fingerprints, no URLs.",
+  "counts": {
+    "total": 58,
+    "byStatus": {
+      "REJECTED": 58
+    },
+    "byRejectionReason": {
+      "INSUFFICIENT_EVIDENCE": 2,
+      "LOW_STRATEGIC_VALUE": 51,
+      "NON_FALSIFIABLE": 4,
+      "POLITICAL_TOPIC_EXCLUDED": 1
+    }
+  },
+  "candidates": [
+    {
+      "id": 1,
+      "headline": "v2.22.0",
+      "sourceIds": [
+        "google-python-genai-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "NON_FALSIFIABLE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-05T17:07:01.247Z"
+    },
+    {
+      "id": 2,
+      "headline": "v2.21.0",
+      "sourceIds": [
+        "google-python-genai-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "POLITICAL_TOPIC_EXCLUDED",
+      "strategicValue": 0.48000000000000004,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-05T17:07:01.247Z"
+    },
+    {
+      "id": 3,
+      "headline": "v2.20.0",
+      "sourceIds": [
+        "google-python-genai-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-05T17:07:01.247Z"
+    },
+    {
+      "id": 4,
+      "headline": "v0.2.152",
+      "sourceIds": [
+        "anthropic-claude-agent-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "NON_FALSIFIABLE",
+      "strategicValue": 0.48000000000000004,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T02:30:16.359Z"
+    },
+    {
+      "id": 5,
+      "headline": "v0.2.151",
+      "sourceIds": [
+        "anthropic-claude-agent-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "NON_FALSIFIABLE",
+      "strategicValue": 0.48000000000000004,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T02:30:16.359Z"
+    },
+    {
+      "id": 6,
+      "headline": "v0.2.150",
+      "sourceIds": [
+        "anthropic-claude-agent-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "NON_FALSIFIABLE",
+      "strategicValue": 0.48000000000000004,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T02:30:16.359Z"
+    },
+    {
+      "id": 7,
+      "headline": "Piloting the world's first double-blind AI evaluations",
+      "sourceIds": [
+        "google-deepmind-rss"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T14:24:39.481Z"
+    },
+    {
+      "id": 8,
+      "headline": "Intelligent transcription with Gemini 3.5 Transcribe",
+      "sourceIds": [
+        "google-deepmind-rss"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T14:24:39.481Z"
+    },
+    {
+      "id": 9,
+      "headline": "From Atari to EVE Online: Building on 15 Years of AI Research in Games",
+      "sourceIds": [
+        "google-deepmind-rss"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-07T14:24:39.481Z"
+    },
+    {
+      "id": 10,
+      "headline": "Release v0.60.0-nightly.20260908.g85aca163f",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-08T02:30:16.377Z"
+    },
+    {
+      "id": 11,
+      "headline": "Release v0.60.0-nightly.20260907.g85aca163f",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-08T02:30:16.377Z"
+    },
+    {
+      "id": 12,
+      "headline": "Release v0.60.0-nightly.20260906.g85aca163f",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-08T02:30:16.377Z"
+    },
+    {
+      "id": 13,
+      "headline": "GitHub Enterprise Server 3.22 is now generally available",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 14,
+      "headline": "New customer portal help.github.com",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 15,
+      "headline": "Automatic Dependabot access to GitHub-hosted registries",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 16,
+      "headline": "AlphaGenome Atlas: A predictive map of every possible DNA letter change in the human genome",
+      "sourceIds": [
+        "google-deepmind-rss"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 17,
+      "headline": "v3.10.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 18,
+      "headline": "v3.9.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 19,
+      "headline": "v3.8.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 20,
+      "headline": "rust-v0.154.0-alpha.9",
+      "sourceIds": [
+        "openai-codex-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 21,
+      "headline": "0.154.0-alpha.8",
+      "sourceIds": [
+        "openai-codex-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 22,
+      "headline": "0.154.0-alpha.7",
+      "sourceIds": [
+        "openai-codex-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 23,
+      "headline": "v1.4.0",
+      "sourceIds": [
+        "anthropic-python-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 24,
+      "headline": "v1.3.0",
+      "sourceIds": [
+        "anthropic-python-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 25,
+      "headline": "v1.2.0",
+      "sourceIds": [
+        "anthropic-python-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 26,
+      "headline": "v3.1.2",
+      "sourceIds": [
+        "microsoft-graphrag-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 27,
+      "headline": "Release v0.61.0-nightly.20260909.ged2ac40df",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 28,
+      "headline": "Release v0.59.0",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 29,
+      "headline": "Release v0.60.0-preview.0",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 30,
+      "headline": "wrangler@4.130.0",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 31,
+      "headline": "@cloudflare/workers-auth@0.6.10",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 32,
+      "headline": "@cloudflare/runtime-types@0.0.23",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 33,
+      "headline": "[v1.30.0] Scheduled job filters, repo-aware revision pinning and more",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 34,
+      "headline": "v1.30.0.rc0",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 35,
+      "headline": "[v1.29.0] Fix Xet downloads rate limits, bucket visibility updates, and security fixes",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 36,
+      "headline": "v2.19",
+      "sourceIds": [
+        "nvidia-transformer-engine-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "INSUFFICIENT_EVIDENCE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": false,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 37,
+      "headline": "2.19-cudnn926-check-stage",
+      "sourceIds": [
+        "nvidia-transformer-engine-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 38,
+      "headline": "2.19-stage",
+      "sourceIds": [
+        "nvidia-transformer-engine-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-09T02:30:16.356Z"
+    },
+    {
+      "id": 39,
+      "headline": "CodeQL 2.27.0 adds support for Linux ARM64",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 40,
+      "headline": "Enterprise managed permissions for GitHub Copilot agent operations",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 41,
+      "headline": "GitHub Advanced Security expands trial availability",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 42,
+      "headline": "v3.11.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 43,
+      "headline": "Release v0.61.0-nightly.20260910.ged2ac40df",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 44,
+      "headline": "v2.19.0",
+      "sourceIds": [
+        "nvidia-transformer-engine-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "INSUFFICIENT_EVIDENCE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": false,
+      "discoveredAt": "2026-09-10T02:30:21.310Z"
+    },
+    {
+      "id": 45,
+      "headline": "Refreshed repository pull requests page in public preview",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 46,
+      "headline": "AI Scan for pull request APIs in public preview",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 47,
+      "headline": "Control GitHub Actions cache access with cache-mode",
+      "sourceIds": [
+        "github-changelog"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 48,
+      "headline": "v3.13.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 49,
+      "headline": "v3.12.0",
+      "sourceIds": [
+        "openai-python-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 50,
+      "headline": "v1.5.0",
+      "sourceIds": [
+        "anthropic-python-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 51,
+      "headline": "Release v0.61.0-nightly.20260911.ged2ac40df",
+      "sourceIds": [
+        "google-gemini-cli-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 52,
+      "headline": "v2.23.0",
+      "sourceIds": [
+        "google-python-genai-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 53,
+      "headline": "wrangler@4.131.0",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 54,
+      "headline": "miniflare@5.20260910.0-alpha",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 55,
+      "headline": "@cloudflare/pages-shared@0.13.179",
+      "sourceIds": [
+        "cloudflare-workers-sdk-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 56,
+      "headline": "[v1.31.0] Custom labels for Sandboxes, More resilient downloads and more",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 57,
+      "headline": "v1.31.0.rc1",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    },
+    {
+      "id": 58,
+      "headline": "v1.31.0.rc0",
+      "sourceIds": [
+        "huggingface-hub-releases"
+      ],
+      "status": "REJECTED",
+      "rejectionReason": "LOW_STRATEGIC_VALUE",
+      "strategicValue": 0.2,
+      "evidenceSufficient": true,
+      "discoveredAt": "2026-09-11T02:30:21.554Z"
+    }
+  ]
+}

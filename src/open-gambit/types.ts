@@ -452,6 +452,8 @@ export interface GambitDiscoveryStats {
   rawItemsObserved: number;
   staleItems: number;
   malformedItems: number;
+  /** Items discarded by the version-noise pre-filter (migration 0028). */
+  versionNoiseItems: number;
   admittedItems: number;
   exactDuplicates: number;
   routineNoiseRejects: number;
