@@ -579,6 +579,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.6 — N6 verification (matrix B, 
       console.log([
         call.role, `r${call.replicate}`, `#${call.attemptIndex}`,
         `budget=${call.tokenBudget}`,
+        `lat=${call.latencyMs ?? 'null'}`,
         `reasoning=${t?.reasoningTokens ?? 'null'}`,
         `completion=${t?.completionTokens ?? 'null'}`,
         `finish=${t?.finishReasons.join('/') || 'none'}`,
@@ -597,7 +598,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.6 — N6 verification (matrix B, 
     console.log('<<<TRACES16>>>' + JSON.stringify(traces));
     console.log('<<<RAW16>>>' + JSON.stringify(rawCalls.map(call => ({
       c: call.candidate, r: call.replicate, i: call.attemptIndex, role: call.role,
-      budget: call.tokenBudget, err: call.error,
+      budget: call.tokenBudget, lat: call.latencyMs ?? null, err: call.error,
       t: call.transport ? {
         rt: call.transport.reasoningTokens, ct: call.transport.completionTokens,
         pt: call.transport.promptTokens, fr: call.transport.finishReasons,
