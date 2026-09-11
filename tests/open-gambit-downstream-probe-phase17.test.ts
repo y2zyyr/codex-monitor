@@ -32,11 +32,11 @@
  *
  * SCOPE, DELIBERATELY NARROW
  * --------------------------
- *  - MATRIX B ONLY (forced admission). Admission is not this phase's subject;
- *    Phase 1 repaired it and Phase 1.6 matrix A re-confirmed it. Re-running the
- *    real gate here would let an eligibility change confound the N7
- *    measurement. Phase 1.6's warning stands: matrix B results are NEVER a pass
- *    rate.
+ *  - One matrix per block, selected by `GAMBIT_PHASE17_MATRIX`. T1's diagnosis
+ *    runs `B` (forced admission) so an eligibility change cannot confound the
+ *    critic measurement; Phase 1.6's warning stands that B results are NEVER a
+ *    pass rate. T3's post-fix baseline runs `A`, which exercises the real
+ *    qualification gate and is the only honest `AUTO_PUBLISH_ELIGIBLE` figure.
  *  - critic budget = 6,000 (Phase 1.6 T2's configured value), analysis 8,000,
  *    triage 2,400 -- the production-shaped combination.
  *  - 4 candidates x 5 replicates = 20 runs, versus Phase 1.6's 3 replicates,
@@ -98,17 +98,23 @@ const MAX_REQUESTS_PER_PROCESS = Number(process.env.GAMBIT_PHASE17_MAX_REQUESTS 
 const OUT_DIR = process.env.GAMBIT_PHASE17_OUT ?? 'probe-results';
 
 /**
- * Bypass deterministic admission ONLY, exactly as Phase 1.5/1.6 matrix B did.
+ * Bypass deterministic admission ONLY, and ONLY for matrix B, exactly as Phase
+ * 1.5/1.6 matrix B did. Matrix A must see the real gate, so the override is
+ * neutralised there: a free pass through admission would make the honest-path
+ * pass rate meaningless.
  */
 vi.mock('../src/open-gambit/policy', async importActual => {
   const original = await importActual<typeof import('../src/open-gambit/policy')>();
+  const MATRIX_IS_A = (process.env.GAMBIT_PHASE17_MATRIX ?? 'B').toUpperCase() === 'A';
   return {
     ...original,
-    qualificationGate: (input: Parameters<typeof original.qualificationGate>[0]) => ({
-      ...original.qualificationGate(input),
-      qualified: true,
-      reason: null,
-    }),
+    qualificationGate: (input: Parameters<typeof original.qualificationGate>[0]) => MATRIX_IS_A
+      ? original.qualificationGate(input)
+      : {
+        ...original.qualificationGate(input),
+        qualified: true,
+        reason: null,
+      },
   };
 });
 
@@ -128,6 +134,20 @@ const POSITIVE_TARGETS = [
 const TARGETS = process.env.GAMBIT_PHASE17_TARGETS
   ? process.env.GAMBIT_PHASE17_TARGETS.split('|')
   : POSITIVE_TARGETS;
+
+/**
+ * Which matrix this block runs.
+ *
+ *  - `B` forces deterministic admission ONLY (the real gate's verdict is
+ *    discarded for the value handed back to the pipeline). T1's N7 diagnosis
+ *    uses B so an eligibility change cannot confound the critic measurement.
+ *    B results are NEVER a pass rate.
+ *  - `A` runs the REAL qualification gate end to end: triage, analysis, critic
+ *    and the deterministic publication gate, with no override anywhere. This is
+ *    the only honest `AUTO_PUBLISH_ELIGIBLE` measurement, and it is what T3
+ *    re-runs after the N7 fix.
+ */
+const MATRIX = (process.env.GAMBIT_PHASE17_MATRIX ?? 'B').toUpperCase() === 'A' ? 'A' as const : 'B' as const;
 
 /** Transport facts read from the tee'd SSE branch, independent of the client. */
 interface TransportRecord {
@@ -368,9 +388,9 @@ async function captureFailureShape(
   }
 }
 
-const NODE_ID = `${process.pid}-${BLOCK_OFFSET}`;
+const NODE_ID = `${MATRIX}-${process.pid}-${BLOCK_OFFSET}`;
 
-describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis (matrix B)', () => {
+describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic diagnosis and post-fix baseline', () => {
   it('runs critic at 6,000 over the 4 T6 positives, in a bounded block', async () => {
     const apiKey = process.env.DEEPSEEK_API_KEY || process.env.GAMBIT_LLM_API_KEY;
     expect(apiKey, 'DEEPSEEK_API_KEY must be set').toBeTruthy();
@@ -412,7 +432,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
       .filter(replicate => replicate > BLOCK_OFFSET && replicate <= BLOCK_OFFSET + BLOCK_SIZE);
 
     console.log(`\n===== PHASE 1.7 PROBE CONFIG =====`);
-    console.log(`node=${NODE_ID} baseUrl=${BASE_URL} model=${MODEL}`);
+    console.log(`node=${NODE_ID} baseUrl=${BASE_URL} model=${MODEL} matrix=${MATRIX}`);
     console.log(`replicates=${blockReplicates.join(',')} (of ${REPLICATES}; blockSize=${BLOCK_SIZE} offset=${BLOCK_OFFSET})`);
     console.log(`role budgets: triage=${roles.find(r => r.role === 'triage')!.tokenBudget} analysis=${analysisRole.tokenBudget} critic=${criticRole.tokenBudget}`);
     console.log(`role timeoutMs: triage=${roles.find(r => r.role === 'triage')!.timeoutMs} analysis=${analysisRole.timeoutMs} critic=${criticRole.timeoutMs}`);
@@ -491,7 +511,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
             // for the triage role (Phase 1.6 observed that a leak into analysis
             // produces a `PROVIDER_SCHEMA_INVALID` artifact that mimics a model
             // defect).
-            if (role !== 'triage') return out;
+            if (MATRIX !== 'B' || role !== 'triage') return out;
             const real = (out.value ?? {}) as Record<string, unknown>;
             const forced = {
               shouldDeepAnalysisRun: true,
@@ -542,7 +562,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
         headline: entry.title, summary: entry.summary, content: entry.summary, evidence: [evidence],
       });
       const candidate = actualPolicy.makeCandidateFromDecision({
-        fingerprint: `phase17-b-${entry.sourceId}-${entry.title.slice(0, 40)}`,
+        fingerprint: `phase17-${MATRIX.toLowerCase()}-${entry.sourceId}-${entry.title.slice(0, 40)}`,
         headline: entry.title, summary: entry.summary, canonicalUrl: entry.url,
         snapshotIds: [1], sourceIds: [entry.sourceId], decision,
         discoveredAt: new Date().toISOString(),
@@ -611,9 +631,17 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
       }
       const trace = await runOne(plan.title, plan.replicate);
       traces.push(trace);
-      const criticCall = rawCalls.find(call => call.candidate === plan.title && call.replicate === plan.replicate && call.role === 'critic');
-      const t = criticCall?.transport;
-      console.log(`[B] r${plan.replicate} ${trace.finalStatus.padEnd(22)} critic=${String(trace.critic.accepted).padEnd(5)} err=${String(criticCall?.errorCode ?? 'none').padEnd(22)} lat=${String(criticCall?.latencyMs ?? 'null').padEnd(7)} obs=${String(t?.observedMs ?? 'null').padEnd(7)} fin=${String(t?.finishReasons.join('/') || 'none').padEnd(7)} rt=${String(t?.reasoningTokens ?? 'null').padEnd(6)} ct=${String(t?.completionTokens ?? 'null').padEnd(6)} reason=${trace.reason ?? '-'} ${plan.title.slice(0, 38)}`);
+      // Report EVERY critic attempt in the run, not just the first: once the
+      // bounded re-sample exists a run can make two calls, and reporting only
+      // the first would show a rescue as a failure.
+      const criticCalls = rawCalls.filter(call => call.candidate === plan.title && call.replicate === plan.replicate && call.role === 'critic');
+      const last = criticCalls[criticCalls.length - 1];
+      const attempts = criticCalls.map((call, index) => {
+        const t = call.transport;
+        return `#${index + 1}:${call.errorCode ?? 'ok'}/${t?.finishReasons.join('/') || 'none'}/rt=${t?.reasoningTokens ?? '-'}/ct=${t?.completionTokens ?? '-'}/lat=${call.latencyMs ?? '-'}`;
+      }).join(' | ');
+      console.log(`[${MATRIX}] r${plan.replicate} ${trace.finalStatus.padEnd(22)} critic=${String(trace.critic.accepted).padEnd(5)} retries=${trace.criticAttempts ?? 0} last=${String(last?.errorCode ?? 'none').padEnd(20)} obs=${String(last?.transport?.observedMs ?? 'null').padEnd(7)} reason=${String(trace.reason ?? '-').slice(0, 30).padEnd(30)} ${plan.title.slice(0, 34)}`);
+      console.log(`      critic attempts: ${attempts}`);
 
       // Persist after EVERY replicate: N8 can kill a block mid-flight, and the
       // completed replicates must survive the process that produced them.
@@ -624,6 +652,11 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
     const criticCalls = rawCalls.filter(call => call.role === 'critic');
     const analysisCalls = rawCalls.filter(call => call.role === 'gambit_analysis');
     const triageCalls = rawCalls.filter(call => call.role === 'triage');
+
+    console.log('\n===== CRITIC BOUNDED RE-SAMPLE (N7) =====');
+    const runsWithRetry = traces.filter(trace => (trace.criticAttempts ?? 0) > 0).length;
+    const runsRescued = traces.filter(trace => (trace.criticAttempts ?? 0) > 0 && trace.critic.accepted !== undefined).length;
+    console.log(`runs=${traces.length} runs that spent a re-sample=${runsWithRetry} of which reached a verdict=${runsRescued}`);
 
     console.log('\n===== CRITIC OUTCOME =====');
     const failed = criticCalls.filter(call => call.error);
@@ -684,7 +717,7 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
     console.log('\n===== RUN OUTCOME =====');
     const counts: Record<string, number> = {};
     for (const trace of traces) counts[trace.finalStatus] = (counts[trace.finalStatus] ?? 0) + 1;
-    console.log(`runs=${traces.length} (matrix B - NEVER a pass rate)`);
+    console.log(`runs=${traces.length} (matrix ${MATRIX}${MATRIX === 'B' ? ' - forced admission, NEVER a pass rate' : ' - honest path'})`);
     console.log(`final statuses: ${JSON.stringify(counts)}`);
     const totalIn = rawCalls.reduce((sum, call) => sum + (call.transport?.promptTokens ?? 0), 0);
     const totalOut = rawCalls.reduce((sum, call) => sum + (call.transport?.completionTokens ?? 0), 0);
@@ -711,14 +744,20 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.7 - N7 critic deadline diagnosis 
       c: call.candidate, r: call.replicate, role: call.role, i: call.attemptIndex, d: call.debug,
     }))));
 
-    expect(forcedTriageOverrides, 'triage override leaked outside the triage role')
-      .toBe(triageCalls.filter(call => !call.error).length);
+    if (MATRIX === 'B') {
+      // The forced-admission override must fire exactly once per real triage call
+      // and nowhere else. In matrix A it must never fire at all.
+      expect(forcedTriageOverrides, 'triage override leaked outside the triage role')
+        .toBe(triageCalls.filter(call => !call.error).length);
+    } else {
+      expect(forcedTriageOverrides, 'matrix A must never force admission').toBe(0);
+    }
     expect(traces.length).toBeGreaterThan(0);
   }, 3_600_000);
 });
 
 function blockPath(): string {
-  return `${OUT_DIR}/phase17-block-${BLOCK_OFFSET}-${process.pid}.json`;
+  return `${OUT_DIR}/phase17-${MATRIX}-block-${BLOCK_OFFSET}-${process.pid}.json`;
 }
 
 /**
@@ -729,7 +768,7 @@ function writeBlock(): void {
   try {
     mkdirSync(OUT_DIR, { recursive: true });
     writeFileSync(blockPath(), JSON.stringify({
-      node: NODE_ID, blockOffset: BLOCK_OFFSET, blockSize: BLOCK_SIZE,
+      node: NODE_ID, matrix: MATRIX, blockOffset: BLOCK_OFFSET, blockSize: BLOCK_SIZE,
       replicates: REPLICATES, model: MODEL, baseUrl: BASE_URL,      budgets: { triage: TRIAGE_BUDGET, analysis: ANALYSIS_BUDGET, critic: CRITIC_BUDGET },
       roleTimeoutMs: ROLE_TIMEOUT_MS,
       observedRequests,
