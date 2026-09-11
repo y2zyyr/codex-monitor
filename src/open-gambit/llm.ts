@@ -505,7 +505,9 @@ async function parseStreamingCompletion(body: ReadableStream<Uint8Array>, metric
         inputTokens ??= parsed.inputTokens;
         outputTokens ??= parsed.outputTokens;
       }
-      if (structuredJsonComplete(content)) {
+      // Early stop requires a COMPLETE top-level object, not a repairable
+      // prefix. See `structuredJsonFullyReceived`.
+      if (structuredJsonFullyReceived(content)) {
         metrics.structuredJsonComplete = true;
         return { content: extractStructuredJsonText(content) ?? content, inputTokens, outputTokens };
       }
@@ -548,11 +550,17 @@ function parseSseCompletionLine(line: string): ParsedCompletion | null {
 function mergeStreamContent(existing: string, incoming: string): string {
   if (!incoming) return existing;
   if (!existing) return incoming;
-  // Some compatible gateways emit cumulative message.content values rather
-  // than delta fragments. Avoid duplicating those values into an invalid JSON
-  // string while retaining normal OpenAI delta behavior.
-  if (incoming === existing || incoming.startsWith(existing)) return incoming;
-  if (existing.startsWith(incoming)) return existing;
+  // Some compatible gateways emit cumulative message.content values rather than
+  // delta fragments. A cumulative resend is strictly longer and starts with what
+  // we already accumulated.
+  //
+  // The reverse comparison is deliberately NOT treated as cumulative. No gateway
+  // moves backwards, while a short delta can legitimately coincide with the
+  // opening characters of the accumulated content -- the nested `{` of a streamed
+  // JSON object does exactly that -- and treating it as a resend silently dropped
+  // the character, turning a valid response into `invalid_structured_json`.
+  // Found by the N3 streaming regression test.
+  if (incoming.length > existing.length && incoming.startsWith(existing)) return incoming;
   return existing + incoming;
 }
 
@@ -561,6 +569,45 @@ function structuredJsonComplete(content: string): boolean {
   if (!extracted) return false;
   try {
     const value = JSON.parse(extracted) as unknown;
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a streamed response has FULLY delivered its top-level object.
+ *
+ * STRICT on purpose, and the difference from `structuredJsonComplete` is a real
+ * production defect that was measured live on 2026-09-11:
+ *
+ * `structuredJsonComplete` tolerates a truncated object by closing its missing
+ * delimiters (`repairTruncatedStructuredObject`). That tolerance is correct for
+ * a response the provider actually finished -- a bounded provider can emit every
+ * field and omit only the final braces -- but using it as the streaming EARLY-STOP
+ * test made the reader stop at the first incomplete-but-repairable prefix. A
+ * nested object plus a couple of scalar fields was enough to look "complete", so
+ * every longer streaming response was silently truncated at that point, with
+ * HTTP 200, a valid JSON body, and no error diagnostic.
+ *
+ * Measured effect: the triage stage requires seven fields; the live gateway
+ * streamed the first two, the object was closed by repair, and the pipeline saw
+ * `shouldDeepAnalysisRun: undefined` -- which `normalizeTriage` maps to false, so
+ * `triageAllowsDeepAnalysis()` rejected every candidate before analysis. The same
+ * request with `stream: false` returned all seven fields and passed the gate.
+ *
+ * Conditions: the content must begin with the object, the object must be
+ * genuinely balanced, and it must consume the whole content. Content with a
+ * markdown/prose wrapper simply reads to the end of the stream, where the
+ * existing extraction and repair still apply.
+ */
+function structuredJsonFullyReceived(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return false;
+  const end = balancedObjectEnd(trimmed, 0);
+  if (end === null || end !== trimmed.length - 1) return false;
+  try {
+    const value = JSON.parse(trimmed) as unknown;
     return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0);
   } catch {
     return false;
