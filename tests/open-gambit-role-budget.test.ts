@@ -27,9 +27,18 @@ import { getGambitModelRoleConfig } from '../src/open-gambit/llm';
 
 const EXAMPLE_PATH = fileURLToPath(new URL('../wrangler.example.jsonc', import.meta.url));
 const LOCAL_PATH = fileURLToPath(new URL('../wrangler.jsonc', import.meta.url));
+/**
+ * The tracked staging template. Staging validates the SAME code on the SAME
+ * model, so a staging deployment whose budgets or quota differ from production
+ * would accept a configuration production never runs. `wrangler.staging.jsonc`
+ * itself is deployment-specific and gitignored.
+ */
+const STAGING_EXAMPLE_PATH = fileURLToPath(new URL('../wrangler.staging.example.jsonc', import.meta.url));
 
 interface ProductionShape {
   label: string;
+  /** Absolute path, so a test can re-read the file it asserts on. */
+  path: string;
   maxAnalysisCandidates: number;
   roles: Array<{ role: string; tokenBudget: number; timeoutMs: number }>;
   maxLlmCalls: number;
@@ -81,6 +90,7 @@ function readShape(path: string, label: string): ProductionShape {
   });
   return {
     label,
+    path,
     maxAnalysisCandidates: Number(jsoncStringVariable(source, 'GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN')),
     roles: roles.map(role => ({ role: role.role, tokenBudget: role.tokenBudget, timeoutMs: role.timeoutMs })),
     maxLlmCalls: Number(jsoncStringVariable(source, 'GAMBIT_MAX_LLM_CALLS_PER_RUN')),
@@ -136,12 +146,18 @@ function bestCaseTokens(shape: ProductionShape): number {
 const SHAPES: ProductionShape[] = [
   readShape(EXAMPLE_PATH, 'wrangler.example.jsonc'),
   ...(existsSync(LOCAL_PATH) ? [readShape(LOCAL_PATH, 'wrangler.jsonc')] : []),
+  ...(existsSync(STAGING_EXAMPLE_PATH) ? [readShape(STAGING_EXAMPLE_PATH, 'wrangler.staging.example.jsonc')] : []),
 ];
 
 describe('Phase 1.6 T2: the documented production LLM shape is reasoning-budget-safe', () => {
   it('found every deployment config under its own label', () => {
     expect(SHAPES.length).toBeGreaterThan(0);
     expect(SHAPES[0].label).toBe('wrangler.example.jsonc');
+    // Both TRACKED templates must always be present. `wrangler.jsonc` is
+    // gitignored, so it is reported when present and never required.
+    const labels = SHAPES.map(shape => shape.label);
+    expect(labels, 'the tracked production template must be covered').toContain('wrangler.example.jsonc');
+    expect(labels, 'the tracked staging template must be covered').toContain('wrangler.staging.example.jsonc');
   });
 
   it('gives the analysis role the 8,000-token budget N6 requires', () => {
@@ -215,14 +231,20 @@ describe('Phase 1.6 T2: the documented production LLM shape is reasoning-budget-
     }
   });
 
-  it('states the translation quota explicitly in the tracked template', () => {
+  it('states the translation quota explicitly in every tracked template', () => {
     // Phase 1.5 §8.4 item 3: the quota must not silently depend on a code
     // default, because a future change to that default would move the bound
-    // without touching any deployment file. The template is the tracked
-    // authority, so it is asserted; the gitignored production file is reported
-    // rather than asserted, and is the remaining Phase 1.6 T4 follow-up.
-    const example = SHAPES.find(shape => shape.label === 'wrangler.example.jsonc')!;
-    expect(example.translationQuotaDeclared, 'wrangler.example.jsonc must declare GAMBIT_MAX_TRANSLATION_LLM_*').toBe(true);
+    // without touching any deployment file. Phase 1.7 T4 finished this for the
+    // production file too; the tracked templates are the authority asserted
+    // here, and any gitignored deployment file present locally is asserted with
+    // them so a local config cannot drift below the template.
+    for (const shape of SHAPES) {
+      expect(shape.translationQuotaDeclared, `${shape.label} must declare GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN`).toBe(true);
+      expect(
+        /"GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN"/u.test(readFileSync(shape.path, 'utf8')),
+        `${shape.label} must declare GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN`,
+      ).toBe(true);
+    }
     for (const shape of SHAPES) {
       expect(shape.translationCalls, `${shape.label}: effective translation call quota`).toBe(CODE_DEFAULT_TRANSLATION_CALLS);
       expect(shape.translationTokens, `${shape.label}: effective translation token quota`).toBe(CODE_DEFAULT_TRANSLATION_TOKENS);

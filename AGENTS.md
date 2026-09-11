@@ -120,7 +120,7 @@ all enabled sources
 | `GAMBIT_MAX_HTTP_REQUESTS_PER_RUN` | 20 |
 | `GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN` | `3, global` |
 | `GAMBIT_MAX_LLM_CALLS_PER_RUN` | `8 per fresh Workflow budget` |
-| `GAMBIT_MAX_LLM_TOKENS_PER_RUN` | `28,000 per fresh Workflow budget` |
+| `GAMBIT_MAX_LLM_TOKENS_PER_RUN` | `33,000 per fresh Workflow budget` |
 | `GAMBIT_MAX_ITEMS_PER_SOURCE` | 3 |
 | `GAMBIT_MAX_ITEM_AGE_DAYS` | 30 |
 
@@ -133,11 +133,35 @@ all enabled sources
 单候选（一个 fresh Workflow budget）的 token 账，按角色**声明**的预算预扣（`optionalStage` 在每次尝试前 `consume`，不是按实际用量）：
 
 ```text
-最坏路径  triage 2,400×2 + analysis 8,000×2 + critic 6,000 = 26,800 tokens / 5 calls
-最佳路径  triage 2,400   + analysis 8,000   + critic 6,000 = 16,400 tokens / 3 calls
+最坏路径  triage 2,400×2 + analysis 8,000×2 + critic 6,000×2 = 32,800 tokens / 6 calls
+最佳路径  triage 2,400   + analysis 8,000   + critic 6,000   = 16,400 tokens / 3 calls
 ```
 
-`GAMBIT_MAX_LLM_TOKENS_PER_RUN=28,000` 必须覆盖**最坏**路径（余量 1,200），`GAMBIT_MAX_LLM_CALLS_PER_RUN=8` 覆盖 5 次调用。上限不足时该 candidate 以 `GAMBIT_LLM_BUDGET_EXCEEDED` fail closed，绝不降级。
+`GAMBIT_MAX_LLM_TOKENS_PER_RUN=33,000` 必须覆盖**最坏**路径（余量 200），`GAMBIT_MAX_LLM_CALLS_PER_RUN=8` 覆盖 6 次调用。上限不足时该 candidate 以 `GAMBIT_LLM_BUDGET_EXCEEDED` fail closed，绝不降级。
+
+三个 `×2` 分别是 triage、analysis 与 critic 的**恰好一次**有界重采样。critic 的重采样只针对**操作性失败**（见 N7），不针对判断性拒绝。
+
+### critic 的操作性失败与有界重采样（N7）
+
+critic 是确定性发布门之前的最后一次 LLM 调用，因此它在这里失败是最昂贵的位置：triage 已通过、analysis 已产出 QUALIFIED 与 trajectories，然后整次 run 以**没有任何裁决**结束。
+
+Phase 1.6 测得 critic 在 3,000 下 11 次中 8 次截断，在 6,000 下 12 次中约 4 次截断。**Phase 1.7 T1 精确诊断了残余尾部**：在 critic 6,000 下，存活的失败**不是** deadline 撞墙，而是 **token 墙**——每一次都以 `finish_reason=length` 结束、`reasoning_tokens = completion_tokens = 6,000`、content 0–506 字节，即模型在预算耗尽时**仍在 reasoning，从未输出答案**。21 次调用中 5 次是这一形态，2 次是 deadline 被杀。判定性拒绝率不是问题：critic 对它能裁决的候选接受约 2/3。
+
+**方向由证据决定，不是偏好**：
+
+| 方案 | 对残余尾部的实际效果 | 结论 |
+| --- | --- | --- |
+| 提高 `tokenBudget` 到 8,000 | 测得成功调用已达 29.7 s（clamp 30,000 ms），8,000 会把 token 墙**转换成 deadline 墙**，并每次多付约 8 s | 无效 |
+| 提高 `timeoutMs` clamp | 21 次里最多救回 2 次（9.5%），却改动**所有非 translation role** 的代码级上限 | 不划算 |
+| **有界 critic 操作性重采样** | 单次失败率 p → p²（p≈0.33 时 33% → 11%） | **采用** |
+
+因而不变量如下（与 0027/0029 同构，2026-09-11 实施）：
+
+- 仅当 critic 返回**可用的裁决**失败时重采样；错误码 allowlist 恰好是**瞬时传输**结果：`timeout`、`network_error`、`stream_read_error`、`empty_response`、`invalid_structured_json`，以及任何 `http_*`。**未知错误码 fail closed**（不重采样）。
+- **绝不**重采样判断性拒绝（`accepted=false` 带具体 concern）：那是策略判断，重roll 等于为判断题换一个答案，与政治排除不重采样同理。
+- **绝不**重采样 `GAMBIT_LLM_BUDGET_EXCEEDED`：预算是**请求前**检查，耗尽的预算在下次调用仍然耗尽，重采样只会烧 wall clock 与 call 槽位。
+- 重采样只能**升级**：失败或 schema 不可用的重采样**保留第一次的失败**，因此上报的 reason 始终是真正让该候选出局的错误。
+- 计数写入 `gambit_candidates.critic_attempts`（migration `0030`），0 = 第一次尝试就已裁决（无论通过、拒绝还是成功）。
 
 ### LLM 角色预算与两个不可配置的上限（N6）
 
@@ -234,7 +258,13 @@ UI localization 与 generated editorial translation 是两套不同系统。Moni
 Claude Fable 5 · GPT-5.6 Sol · DeepSeek V4 Pro
 ```
 
-这些是 presentation identities，不一定是 provider/model IDs。实际 runtime routing 来自 Gambit provider/model configuration 与 role overrides（经过审计的 production-shaped config 使用了 `opencode-go` provider label 和 `mimo-v2.5` runtime model）。必须保持 operational provenance 的真实性并将其分离；不得从 public identity 推导 routing，也不得在没有明确 product decision 时把 runtime ID 呈现为 public identity。
+这些是 presentation identities，不一定是 provider/model IDs。实际 runtime routing 来自 Gambit provider/model configuration 与 role overrides。必须保持 operational provenance 的真实性并将其分离；不得从 public identity 推导 routing，也不得在没有明确 product decision 时把 runtime ID 呈现为 public identity。
+
+**runtime provider/model 决策（2026-09-11，Phase 1.7 T4，经用户授权）**：production 的 `GAMBIT_LLM_PROVIDER` / `GAMBIT_LLM_BASE_URL` / `GAMBIT_LLM_MODEL` 定为 `deepseek` / `https://api.deepseek.com` / `deepseek-flash`。
+
+理由是**预算与实测模型必须一致**：Phase 1.6 的 role budget（analysis 8,000、critic 6,000）与 Phase 1.7 T1 的 N7 诊断全部是在 `deepseek-flash` 上测定的，而此前的部署变量仍指向 `opencode-go` / `mimo-v2.5`（Phase 1.5 之前的基线模型）。两者若不一致，生产就运行在一个**未测定的 (model, budget) 组合**上，这是部署前阻塞项。切换后，production 的 (model, budget) 组合与已测定的一致。
+
+不得在没有明确 product decision 的情况下改动 provider/model，也不得把 runtime ID 当作 public identity。
 
 ## Cloudflare 与生产资源
 
@@ -260,7 +290,7 @@ health payload 的 `schemaVersion: "0024_gambit_political_provenance"` 不是 D1
 
 ## 数据库与 migration discipline
 
-Migrations 是 append-only。绝不得编辑已经应用的 production migration；应新增 numbered migration，检查 foreign keys/indexes/triggers，并在 release 前验证 parity。仓库当前包含截至 `0028_gambit_version_noise_stats.sql` 的 migrations。
+Migrations 是 append-only。绝不得编辑已经应用的 production migration；应新增 numbered migration，检查 foreign keys/indexes/triggers，并在 release 前验证 parity。仓库当前包含截至 `0030_gambit_critic_attempts.sql` 的 migrations。
 
 相关 contracts：
 
@@ -272,9 +302,11 @@ Migrations 是 append-only。绝不得编辑已经应用的 production migration
 - `0026` 增加 Tibo classifier resilience fields。
 - `0027` 增加 `gambit_candidates.analysis_attempts`：candidate 消耗的 bounded analysis 重试次数（0 = 第一次就决定）。它是 RETRY 计数，不是总尝试数。
 - `0028` 增加 `gambit_discovery_stats.version_noise_items`：被 version-noise 前置过滤器丢弃的条目数，使 future 的 zero-pass run 能区分“source 没有发布战略内容”与“新过滤器丢掉了全部内容”。
+- `0029` 增加 `gambit_candidates.triage_attempts`：candidate 消耗的 bounded triage 重采样次数。语义同 `0027`（RETRY 计数，不是总尝试数）。
+- `0030` 增加 `gambit_candidates.critic_attempts`：candidate 消耗的 bounded critic **操作性**重采样次数（见 N7）。返回可用裁决的 critic 记 0，即使 critic 确实跑过。
 - Gambit original predictions 是 immutable。Resolution events 与 corrections 必须 append-only 且有 evidence backing；保留 original statements、probabilities、targets、deadlines、hashes 和 provenance。
 
-安全的 local checks 是 `npm run db:migrate:local`、`npm run migration:parity` 和 `node scripts/verify-gambit-migration.mjs`。`npm run migration:parity` 针对 fresh temporary database 运行 current-chain Gambit verifier，并检查 Gambit schema/immutability contracts；其 explicit assertions 覆盖关键的 `0021`/`0023`/`0024` contracts，报告的 latest migration 是 `0028`（本地验证结果：`overall=true`、19 tables、18 indexes、0 foreign-key violations）。release 期间还要直接查询 production `d1_migrations` 与 `sqlite_master`；health `schemaVersion` marker 是独立的 `GAMBIT_CONFIG_VERSION` value。较早的 monitor `0019 → 0020` transition 由 `tests/migration-parity.test.ts`/`scripts/verify-migration-parity.mjs` 覆盖，而不是由该 package script 覆盖。`npm run db:migrate` 会应用 remote D1，是 production mutation：只能在明确授权的 release 中使用。
+安全的 local checks 是 `npm run db:migrate:local`、`npm run migration:parity` 和 `node scripts/verify-gambit-migration.mjs`。`npm run migration:parity` 针对 fresh temporary database 运行 current-chain Gambit verifier，并检查 Gambit schema/immutability contracts；其 explicit assertions 覆盖关键的 `0021`/`0023`/`0024` contracts，报告的 latest migration 是 `0030`，并显式断言三个 retry counter 列（`analysis_attempts` / `triage_attempts` / `critic_attempts`）都存在于 fresh database（本地验证结果：`overall=true`、19 tables、18 indexes、0 foreign-key violations）。release 期间还要直接查询 production `d1_migrations` 与 `sqlite_master`；health `schemaVersion` marker 是独立的 `GAMBIT_CONFIG_VERSION` value。较早的 monitor `0019 → 0020` transition 由 `tests/migration-parity.test.ts`/`scripts/verify-migration-parity.mjs` 覆盖，而不是由该 package script 覆盖。`npm run db:migrate` 会应用 remote D1，是 production mutation：只能在明确授权的 release 中使用。
 
 ## 生产安全与凭据
 
@@ -339,6 +371,7 @@ Tests 与 review 必须继续覆盖以下 invariant classes，而不能只覆盖
 - routine patch/dependency noise，以及 zero deep-analysis LLM calls；
 - strategic-event 在不要求 source forecast text 的情况下进入 analysis 的能力；
 - evidence grounding、final falsifiability、critic gate、translation readiness，以及 no-publication/empty-state behavior；
+- 三个有界重采样各自的“只能升级、不能降级”语义，以及 critic 只对操作性失败重采样（判断性拒绝与 `GAMBIT_LLM_BUDGET_EXCEEDED` 绝不重采样）；
 - political provenance consistency 与 fail-closed malformed decisions；
 - Tibo direct-source verification、reset precedence 与 trusted-context rules；
 - Community Turnstile/abuse controls、server-issued agent identities，以及 original-content/translation boundaries；

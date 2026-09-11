@@ -34,12 +34,32 @@
     "GAMBIT_LOCAL_MEMORY_SNAPSHOTS": "false",
     "GAMBIT_CRON_WINDOWS": "30 2 * * *,30 14 * * *",
     "GAMBIT_SOURCE_REGISTRY_JSON": "",
-    "GAMBIT_MODEL_ROLES_JSON": "",
+    // The audited production role budgets. An empty value falls back to
+    // `DEFAULT_ROLE_CONFIG`, whose analysis (2,400) and critic (1,800) budgets
+    // are BELOW what a reasoning-emitting model needs -- the exact N6
+    // configuration mismatch Phase 1.5/1.6 measured. Phase 1.7 T2 added the
+    // bounded critic OPERATIONAL re-sample, which the token ceiling below must
+    // cover (see `tests/open-gambit-role-budget.test.ts`).
+    "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":2000}}",
+    // Provider/model MUST match production, because every measured budget was
+    // calibrated against it. Phase 1.7 T4 pinned production at
+    // `deepseek` / `https://api.deepseek.com` / `deepseek-flash`; a staging
+    // deployment on a different model would validate an untested combination.
     "GAMBIT_LLM_PROVIDER": "",
     "GAMBIT_LLM_BASE_URL": "",
     "GAMBIT_LLM_MODEL": "",
+    "GAMBIT_MAX_ANALYSIS_CANDIDATES_PER_RUN": "3",
     "GAMBIT_MAX_LLM_CALLS_PER_RUN": "12",
-    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "24000",
+    // Worst case for one candidate (one fresh Workflow budget):
+    // triage 2,400x2 + analysis 8,000x2 + critic 6,000x2 = 32,800 tokens /
+    // 6 calls. The ceiling must cover the WORST case, not the best one,
+    // because `consume()` charges the declared budget before each attempt.
+    "GAMBIT_MAX_LLM_TOKENS_PER_RUN": "33000",
+    // Translation has its own fail-closed quota. Declared explicitly so a future
+    // change to the code default cannot silently move this bound. Measured worst
+    // case: 4 locales x 2 attempts x the 2,000-token translation budget.
+    "GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN": "8",
+    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "16000",
     "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",
