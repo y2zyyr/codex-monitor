@@ -55,9 +55,27 @@ export interface GambitStageResult {
   analysis?: GambitAnalysis;
   critic?: GambitCriticResult;
   draft?: GambitDraft;
+  /** Bounded analysis retries actually spent (0 = the first attempt decided). */
+  analysisAttempts?: number;
 }
 
 const GAMBIT_PROMPT_VERSION = `${BASE_PROMPT_VERSION}-strategic-eligibility-v1`;
+
+/**
+ * How many bounded re-samples the analysis stage may spend when it answers
+ * `NO_GAMBIT_WORTH_PUBLISHING`.
+ *
+ * The analysis stage is a sampling call, and Phase 0 measured the same request
+ * against the same evidence flipping between QUALIFIED and NO_GAMBIT on roughly
+ * half of replays. Candidate fingerprints are stable and the Workflow id is
+ * derived deterministically from the candidate, so without a retry a coin flip
+ * permanently discarded about half of the genuinely admissible material. One
+ * re-sample removes the flip from the funnel WITHOUT loosening any gate: the
+ * verdict that decides the candidate is still the model's own structured output
+ * validated by the same deterministic publication gate. The bound stays at 1 so
+ * the worst-case extra cost is one analysis call per candidate.
+ */
+const GAMBIT_ANALYSIS_RETRY_LIMIT = 1;
 
 const DEFAULT_TRIAGE: GambitTriageResult = {
   eventImportance: 0.6,
@@ -178,41 +196,67 @@ export async function runGambitStages(
   }
 
   const analysisRole = roleConfig('gambit_analysis', roles);
+  const analysisRequest: GambitLLMRequest = {
+    role: 'gambit_analysis',
+    schemaName: 'GambitAnalysisV1',
+    system: analysisSystemPrompt(),
+    user: `${candidate.headline}\n${candidate.summary}\n\n${evidenceForModel(evidence, evidence.map(item => ({
+      id: item.snapshotId,
+      sourceId: item.sourceId,
+      requestedUrl: item.canonicalUrl,
+      finalUrl: item.canonicalUrl,
+      canonicalUrl: item.canonicalUrl,
+      title: item.title,
+      publisher: item.publisher,
+      publishedAt: item.publishedAt,
+      retrievedAt: now.toISOString(),
+      normalizedContent: item.quote,
+      contentHash: item.contentHash,
+      extractorVersion: 'gambit-html-1',
+      sourceQualityTier: item.sourceTier,
+    } as GambitSourceSnapshot)))}`,
+    tokenBudget: analysisRole.tokenBudget,
+    timeoutMs: analysisRole.timeoutMs,
+    retryLimit: analysisRole.retryLimit,
+  };
+  // The request is built once and reused byte-for-byte by the retry: a
+  // re-sample changes only the provider's sampling, never the prompt, the
+  // evidence, or the schema.
   const analysisResult = await optionalStage<GambitAnalysisResult>(
     'ANALYSIS',
     analysisRole,
     dependencies.providers?.gambit_analysis,
-    {
-      role: 'gambit_analysis',
-      schemaName: 'GambitAnalysisV1',
-      system: analysisSystemPrompt(),
-      user: `${candidate.headline}\n${candidate.summary}\n\n${evidenceForModel(evidence, evidence.map(item => ({
-        id: item.snapshotId,
-        sourceId: item.sourceId,
-        requestedUrl: item.canonicalUrl,
-        finalUrl: item.canonicalUrl,
-        canonicalUrl: item.canonicalUrl,
-        title: item.title,
-        publisher: item.publisher,
-        publishedAt: item.publishedAt,
-        retrievedAt: now.toISOString(),
-        normalizedContent: item.quote,
-        contentHash: item.contentHash,
-        extractorVersion: 'gambit-html-1',
-        sourceQualityTier: item.sourceTier,
-      } as GambitSourceSnapshot)))}`,
-      tokenBudget: analysisRole.tokenBudget,
-      timeoutMs: analysisRole.timeoutMs,
-      retryLimit: analysisRole.retryLimit,
-    },
+    analysisRequest,
     dependencies,
     candidateId,
   );
   if (analysisResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('ANALYSIS', analysisResult.error), triage: usableTriage };
-  const analysis = normalizeAnalysis(analysisResult.value);
+  let analysis = normalizeAnalysis(analysisResult.value);
   if (!analysis) return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage };
+  let analysisAttempts = 0;
+  while (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING' && analysisAttempts < GAMBIT_ANALYSIS_RETRY_LIMIT) {
+    analysisAttempts += 1;
+    const retryResult = await optionalStage<GambitAnalysisResult>(
+      'ANALYSIS',
+      analysisRole,
+      dependencies.providers?.gambit_analysis,
+      analysisRequest,
+      dependencies,
+      candidateId,
+    );
+    const retryAnalysis = retryResult.error ? null : normalizeAnalysis(retryResult.value);
+    // A re-sample can only UPGRADE a NO_GAMBIT verdict into a usable Gambit. A
+    // retry that fails, or that returns an unusable schema, never overwrites the
+    // first valid verdict, so retrying cannot turn a definite answer into an
+    // operational failure. A still-NO_GAMBIT retry simply consumes the bound.
+    if (!retryAnalysis) break;
+    if (retryAnalysis.decision === 'QUALIFIED') {
+      analysis = retryAnalysis;
+      break;
+    }
+  }
   if (analysis.decision === 'NO_GAMBIT_WORTH_PUBLISHING') {
-    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage };
+    return { status: 'NO_GAMBIT', candidateId, reason: analysis.reason, publicationDecision: 'NO_GAMBIT_WORTH_PUBLISHING', triage: usableTriage, analysisAttempts };
   }
 
   const criticRole = roleConfig('critic', roles);
@@ -246,8 +290,8 @@ export async function runGambitStages(
     dependencies,
     candidateId,
   );
-  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis };
-  if (!criticResult.value || typeof criticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis };
+  if (criticResult.error) return { status: 'FAILED', candidateId, reason: operationalProviderReason('CRITIC', criticResult.error), triage: usableTriage, analysis, analysisAttempts };
+  if (!criticResult.value || typeof criticResult.value !== 'object') return { status: 'FAILED', candidateId, reason: 'PROVIDER_SCHEMA_INVALID', triage: usableTriage, analysis, analysisAttempts };
   const critic = normalizeCritic(criticResult.value);
   const publicationGate = deterministicPublicationGate(candidate, analysis, critic, now);
   if (publicationGate.errors.length > 0) {
@@ -276,6 +320,7 @@ export async function runGambitStages(
         analysis,
         critic,
         politicalDecision,
+        analysisAttempts,
       };
     }
     return {
@@ -288,11 +333,12 @@ export async function runGambitStages(
       analysis,
       critic,
       draft,
+      analysisAttempts,
     };
   }
 
   const draft = composeDraft(candidate, evidence, analysis, critic, dependencies, now);
-  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft };
+  return { status: 'AUTO_PUBLISH_ELIGIBLE', candidateId, publicationDecision: 'AUTO_PUBLISH_ELIGIBLE', triage: usableTriage, analysis, critic, draft, analysisAttempts };
 }
 
 export async function runQualifiedGambitWorkflow(
@@ -327,6 +373,12 @@ export async function runQualifiedGambitWorkflow(
   const snapshots = await repository.getSnapshots(candidate.snapshotIds);
   const evidence = snapshots.map(snapshotToEvidence);
   const stageResult = await runGambitStages(candidate, evidence, dependencies);
+  // Record the retry spend for every outcome -- including NO_GAMBIT and FAILED
+  // -- so the sampling flip rate is measurable from production data rather than
+  // inferred, and is not lost when the candidate leaves the pool.
+  if (stageResult.analysisAttempts) {
+    await repository.recordCandidateAnalysisAttempts(input.candidateId, stageResult.analysisAttempts);
+  }
   if (stageResult.status === 'FAILED') {
     await repository.setCandidateStatus(input.candidateId, 'DISCOVERED', null);
     const result: GambitWorkflowResult = {

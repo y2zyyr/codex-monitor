@@ -1,5 +1,22 @@
 import type { GambitEvidence } from './types';
 
+/**
+ * Admission-rule version.
+ *
+ * Bump this whenever anything that can change a candidate's admission verdict
+ * changes: a signal rule here, the matching granularity, the maintenance/noise
+ * filters, or `qualificationGate`'s thresholds in `policy.ts`.
+ *
+ * It is an input to the candidate fingerprint (`sources.ts`), so bumping it
+ * makes previously rejected items identifiable as new candidates and therefore
+ * re-evaluated by the next discovery run. Without this, `findCandidateByFingerprint`
+ * matches forever and a rules fix can never reach already-seen items -- which is
+ * exactly how 58 production candidates stayed rejected after the rules were
+ * changed. A bump is deliberate and one-off: it re-opens every previously seen
+ * item exactly once.
+ */
+export const GAMBIT_ELIGIBILITY_RULES_VERSION = 'gambit-eligibility-v1';
+
 /** Analysis access, never publication approval. Signals must occur in the
  * preserved non-discovery evidence, not merely a headline or supplied score. */
 export interface StrategicSubstance {

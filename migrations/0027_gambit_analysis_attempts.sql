@@ -1,0 +1,21 @@
+-- 0027_gambit_analysis_attempts.sql
+-- Additive migration: how many BOUNDED analysis retries a candidate consumed.
+--
+-- The analysis stage is a sampling call, not a deterministic function. Phase 0
+-- measured the same request against the same evidence flipping between
+-- QUALIFIED and NO_GAMBIT on roughly half of replays, while candidate
+-- fingerprints are stable and the Workflow id is deterministically derived from
+-- the candidate. A single unlucky sample therefore lost a candidate permanently,
+-- with no retry path. Phase 1 allows at most one bounded re-sample; this column
+-- records how many were actually spent, so the flip rate becomes measurable from
+-- production data instead of inferred from a local experiment.
+--
+-- Semantics: 0 = the first attempt decided (no retry spent),
+--            1 = one bounded retry was spent.
+-- It is a RETRY counter, not a total attempt counter.
+--
+-- Strictly additive: no old migration is edited and no historical row is
+-- rewritten. Rows written before this migration keep the DEFAULT 0, which
+-- correctly reads as "no retry was available in that code path".
+
+ALTER TABLE gambit_candidates ADD COLUMN analysis_attempts INTEGER NOT NULL DEFAULT 0;

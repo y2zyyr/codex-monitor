@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from './canonical';
 import { GambitRunBudget } from './budget';
 import { fetchEvidence, GAMBIT_FEED_EXTRACTOR_VERSION, isHostnameAllowed, normalizeGambitUrl } from './evidence';
+import { GAMBIT_ELIGIBILITY_RULES_VERSION } from './eligibility';
 import { makeCandidateFromDecision, qualificationGate } from './policy';
 import type {
   GambitCandidate,
@@ -320,11 +321,28 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item
   return results;
 }
 
-export async function fingerprintCandidate(title: string, canonicalUrl: string, content: string, stableId?: string): Promise<string> {
-  const normalized = stableId
+/**
+ * Fingerprint a discovered item.
+ *
+ * The admission-rule version is part of the identity on purpose. An exact
+ * fingerprint dedup permanently skips anything already seen, which is correct
+ * for re-reporting the same evidence, but it also meant a candidate rejected by
+ * an older, stricter rule set could never be re-evaluated -- so fixing the rules
+ * could not reach the items they were fixed for. Including the version makes a
+ * rules change open exactly one new evaluation pass, while re-running the same
+ * rules stays idempotent.
+ */
+export async function fingerprintCandidate(
+  title: string,
+  canonicalUrl: string,
+  content: string,
+  stableId?: string,
+  rulesVersion: string = GAMBIT_ELIGIBILITY_RULES_VERSION,
+): Promise<string> {
+  const identity = stableId
     ? `stable:${normalizeContent(stableId).slice(0, 500)}`
     : `${normalizeTitle(title)}|${canonicalUrl}|${normalizeContent(content).slice(0, 2_000)}`;
-  return sha256Hex(normalized);
+  return sha256Hex(`rules:${rulesVersion}|${identity}`);
 }
 
 export async function candidateFromDiscoveryItem(item: DiscoveryItem, snapshotId: number): Promise<{

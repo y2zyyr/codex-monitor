@@ -229,6 +229,19 @@ export class GambitRepository {
       .bind(status, rejectionReason, now, id).run();
   }
 
+  /**
+   * Record how many bounded analysis retries a candidate consumed (migration
+   * 0027). 0 means the first analysis attempt decided the candidate. The value
+   * is clamped: it is operational telemetry, and a corrupted counter must never
+   * be able to widen the retry bound or fail the run.
+   */
+  async recordCandidateAnalysisAttempts(id: number, attempts: number, now = new Date().toISOString()): Promise<void> {
+    const parsed = typeof attempts === 'number' && Number.isFinite(attempts) ? Math.floor(attempts) : 0;
+    const bounded = Math.min(10, Math.max(0, parsed));
+    await this.db.prepare('UPDATE gambit_candidates SET analysis_attempts = ?, updated_at = ? WHERE id = ?')
+      .bind(bounded, now, id).run();
+  }
+
   /** Persist the policy decision that accompanied a triage/gate outcome. */
   async recordPoliticalDecision(id: number, decision: GambitPoliticalDecision, now = new Date().toISOString()): Promise<void> {
     await this.db.prepare(`
