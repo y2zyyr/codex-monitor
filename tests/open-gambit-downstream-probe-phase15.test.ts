@@ -156,8 +156,18 @@ function entryFor(title: string): CorpusEntry {
  * JSON, first/last characters, finish_reason and usage. It deliberately does NOT
  * record prompt text or the model's full output, and it is never persisted.
  *
- * Bounded to one capture per (candidate, matrix, role) so a systemic failure
- * cannot multiply cost.
+ * Bounded to one capture per (candidate, replicate, matrix, role, seq) so a
+ * systemic failure cannot multiply cost.
+ *
+ * TWO DEFECTS FIXED IN PHASE 1.6 T4
+ * ---------------------------------
+ * 1. The caller stored this function's RETURN VALUE without `await`, so every
+ *    entry serialised as `{}` -- the published `<<<FAILSHAPE>>>` line in the
+ *    Phase 1.5 report was a list of 38 empty objects and carried no information
+ *    at all. This, not the dedup key, was the primary defect.
+ * 2. The dedup key was `matrix|candidate|role`, which collapsed every replicate
+ *    after the first into `{note:'already-captured'}` and made the remaining
+ *    captures useless even once awaited. It now includes `replicate` and `seq`.
  */
 const capturedFailures = new Set<string>();
 
@@ -180,9 +190,9 @@ async function captureFailureShape(
   apiKey: string,
   request: any,
 ): Promise<Record<string, unknown>> {
-  const key = `${matrix}|${candidate}|${callRole}`;
+  const key = `${matrix}|${candidate}|${replicate}|${callRole}|${seq}`;
   if (capturedFailures.has(key)) {
-    return { matrix, role: callRole, seq, note: 'already-captured' };
+    return { matrix, role: callRole, seq, replicate, note: 'already-captured' };
   }
   capturedFailures.add(key);
 
@@ -371,7 +381,9 @@ describe.skipIf(!ENABLED)('Open Gambit Phase 1.5 — downstream baseline redo', 
               candidate, replicate, matrix, seq, role, attemptIndex,
               value: null,
               error: error instanceof Error ? `${(error as any).code ?? error.name}:${error.message}` : String(error),
-              debug: captureFailureShape(candidate, replicate, matrix, role, seq, apiKey, request),
+              // MUST be awaited: an un-awaited Promise stringifies to `{}`, which
+              // is exactly how this line came to emit 38 empty objects.
+              debug: await captureFailureShape(candidate, replicate, matrix, role, seq, apiKey, request),
             });
             throw error;
           }

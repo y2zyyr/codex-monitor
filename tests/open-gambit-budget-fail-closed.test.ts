@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { gambitBudgetFromEnv, GambitRunBudget, type GambitBudgetLimits, type GambitBudgetNamespace } from '../src/open-gambit/budget';
 import { getGambitModelRoleConfig, providerForRole } from '../src/open-gambit/llm';
 import {
+  DEFAULT_X_API_DAILY_LIMIT,
+  DEFAULT_X_API_POLL_INTERVAL_MINUTES,
   getXApiDailyLimit,
   getXApiPollIntervalMinutes,
   shouldRunXApiSync,
 } from '../src/utils/schedule';
 import {
+  DEFAULT_NORMAL_SEARCH_INTERVAL_HOURS,
+  DEFAULT_WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT,
+  DEFAULT_WEB_SEARCH_DAILY_LIMIT,
   getWebSearchDailyLimit,
   getWebSearchActiveModeDailyLimit,
   getNormalSearchIntervalHours,
 } from '../src/utils/search-schedule';
+import { expectFailClosedBound, expectFailClosedZeroableBound, JSON_SAFE_DEFAULT_INPUTS, JSON_SAFE_RANGE_INPUTS } from './helpers/fail-closed-bounds';
 
 /**
  * Open Gambit — Phase 1.5 T3: fail-open audit across budgets and bounded numerics.
@@ -286,38 +292,42 @@ describe('T3 fail-open audit: bounded numeric fields in the LLM client', () => {
 
 describe('T3 fail-open audit: Tibo schedule budgets are fail-closed', () => {
   it('never yields a non-finite X API daily limit', () => {
-    for (const raw of ['abc', '', 'NaN', 'Infinity', '-1', '1e999', undefined]) {
-      const limit = getXApiDailyLimit({ X_API_DAILY_LIMIT: raw } as never);
-      expect(Number.isFinite(limit), `X_API_DAILY_LIMIT=${raw} -> ${limit}`).toBe(true);
-      expect(limit).toBeGreaterThanOrEqual(0);
-    }
+    // `Math.max(0, ...)`: a zero limit is the documented "disabled" value, so it
+    // is valid here rather than a fail-open defect.
+    expectFailClosedZeroableBound(
+      'X_API_DAILY_LIMIT',
+      raw => getXApiDailyLimit({ X_API_DAILY_LIMIT: raw } as never),
+      { documentedDefault: DEFAULT_X_API_DAILY_LIMIT, stringInputsOnly: true },
+    );
   });
 
   it('never yields a non-finite X API poll interval', () => {
-    for (const raw of ['abc', '', 'NaN', '-30', undefined]) {
-      const interval = getXApiPollIntervalMinutes({ X_API_POLL_INTERVAL_MINUTES: raw } as never);
-      expect(Number.isFinite(interval)).toBe(true);
-      expect(interval).toBeGreaterThan(0);
-    }
+    expectFailClosedBound(
+      'X_API_POLL_INTERVAL_MINUTES',
+      raw => getXApiPollIntervalMinutes({ X_API_POLL_INTERVAL_MINUTES: raw } as never),
+      { documentedDefault: DEFAULT_X_API_POLL_INTERVAL_MINUTES, stringInputsOnly: true },
+    );
   });
 
   it('never yields a non-finite web search daily limit', () => {
-    for (const raw of ['abc', '', 'NaN', 'Infinity', '-4', undefined]) {
-      const normal = getWebSearchDailyLimit({ MAX_WEB_SEARCH_REQUESTS_PER_DAY: raw } as never);
-      const active = getWebSearchActiveModeDailyLimit({ WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: raw } as never);
-      expect(Number.isFinite(normal), `normal limit from ${raw}`).toBe(true);
-      expect(Number.isFinite(active), `active limit from ${raw}`).toBe(true);
-      expect(normal).toBeGreaterThanOrEqual(0);
-      expect(active).toBeGreaterThanOrEqual(0);
-    }
+    expectFailClosedZeroableBound(
+      'MAX_WEB_SEARCH_REQUESTS_PER_DAY',
+      raw => getWebSearchDailyLimit({ MAX_WEB_SEARCH_REQUESTS_PER_DAY: raw } as never),
+      { documentedDefault: DEFAULT_WEB_SEARCH_DAILY_LIMIT, stringInputsOnly: true },
+    );
+    expectFailClosedZeroableBound(
+      'WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT',
+      raw => getWebSearchActiveModeDailyLimit({ WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT: raw } as never),
+      { documentedDefault: DEFAULT_WEB_SEARCH_ACTIVE_MODE_DAILY_LIMIT, stringInputsOnly: true },
+    );
   });
 
   it('never yields a non-finite normal search interval', () => {
-    for (const raw of ['abc', '', 'NaN', '0', '-3', undefined]) {
-      const hours = getNormalSearchIntervalHours({ NORMAL_SEARCH_INTERVAL_HOURS: raw } as never);
-      expect(Number.isFinite(hours)).toBe(true);
-      expect(hours).toBeGreaterThan(0);
-    }
+    expectFailClosedBound(
+      'NORMAL_SEARCH_INTERVAL_HOURS',
+      raw => getNormalSearchIntervalHours({ NORMAL_SEARCH_INTERVAL_HOURS: raw } as never),
+      { documentedDefault: DEFAULT_NORMAL_SEARCH_INTERVAL_HOURS, stringInputsOnly: true },
+    );
   });
 
   it('fails closed to disabled when the X API daily limit is unparseable-zero', () => {
@@ -331,5 +341,118 @@ describe('T3 fail-open audit: Tibo schedule budgets are fail-closed', () => {
     expect(decision.allowed).toBe(false);
     expect(decision.dailyLimit).toBe(0);
     expect(Number.isFinite(decision.dailyLimit)).toBe(true);
+  });
+});
+
+/**
+ * Phase 1.6 T4: the same defect class, now asserted through the shared helper
+ * for the two producer shapes that Phase 1.5 audited by hand — the role config's
+ * `boundedNumber` fields and the budget namespace resolvers.
+ *
+ * `tokenBudget` is the field N6 was about. Its resolver clamps to a hard ceiling
+ * of 8,000, so an over-ask is silently LOWERED rather than rejected: a config
+ * change that asks for more than the ceiling would otherwise look applied while
+ * measuring something else. The ceiling is pinned here so that raising it is a
+ * deliberate, visible act.
+ */
+describe('Phase 1.6 T4: role-config and budget bounds go through the shared helper', () => {
+  const TEST_ONLY_ENV = { GAMBIT_LLM_MODEL: 'TEST_ONLY_RUNTIME_MODEL', GAMBIT_LLM_PROVIDER: 'TEST_ONLY_PROVIDER' };
+
+  /** Resolve one role after overriding a single field. */
+  function resolveRole(roleName: string, field: string, raw: unknown) {
+    const roles = getGambitModelRoleConfig({
+      ...TEST_ONLY_ENV,
+      GAMBIT_MODEL_ROLES_JSON: JSON.stringify({ [roleName]: { [field]: raw } }),
+    });
+    return roles.find(role => role.role === roleName)!;
+  }
+
+  const BASELINE_ROLES = getGambitModelRoleConfig({ ...TEST_ONLY_ENV, GAMBIT_MODEL_ROLES_JSON: '{}' });
+
+  /**
+   * Every role field below is reached through `GAMBIT_MODEL_ROLES_JSON`, so the
+   * input has to survive `JSON.stringify` — see `JSON_SAFE_DEFAULT_INPUTS`.
+   */
+  const JSON_INPUTS = {
+    defaultInputs: JSON_SAFE_DEFAULT_INPUTS,
+    rangeInputs: JSON_SAFE_RANGE_INPUTS,
+  };
+
+  it('clamps the role tokenBudget ceiling at 8,000 and never fails open', () => {
+    for (const baseline of BASELINE_ROLES) {
+      expectFailClosedBound(
+        `${baseline.role}.tokenBudget`,
+        raw => resolveRole(baseline.role, 'tokenBudget', raw).tokenBudget,
+        { documentedDefault: baseline.tokenBudget, ...JSON_INPUTS },
+      );
+    }
+    // The ceiling is a deliberate clamp, not a fail-open: an over-ask lands on
+    // the ceiling instead of on Infinity.
+    expect(resolveRole('gambit_analysis', 'tokenBudget', 1_000_000).tokenBudget).toBe(8_000);
+    expect(resolveRole('gambit_analysis', 'tokenBudget', 8_000).tokenBudget).toBe(8_000);
+  });
+
+  it('keeps timeoutMs bounded per role, with the wider translation deadline', () => {
+    for (const baseline of BASELINE_ROLES) {
+      expectFailClosedBound(
+        `${baseline.role}.timeoutMs`,
+        raw => resolveRole(baseline.role, 'timeoutMs', raw).timeoutMs,
+        { documentedDefault: baseline.timeoutMs, ...JSON_INPUTS },
+      );
+    }
+    // A request deadline has no "0 means disabled" reading: 0 must be lifted to
+    // the 500 ms floor rather than becoming an instant abort.
+    expect(resolveRole('triage', 'timeoutMs', 0).timeoutMs).toBe(500);
+    // translation may legitimately run longer than the other roles.
+    expect(resolveRole('translation', 'timeoutMs', 1_000_000).timeoutMs).toBe(60_000);
+    expect(resolveRole('triage', 'timeoutMs', 1_000_000).timeoutMs).toBe(30_000);
+  });
+
+  it('keeps retryLimit bounded, zeroable, and below the transport amplifier cap', () => {
+    for (const baseline of BASELINE_ROLES) {
+      // retryLimit=0 (no retry) is meaningful, so zero must survive.
+      expectFailClosedZeroableBound(
+        `${baseline.role}.retryLimit`,
+        raw => resolveRole(baseline.role, 'retryLimit', raw).retryLimit,
+        { documentedDefault: baseline.retryLimit, ...JSON_INPUTS },
+      );
+      expect(resolveRole(baseline.role, 'retryLimit', 0).retryLimit).toBe(0);
+    }
+    expect(resolveRole('triage', 'retryLimit', 99).retryLimit).toBe(2);
+  });
+
+  it('normalises every budget namespace resolver to its documented default', () => {
+    const documentedDefaults: Array<[keyof GambitBudgetLimits, number, boolean]> = [
+      ['maxLlmCalls', 12, false],
+      ['maxLlmTokens', 24_000, false],
+      ['maxTranslationLlmCalls', 8, false],
+      ['maxTranslationLlmTokens', 16_000, false],
+      ['maxSearchRequests', 6, false],
+      ['maxXRequests', 6, false],
+      ['maxGithubRequests', 6, false],
+      ['maxHttpRequests', 20, false],
+    ];
+    for (const [field, documentedDefault, zeroable] of documentedDefaults) {
+      const resolve = (raw: unknown) => (new GambitRunBudget({ [field]: raw } as GambitBudgetLimits).limits)[field];
+      expectFailClosedBound(`GambitRunBudget.${field}`, resolve, { documentedDefault, zeroIsValid: zeroable });
+    }
+  });
+
+  it('normalises every budget environment variable to its documented default', () => {
+    const envDefaults: Array<[string, string, number, boolean]> = [
+      ['GAMBIT_MAX_LLM_CALLS_PER_RUN', 'maxLlmCalls', 12, false],
+      ['GAMBIT_MAX_LLM_TOKENS_PER_RUN', 'maxLlmTokens', 24_000, false],
+      ['GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN', 'maxTranslationLlmCalls', 8, false],
+      ['GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN', 'maxTranslationLlmTokens', 16_000, false],
+      ['GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN', 'maxSearchRequests', 6, false],
+      ['GAMBIT_MAX_X_REQUESTS_PER_RUN', 'maxXRequests', 6, false],
+      ['GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN', 'maxGithubRequests', 6, false],
+      ['GAMBIT_MAX_HTTP_REQUESTS_PER_RUN', 'maxHttpRequests', 20, false],
+    ];
+    for (const [envName, field, documentedDefault, zeroable] of envDefaults) {
+      const resolve = (raw: unknown) =>
+        (gambitBudgetFromEnv({ [envName]: raw } as never).limits)[field as keyof GambitBudgetLimits];
+      expectFailClosedBound(`env ${envName}`, resolve, { documentedDefault, zeroIsValid: zeroable });
+    }
   });
 });
