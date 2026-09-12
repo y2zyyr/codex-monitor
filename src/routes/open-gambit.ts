@@ -230,15 +230,18 @@ openGambitApi.post('/provider-diagnostic', async (c) => {
     if (!article) return errorResponse(c, 404, 'ARTICLE_NOT_FOUND', 'The staging article was not found.', id);
     const roles = getGambitModelRoleConfig(c.env);
     const translationRole = roles.find(role => role.role === 'translation');
-    const translationProbeRole = translationRole
-      ? {
-        ...translationRole,
-        ...(diagnosticModelId ? { runtimeModelId: diagnosticModelId } : {}),
-        timeoutMs: diagnosticTranslationTimeoutMs,
-        retryLimit: diagnosticTranslationRetryLimit,
-        tokenBudget: diagnosticTranslationTokenBudget,
-      }
-      : undefined;
+    // `getGambitModelRoleConfig` always returns a translation entry, but this is
+    // a staging-only probe: if the role is somehow unresolved, refuse the probe
+    // rather than letting `translationRequest` invent a budget for it. The
+    // budget for a translation request has exactly one source -- the role.
+    if (!translationRole) return errorResponse(c, 503, 'TRANSLATION_ROLE_UNAVAILABLE', 'No translation role is configured.', id);
+    const translationProbeRole = {
+      ...translationRole,
+      ...(diagnosticModelId ? { runtimeModelId: diagnosticModelId } : {}),
+      timeoutMs: diagnosticTranslationTimeoutMs,
+      retryLimit: diagnosticTranslationRetryLimit,
+      tokenBudget: diagnosticTranslationTokenBudget,
+    };
     const translationProbeRequest = {
       ...translationRequest(article, diagnosticLocale, translationProbeRole),
     };

@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { gambitTranslationValidationErrors, translationRequest } from '../src/open-gambit/publication';
+/**
+ * An explicit translation role for the request-contract tests. Budgets now have
+ * exactly ONE source -- the role -- because the previous `?? 2_000` fallback in
+ * `translationRequest` was a silent path to a budget measured as unusable.
+ */
+const TRANSLATION_ROLE = {
+  role: 'translation',
+  runtimeProvider: 'deepseek',
+  runtimeModelId: 'deepseek-flash',
+  publicAiIdentity: 'DeepSeek V4 Pro',
+  timeoutMs: 60_000,
+  retryLimit: 1,
+  tokenBudget: 4_000,
+} as const;
+
+import { gambitTranslationValidationErrors, translateGambit, translationRequest } from '../src/open-gambit/publication';
 import { getGambitModelRoleConfig } from '../src/open-gambit/llm';
 import { GambitRunBudget } from '../src/open-gambit/budget';
-import type { GambitPublicArticle } from '../src/open-gambit/types';
+import type { GambitModelRoleConfig, GambitPublicArticle } from '../src/open-gambit/types';
 
 /**
  * Open Gambit — translation ARRAY-PARITY CONTRACT regression.
@@ -110,7 +125,7 @@ const PARITY_ARRAYS = ['facts', 'beneficiaries', 'pressuredActors'] as const;
 
 describe('Open Gambit translation array-parity contract', () => {
   it('states the array-parity rule for every array the validator enforces, not just trajectories', () => {
-    const request = translationRequest(article(), 'es');
+    const request = translationRequest(article(), 'es', TRANSLATION_ROLE as unknown as GambitModelRoleConfig);
     const system = request.system;
 
     // The validator enforces exact length parity on these four arrays. The
@@ -160,7 +175,7 @@ describe('Open Gambit translation array-parity contract', () => {
     // rule correctly rejected the sentence as
     // CROSS_LANGUAGE_SENTENCE_CONTAMINATION. The prompt previously never said the
     // text had to be translated rather than copied.
-    const request = translationRequest(article(), 'ja');
+    const request = translationRequest(article(), 'ja', TRANSLATION_ROLE as unknown as GambitModelRoleConfig);
     expect(request.system).toMatch(/Translate EVERY prose field and EVERY array element/i);
     expect(request.system).toMatch(/do not copy a title, sentence, or phrase from the input verbatim/i);
     // It must still permit the proper nouns the rule is designed to tolerate,
@@ -210,6 +225,61 @@ describe('Open Gambit translation array-parity contract', () => {
     const jaCopied = esCopied;
     expect(gambitTranslationValidationErrors(jaCopied, 'ja', target))
       .toContain('JA_CROSS_LANGUAGE_SENTENCE_CONTAMINATION');
+  });
+
+
+  it('FAILS CLOSED instead of inventing a translation budget', async () => {
+    // The prompt has exactly one budget source: the role. A hardcoded fallback
+    // used to live in `translationRequest` (`?? 2_000`) and `roleConfig()`
+    // supplies 1_200 for an unknown role -- two silent paths to a value Phase 1.7
+    // measured as unusable. Neither may be reachable on the write path.
+    const repository = {
+      async saveTranslation() { throw new Error('must not be called when the role is unresolved'); },
+      async recordLLMAttempt() { throw new Error('must not be called when the role is unresolved'); },
+    };
+    const result = await translateGambit(
+      repository as never,
+      article(),
+      1,
+      undefined,
+      undefined,
+      new Date('2026-09-12T00:00:00.000Z'),
+    );
+    expect(result.status).toBe('TRANSLATION_FAILED');
+    expect(result.errors.zh).toBe('TRANSLATION_ROLE_UNAVAILABLE');
+    expect(result.errors.es).toBe('TRANSLATION_ROLE_UNAVAILABLE');
+  });
+
+  it('states in the corrective prompt that BOTH failure classes are retried', () => {
+    // The corrective text previously named only a language-quality failure, so a
+    // locale rejected for array parity was told to fix its language -- the wrong
+    // instruction. The retry bound itself is unchanged.
+    const corrective = translationRequest(
+      article(), 'es', TRANSLATION_ROLE as unknown as GambitModelRoleConfig, { corrective: true },
+    ).system;
+    expect(corrective).toMatch(/REJECTED by the publication validator/i);
+    expect(corrective).toMatch(/array was SHORTER or LONGER/i);
+    expect(corrective).toMatch(/native target-language prose/i);
+    // It must NOT claim the failure was specifically language quality.
+    expect(corrective).not.toMatch(/failed the language-quality check/i);
+  });
+
+  it('keeps the translation retry bound at one extra attempt', () => {
+    // A release must not silently buy more attempts.
+    expect((TRANSLATION_ROLE as unknown as { retryLimit: number }).retryLimit).toBe(1);
+    const roles = getGambitModelRoleConfig({ GAMBIT_LLM_MODEL: 'deepseek-flash', GAMBIT_LLM_PROVIDER: 'deepseek' });
+    expect(roles.find(role => role.role === 'translation')!.retryLimit).toBe(1);
+  });
+
+  it('leaves reasoning enabled for every role except translation', async () => {
+    // `boundedCompletionOptions` is applied ONLY to the translation role, and is
+    // a no-op for any non-DeepSeek base URL, so no other provider or role is
+    // affected by this release.
+    const { boundedCompletionOptions } = await import('../src/utils/llm-request');
+    expect(boundedCompletionOptions('https://api.deepseek.com')).toEqual({ thinking: { type: 'disabled' } });
+    expect(boundedCompletionOptions('https://api.deepseek.com/v1')).toEqual({ thinking: { type: 'disabled' } });
+    expect(boundedCompletionOptions('https://api.openai.com/v1')).toEqual({});
+    expect(boundedCompletionOptions('not a url')).toEqual({});
   });
 
   it('enforces parity for the default translation role budget, not a known-bad one', () => {

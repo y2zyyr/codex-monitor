@@ -11,7 +11,22 @@ import {
 import { analysisSystemPrompt, criticSystemPrompt, triageSystemPrompt, runGambitStages } from '../src/open-gambit/pipeline';
 import { translationRequest } from '../src/open-gambit/publication';
 import { MockGambitProvider } from '../src/open-gambit/llm';
-import type { GambitCandidate, GambitEvidence, GambitLLMResponse, GambitPublicArticle } from '../src/open-gambit/types';
+import type { GambitCandidate, GambitEvidence, GambitLLMResponse, GambitModelRoleConfig, GambitPublicArticle } from '../src/open-gambit/types';
+/**
+ * An explicit translation role for the request-contract tests. Budgets now have
+ * exactly ONE source -- the role -- because the previous `?? 2_000` fallback in
+ * `translationRequest` was a silent path to a budget measured as unusable.
+ */
+const TRANSLATION_ROLE = {
+  role: 'translation',
+  runtimeProvider: 'deepseek',
+  runtimeModelId: 'deepseek-flash',
+  publicAiIdentity: 'DeepSeek V4 Pro',
+  timeoutMs: 60_000,
+  retryLimit: 1,
+  tokenBudget: 4_000,
+} as const;
+
 
 /**
  * Open Gambit — T5 regression: prompt provenance.
@@ -147,7 +162,7 @@ describe('Open Gambit prompt provenance', () => {
       triage: await gambitPromptVersion('triage', triageSystemPrompt()),
       gambit_analysis: await gambitPromptVersion('gambit_analysis', analysisSystemPrompt()),
       critic: await gambitPromptVersion('critic', criticSystemPrompt()),
-      translation: await gambitPromptVersion('translation', translationRequest(article, 'ja').system),
+      translation: await gambitPromptVersion('translation', translationRequest(article, 'ja', TRANSLATION_ROLE as unknown as GambitModelRoleConfig).system),
     };
     for (const [role, version] of Object.entries(versions)) {
       const { revision, fingerprint } = parseGambitPromptVersion(version);
@@ -162,7 +177,7 @@ describe('Open Gambit prompt provenance', () => {
       gambitPromptVersion('triage', triageSystemPrompt()),
       gambitPromptVersion('gambit_analysis', analysisSystemPrompt()),
       gambitPromptVersion('critic', criticSystemPrompt()),
-      gambitPromptVersion('translation', translationRequest(article, 'ja').system),
+      gambitPromptVersion('translation', translationRequest(article, 'ja', TRANSLATION_ROLE as unknown as GambitModelRoleConfig).system),
     ]);
     // Identical texts would make the old single family version harmless; they are
     // not identical, which is exactly why the old constant was not auditable.
@@ -179,8 +194,8 @@ describe('Open Gambit prompt provenance', () => {
   });
 
   it('distinguishes the corrective translation prompt from the initial one', async () => {
-    const initial = await gambitPromptVersion('translation', translationRequest(article, 'ja').system);
-    const corrective = await gambitPromptVersion('translation', translationRequest(article, 'ja', undefined, { corrective: true }).system);
+    const initial = await gambitPromptVersion('translation', translationRequest(article, 'ja', TRANSLATION_ROLE as unknown as GambitModelRoleConfig).system);
+    const corrective = await gambitPromptVersion('translation', translationRequest(article, 'ja', TRANSLATION_ROLE as unknown as GambitModelRoleConfig, { corrective: true }).system);
     expect(parseGambitPromptVersion(corrective).revision).toBe(parseGambitPromptVersion(initial).revision);
     expect(corrective).not.toBe(initial);
   });

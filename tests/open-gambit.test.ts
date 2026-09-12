@@ -993,7 +993,12 @@ describe('Open Gambit public rendering and append-only resolution', () => {
       trajectories: [trajectory()],
       evidence: [evidence()],
     } as GambitPublicArticle;
-    const request = translationRequest(article, 'ja');
+    const request = translationRequest(article, 'ja', {
+      // Explicit role: `translationRequest` no longer defaults a budget, because
+      // the old `?? 2_000` fallback was a silent path to an unusable value.
+      role: 'translation', runtimeProvider: 'deepseek', runtimeModelId: 'deepseek-flash',
+      publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 60_000, retryLimit: 1, tokenBudget: 4_000,
+    } as never);
     const payload = JSON.parse(request.user) as { trajectories: Array<Record<string, unknown>> };
     expect(Object.keys(payload.trajectories[0]).sort()).toEqual([
       'evidenceCriteria',

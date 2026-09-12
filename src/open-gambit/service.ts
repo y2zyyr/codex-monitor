@@ -338,6 +338,9 @@ export async function publishApprovedGambit(
   if (!article || article.articleId !== articleId || article.status !== 'APPROVED') return { published: false, translation: emptyTranslationResult(), article };
   if (article.politicalTopic) return { published: false, translation: emptyTranslationResult(), article };
   const now = options.now ?? new Date();
+  // Merge with the code default so a partial GAMBIT_MODEL_ROLES_JSON that omits
+  // `translation` cannot yield `undefined` here; `getGambitModelRoleConfig`
+  // always returns a translation entry, and this keeps that explicit.
   const translationRole = getGambitModelRoleConfig(env).find(item => item.role === 'translation');
   const translationStatus = await translateGambit(repository, article, revisionId, options.translationProvider, translationRole, now);
   const published = translationStatus.status === 'TRANSLATION_READY'
