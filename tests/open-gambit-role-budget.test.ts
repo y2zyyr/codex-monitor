@@ -71,6 +71,15 @@ function jsoncStringVariable(source: string, name: string): string {
  */
 const CODE_DEFAULT_TRANSLATION_CALLS = 8;
 const CODE_DEFAULT_TRANSLATION_TOKENS = 16_000;
+/**
+ * The effective quota the TRACKED templates must declare, in tokens. Phase 1.7
+ * measured the translation role and found the old 2,000-token budget was
+ * consumed entirely by reasoning, producing EMPTY content on every locale and
+ * blocking all publication; with reasoning disabled the measured peak is 982
+ * tokens, so the budget is 4,000 and the quota must cover the worst case
+ * (4 locales x 2 attempts x 4,000 = 32,000).
+ */
+const DECLARED_TRANSLATION_TOKENS = 32_000;
 
 function optionalNumberVariable(source: string, name: string, fallback: number): number {
   const pattern = new RegExp(`"${name}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'u');
@@ -247,7 +256,13 @@ describe('Phase 1.6 T2: the documented production LLM shape is reasoning-budget-
     }
     for (const shape of SHAPES) {
       expect(shape.translationCalls, `${shape.label}: effective translation call quota`).toBe(CODE_DEFAULT_TRANSLATION_CALLS);
-      expect(shape.translationTokens, `${shape.label}: effective translation token quota`).toBe(CODE_DEFAULT_TRANSLATION_TOKENS);
+      expect(shape.translationTokens, `${shape.label}: effective translation token quota`).toBe(DECLARED_TRANSLATION_TOKENS);
+      // The quota must cover the WORST case the retry bound permits, not the
+      // best case: `consume()` charges the declared budget before each attempt.
+      expect(
+        4 * TRANSLATION_ATTEMPTS_PER_LOCALE * roleBudget(shape, 'translation'),
+        `${shape.label}: the translation quota must cover 4 locales x 2 attempts x the role budget`,
+      ).toBeLessThanOrEqual(shape.translationTokens);
     }
   });
 

@@ -118,7 +118,7 @@
     // that IS the code clamp: Phase 1.7 T1 measured successful critic calls up
     // to 29.7s, so a larger value cannot be expressed and a larger token budget
     // would collide with the deadline before it helped.
-    "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":2000}}",
+    "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":4000}}",
     "GAMBIT_LLM_PROVIDER": "",
     "GAMBIT_LLM_BASE_URL": "",
     "GAMBIT_LLM_MODEL": "",
@@ -146,7 +146,7 @@
     // 4 locales x 2 attempts x the 2,000-token translation role budget = 8 calls
     // / 16,000 tokens.
     "GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN": "8",
-    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "16000",
+    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "32000",
     "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",

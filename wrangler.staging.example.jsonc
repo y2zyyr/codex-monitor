@@ -40,7 +40,7 @@
     // configuration mismatch Phase 1.5/1.6 measured. Phase 1.7 T2 added the
     // bounded critic OPERATIONAL re-sample, which the token ceiling below must
     // cover (see `tests/open-gambit-role-budget.test.ts`).
-    "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":2000}}",
+    "GAMBIT_MODEL_ROLES_JSON": "{\"triage\":{\"timeoutMs\":30000,\"tokenBudget\":2400},\"gambit_analysis\":{\"timeoutMs\":30000,\"tokenBudget\":8000},\"critic\":{\"timeoutMs\":30000,\"tokenBudget\":6000},\"translation\":{\"timeoutMs\":60000,\"tokenBudget\":4000}}",
     // Provider/model MUST match production, because every measured budget was
     // calibrated against it. Phase 1.7 T4 pinned production at
     // `deepseek` / `https://api.deepseek.com` / `deepseek-flash`; a staging
@@ -59,7 +59,7 @@
     // change to the code default cannot silently move this bound. Measured worst
     // case: 4 locales x 2 attempts x the 2,000-token translation budget.
     "GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN": "8",
-    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "16000",
+    "GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN": "32000",
     "GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_X_REQUESTS_PER_RUN": "6",
     "GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN": "6",

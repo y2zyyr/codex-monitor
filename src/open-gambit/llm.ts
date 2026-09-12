@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { boundedCompletionOptions } from '../utils/llm-request';
 import { canonicalJson, sha256Hex } from './canonical';
 import type {
   GambitLLMProvider,
@@ -240,6 +241,30 @@ export class OpenAICompatibleGambitProvider implements GambitLLMProvider {
       stream,
     };
     if (stream) requestPayload.stream_options = { include_usage: true };
+    // TRANSLATION DISABLES REASONING ON DEEPSEEK (Phase 1.7, measured).
+    //
+    // Translation is prose rewriting, not judgement, so the reasoning channel
+    // buys nothing -- but on a reasoning-emitting model it consumes the budget
+    // BEFORE any content is emitted, which is the same failure class as N6:
+    //
+    //   budget 2,000 -> reasoning 1,736, content "" , finish_reason "stop"
+    //                   (NOT "length", which is why it looked like a schema
+    //                    problem) -> pipeline records `empty_response` and the
+    //                   whole publication fails on EVERY locale.
+    //   budget 6,000 -> reasoning still 1,310-3,878, leaving too little room for
+    //                   the 12-key translation schema -> `invalid_structured_json`.
+    //
+    // Measured with reasoning disabled (same article, same prompts):
+    //   completion 448-718 tokens (7-10x smaller), latency 2.3-4.2s
+    //   (vs 9.2-21.4s), all 4 locales parsed with all 12 keys.
+    //
+    // `boundedCompletionOptions` is a NO-OP for any base URL that is not
+    // `https://api.deepseek.com`, so this cannot affect another provider. It is
+    // the same helper the Tibo classifier and Community translation already use
+    // for exactly this reason. Analysis/critic/review roles keep their reasoning.
+    if (request.role === 'translation') {
+      Object.assign(requestPayload, boundedCompletionOptions(this.options.baseUrl));
+    }
     const requestBody = JSON.stringify(requestPayload);
     const requestMetadata = requestDiagnosticMetadata(request, requestBody);
     let lastError = 'provider_error';
