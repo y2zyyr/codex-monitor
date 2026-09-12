@@ -1,7 +1,7 @@
 # Open Gambit 阶段 1.7 — 生产部署报告
 
 **日期**：2026-09-12
-**状态**：**生产已部署，live 只读验证通过。首日观察待定（`30 2 * * *` 首次自动 run）。**
+**状态**：**生产已部署，live 只读验证通过，首日观察已完成（`30 2 * * *` 首次自动 run 已跑完）。**
 **执行授权**：人类已明确授权——轮换生产 `GAMBIT_LLM_API_KEY`、apply 生产 migration `0027`–`0030`、更新 `wrangler.jsonc` provenance、`wrangler deploy` 生产 Worker、只读 live 验证、首日观察。
 
 ---
@@ -16,7 +16,7 @@
 | 3 | 更新生产 `wrangler.jsonc` provenance | ✅ `BUILD_SHA` / `BUILD_TIMESTAMP` / `GAMBIT_CONFIG_VERSION` |
 | 4 | 部署生产 Worker | ✅ **SUCCESS**，Worker `codex-monitor`，Version ID `5d245735-78ae-496b-8ed0-126e2eb8c476` |
 | 5 | 只读 live 验证 | ✅ **全部通过**（含 0 次 401 / 0 次预算越界） |
-| 6 | 首日观察 | ⏳ **待定**——`30 2 * * *` 首次自动 run 尚未发生 |
+| 6 | 首日观察 | ✅ **已完成**——`id=8` 于 `02:30:21Z` 自动触发，`COMPLETED`，无错误 |
 | 7 | 本报告 | ✅ |
 
 **没有任何停止条件被触发。**
@@ -201,17 +201,68 @@ discrepancyRatio   = 0.7059
 
 ---
 
-## 8. 第 6 步：首日观察
+## 8. 第 6 步：首日观察 — **已完成**
 
-**状态：⏳ 待定。** `30 2 * * *` 的首次自动 run 尚未发生（部署完成于 `01:17Z`，窗口在 `02:30Z`）。已布防一个**只读**观察 job（每条语句均为 `SELECT`），以「`started_at > 部署时间戳`」定位本次部署后的首个 run，避免把前一日的结果误归属。观察内容：
+`30 2 * * *` 的首次自动 run 在部署后按计划触发。定位方式为「`started_at > 部署时间戳`」，因此这是**新代码的首个真实 run**，不是前一日的残留记录。
 
-1. `gambit_runs`（漏斗与 `error_message`）
-2. `gambit_discovery_stats`（`strategic_eligible` / `workflow_dispatches`）
-3. `gambit_llm_attempts`（逐 stage 的 `status` / `error_code` / `latency_ms` / `provider` / `model_id`）
-4. **`stage='TRANSLATION'` 的尝试数与成功/失败**（唯一未验证段）
-5. 停止条件复核：`http_401` 与 `GAMBIT_LLM_BUDGET_EXCEEDED` 必须仍为 0
+### 8.1 run 概览
 
-**未伪造任何结果。** 若观察窗口内未发生 run，本报告将保持「待定」，不填写推测值。
+```
+id            = 8
+run_key       = gambit-discovery:2026-09-12:30-2-*-*-*     ← 真实 cron 事件
+status        = COMPLETED
+started_at    = 2026-09-12T02:30:21.741Z
+finished_at   = 2026-09-12T02:30:21.741Z
+error_message = null
+```
+
+### 8.2 漏斗（`gambit_discovery_stats` for run_id=8）
+
+```
+sources_attempted 14   sources_succeeded 14
+raw_items_observed 194   stale_items 79   malformed_items 1
+admitted_items 26        version_noise_items 73   routine_noise_rejects 18
+strategic_eligible 0     global_top_k_selected 0   workflow_dispatches 0
+```
+
+`gambit_runs` 汇总：`candidates_found=26`、`qualified_gambits=0`、`workflow_starts=0`、`no_gambit_rejects=26`、**`error_message=null`**。
+
+**判定：这是健康的零发布结果，且与 staging 收敛到同一结论。**
+
+- 生产与 staging 的漏斗**逐项一致**（14/14 sources、194 raw、26 admitted、0 eligible、0 dispatch）——同一代码、同一模型、同一源集合下的可复现行为。
+- 与 staging 的差异仅在淘汰路径的分布上（staging 记 18 次 `routine_noise_rejects`；生产记 26 次 `no_gambit_rejects`、0 次 routine noise）。**两种路径的最终结果相同：0 个候选通过确定性准入**。对 `AGENTS.md` 的「routine maintenance 应在 deep analysis 之前结束」而言，二者都是正确行为。
+- 26 个 admitted 全部为 routine 版本发布与常规功能更新（`v3.12.0`、`wrangler@4.131.1`、`@cloudflare/deploy-helpers@0.11.1` 等），与此前核对结果一致。
+
+### 8.3 LLM 尝试
+
+**该 run 的候选没有任何 LLM 尝试行**——因为 `strategic_eligible=0`，`workflow_dispatches=0`，管线在确定性准入就终止，**一次 LLM 调用都没有发起**。
+
+### 8.4 translation 路径（唯一未验证段）
+
+```
+translation_attempts = 0
+```
+
+**translation 在生产依然未被触达。** 与前文一致——这**不是**失败，而是「没有候选走到发布门」的直接后果。**该路径在部署后仍然完全未经验证。**
+
+### 8.5 停止条件复核（全部通过）
+
+| 条件 | 实测 |
+|---|---|
+| `PROVIDER_HTTP_401` | **0** ✅ |
+| `GAMBIT_LLM_BUDGET_EXCEEDED` | **0** ✅ |
+| `POLICY_STATE_INCONSISTENT` | **0** ✅ |
+| run `error_message` | **null** ✅ |
+| 公开页 `TEST_ONLY` / 坏内容 | **0**（`/zh/open-gambit/` HTTP 200、正确空状态 `暂无`）✅ |
+| 健康端点 | `status: ok`、`dbConnected: true`、`commitSha 7bd7754140ae…`、`schemaVersion 0030_gambit_critic_attempts` ✅ |
+
+**没有任何停止条件被触发，未执行任何回滚动作。** 系统在 run 后保持 `status: ok`。
+
+### 8.6 关于 N8 的旁证
+
+run 8 在**数秒内**完成、`error_message=null`、且未发起任何 LLM 调用，因此本次观察**不构成**对 N8（单进程流式调用退化）的证据。N8 仍为机制未确定，生产形态下（每 Workflow ≤6 次调用、全新实例）预期不构成缺陷，但**本文不声称已验证**。
+
+**未伪造任何结果；以上全部为只读查询所得。**
 
 ### 若观察中出现停止条件的处置预案
 
@@ -248,14 +299,14 @@ discrepancyRatio   = 0.7059
 
 | 路径 | staging | 生产 |
 |---|---|---|
-| discovery → 确定性准入 | ✅ 已验证（14/14 sources，26 admitted / 0 eligible） | ⏳ 待首日 run |
-| critic workflow 调度 | ✅ 已验证（手工触发 1 次） | ⏳ 待首日 run |
-| triage → analysis → critic 真实调用 | ✅ 已验证（3 次成功，provider/model 正确） | ⏳ 待首日 run |
-| critic 判断性拒绝不重采样 | ✅ 已验证（`critic_attempts=0`） | ⏳ 待首日 run |
+| discovery → 确定性准入 | ✅ 已验证（14/14 sources，26 admitted / 0 eligible） | ✅ 已验证（run 8：14/14 sources，26 admitted / 0 eligible） |
+| critic workflow 调度 | ✅ 已验证（手工触发 1 次） | ❌ **未触达**（0 dispatch，无候选通过准入） |
+| triage → analysis → critic 真实调用 | ✅ 已验证（3 次成功，provider/model 正确） | ❌ **未触达**（该 run 0 次 LLM 调用） |
+| critic 判断性拒绝不重采样 | ✅ 已验证（`critic_attempts=0`） | ❌ 未触达 |
 | 三个有界重采样**实际触发** | ❌ 未触达 | ❌ 未触达 |
-| **translation（4 locale × 2 attempts）** | ❌ **未触达** | ❌ **未触达** |
+| **translation（4 locale × 2 attempts）** | ❌ **未触达** | ❌ **未触达**（`translation_attempts=0`） |
 | 发布 / `publishAutomaticallyArticle` | ❌ 未触达 | ❌ 未触达 |
-| 自动 cron 形态 | ✅ 已验证（真实 cron 事件触发 1 次） | ⏳ 待首日 run |
+| 自动 cron 形态 | ✅ 已验证（真实 cron 事件触发 1 次） | ✅ 已验证（run 8，真实 `30 2` 事件） |
 
 **没有为了覆盖这些路径而放宽任何门，也没有制造可发布内容。**
 
@@ -281,8 +332,26 @@ discrepancyRatio   = 0.7059
 
 **继续（有条件）。** 部署已完成且 live 验证通过；无停止条件触发。生产现在运行在阶段 1.7 修复后的代码上，schema 与配置 provenance 一致。
 
-**但不得声称「生产已验证可用」**：`translation → publication` 这条路径在**任何环境都未被真实执行过**，而它正是「首次真正发布文章」必经的路径。生产首次发布仍存在未量化的失败概率。
+**但不得声称「生产已验证可用」**：`translation → publication` 这条路径在**任何环境都未被真实执行过**，而它正是「首次真正发布文章」必经的路径。首日 run 之后这一结论**没有改变**——首日 run 的 `translation_attempts=0`，因为 0 个候选通过准入。生产首次发布仍存在未量化的失败概率。
+
+**生产侧唯一被真实执行过的 Gambit LLM 调用，仍然只有 staging 那次手工触发。** 生产自己的 LLM 路径自部署以来**一次都没跑过**（首日 run 在准入即终止）。
 
 **待人工决定的事项**：首日 `02:30Z` run 的观察结果出来后再评估。若该 run 仍为 `strategic_eligible=0`（与 staging 一致的合理结果），则 translation 路径**依旧不会**被覆盖——届时应考虑是否需要在**隔离环境**中以真实候选结构性地验证 translation，而不是等生产首次发布时才发现问题。
 
-**上游未决**：`codex/open-gambit-phase17` 尚未合并到 `main`，也未开 PR。
+**上游未决**：`codex/open-gambit-phase17`（HEAD `8f24825`）尚未合并到 `main`，也未开 PR。
+
+---
+
+## 13. 首次自动 run 后的结论更新
+
+首日 run（`id=8`，`2026-09-12T02:30:21Z`，`COMPLETED`，`error_message=null`）**确认了部署在真实自动调度下稳定**，但**没有推进任何未验证路径**：
+
+| 问题 | 首日 run 后的答案 |
+|---|---|
+| 新代码能在生产 cron 下跑完吗？ | ✅ **能**（14/14 sources，无错误） |
+| 生产 provider/model 配置可用吗？ | ❓ **仍未验证**——该 run 0 次 LLM 调用 |
+| translation 路径可用吗？ | ❌ **仍未验证**（0 次尝试） |
+| 有没有引入 401 / 预算越界 / 策略不一致？ | ✅ **没有** |
+| 需要回滚吗？ | **不需要** |
+
+**下一步的真正阻塞点**：只要 discovery 持续产出 `strategic_eligible=0`，translation 与发布路径就**永远不会**被覆盖，生产会在「看起来健康」的状态下长期保留一个未验证的首次发布风险。建议的处置方向（需你决定，本轮不执行）：在**隔离环境**中用真实候选结构性地驱动一次 translation，而不是把首次验证留给生产首发。
