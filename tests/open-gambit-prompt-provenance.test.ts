@@ -26,6 +26,18 @@ import type { GambitCandidate, GambitEvidence, GambitLLMResponse, GambitPublicAr
  * the version is self-verifying. The FROZEN table below is the reviewed
  * revision-to-text pairing: changing a prompt's wording fails this test until
  * the revision is bumped and this table is updated in the same commit.
+ *
+ * Phase 1.7 updated `gambit-translation-v1` (bffe71fb -> f6c34a28) to state two
+ * parts of the contract the validator already enforced but the prompt omitted:
+ *   - array parity for `facts`/`beneficiaries`/`pressuredActors`, previously
+ *     stated only for `trajectories`, which is why `es` failed with
+ *     FACTS_COUNT_OR_TYPE;
+ *   - that every prose field must actually be TRANSLATED, because the model was
+ *     echoing the English headline verbatim inside otherwise-target-language
+ *     prose, which the language-quality rule correctly rejects as
+ *     CROSS_LANGUAGE_SENTENCE_CONTAMINATION.
+ * The REVISION stays v1 -- the schema and the enforced contract are unchanged,
+ * only wording that had under-specified it -- and the fingerprint records the edit.
  */
 
 /** Reviewed revision -> fingerprint of the prompt text as of Phase 1. */
@@ -33,7 +45,7 @@ const FROZEN_PROMPT_FINGERPRINTS: Record<string, string> = {
   'gambit-triage-v1': '7e189e15',
   'gambit-analysis-v1': '8aaa1e73',
   'gambit-critic-v1': '3eb0e79b',
-  'gambit-translation-v1': 'bffe71fb',
+  'gambit-translation-v1': 'f6c34a28',
 };
 
 const candidate: GambitCandidate = {

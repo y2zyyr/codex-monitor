@@ -137,7 +137,14 @@ const NATIVE_PROSE: Record<string, Record<string, unknown>> = {
   },
 };
 
-const CORRECTIVE_MARKER = 'The previous response failed the language-quality check.';
+/**
+ * Identifies the corrective (second) attempt. Phase 1.7 reworded the corrective
+ * prompt because it previously named ONLY a language-quality failure, while the
+ * retry also fires for structural failures -- and a locale rejected for array
+ * parity was being told to "fix the language", which is the wrong instruction.
+ * This marker tracks the new wording.
+ */
+const CORRECTIVE_MARKER = 'The previous response was REJECTED by the publication validator.';
 
 /**
  * Translation provider. When `failFirstAttemptLocales` is set, the initial
@@ -339,11 +346,13 @@ describe('Open Gambit translation budget (B1)', () => {
 
     const budget = new GambitRunBudget(legacyLimits);
     expect(budget.limits.maxTranslationLlmCalls).toBe(8);
-    expect(budget.limits.maxTranslationLlmTokens).toBe(16_000);
+    // Phase 1.7: the documented default must fund the real worst case,
+    // 4 locales x 2 attempts x the 4,000-token translation role budget = 32,000.
+    expect(budget.limits.maxTranslationLlmTokens).toBe(32_000);
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      expect(budget.consume('gambit_translation', 2_000)).toBe(true);
+      expect(budget.consume('gambit_translation', 4_000)).toBe(true);
     }
-    expect(budget.consume('gambit_translation', 2_000)).toBe(false);
+    expect(budget.consume('gambit_translation', 4_000)).toBe(false);
 
     const invalid = new GambitRunBudget({
       maxLlmCalls: Number.NaN,
@@ -356,7 +365,7 @@ describe('Open Gambit translation budget (B1)', () => {
       maxHttpRequests: 20,
     });
     expect(invalid.limits.maxLlmTokens).toBe(24_000);
-    expect(invalid.limits.maxTranslationLlmTokens).toBe(16_000);
+    expect(invalid.limits.maxTranslationLlmTokens).toBe(32_000);
     expect(invalid.consume('gambit_llm', 24_000)).toBe(true);
     expect(invalid.consume('gambit_llm', 1)).toBe(false);
   });

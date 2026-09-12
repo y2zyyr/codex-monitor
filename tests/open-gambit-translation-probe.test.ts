@@ -55,6 +55,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import corpus from './fixtures/open-gambit/real-corpus-2026-09-11.json';
+import { boundedCompletionOptions } from '../src/utils/llm-request';
+
+function boundedTranslationOptionsForProbe(baseUrl: string): Record<string, unknown> {
+  return boundedCompletionOptions(baseUrl) as Record<string, unknown>;
+}
 
 const ENABLED = process.env.GAMBIT_TRANSLATION_PROBE === '1';
 const BASE_URL = process.env.GAMBIT_TRANSLATION_BASE_URL ?? 'https://api.deepseek.com';
@@ -67,11 +72,26 @@ const TRANSLATION_BUDGET = Number(process.env.GAMBIT_TRANSLATION_BUDGET ?? 6_000
  * 4 locales x 2 attempts x the role budget. Derived, never hardcoded, so the
  * probe cannot measure against a quota the deployment would not have.
  */
-const TRANSLATION_QUOTA = Number(process.env.GAMBIT_TRANSLATION_QUOTA ?? TRANSLATION_BUDGET * 6);
 const TIMEOUT_MS = Number(process.env.GAMBIT_TRANSLATION_TIMEOUT_MS ?? 60_000);
 const REPLICATES = Number(process.env.GAMBIT_TRANSLATION_REPLICATES ?? 1);
 const TARGET_TITLE = process.env.GAMBIT_TRANSLATION_TITLE ?? 'AI Scan for pull request APIs in public preview';
-const LOCALES = ['zh', 'ja', 'fr', 'es'] as const;
+const ALL_LOCALES = ['zh', 'ja', 'fr', 'es'] as const;
+/** Optional locale subset, so a targeted reproduction does not spend on all four. */
+const LOCALES = (process.env.GAMBIT_TRANSLATION_LOCALES
+  ? process.env.GAMBIT_TRANSLATION_LOCALES.split(',').map(v => v.trim()).filter(Boolean)
+  : [...ALL_LOCALES]) as unknown as ReadonlyArray<'zh' | 'ja' | 'fr' | 'es'>;
+
+/** Attempts per locale the publication path permits (initial + one corrective). */
+const MAX_TRANSLATION_ATTEMPTS_PER_LOCALE = 2;
+/**
+ * Derived, never a magic multiplier (a previous revision used `* 6`, which was
+ * both wrong and duplicated knowledge): the quota charges the DECLARED budget
+ * before each attempt, so it must cover EVERY locale's EVERY attempt.
+ */
+const TRANSLATION_QUOTA = Number(
+  process.env.GAMBIT_TRANSLATION_QUOTA
+  ?? LOCALES.length * MAX_TRANSLATION_ATTEMPTS_PER_LOCALE * TRANSLATION_BUDGET,
+);
 
 interface CorpusEntry {
   sourceId: string; title: string; url: string; publishedAt: string | null;
@@ -102,9 +122,10 @@ function summarizeSse(text: string) {
       if (parsed.usage) usage = parsed.usage;
     } catch { /* partial frame */ }
   }
-  let parsedOk = false; let keys = 0;
-  try { keys = Object.keys(JSON.parse(content.trim()) as Record<string, unknown>).length; parsedOk = true; } catch { /* not JSON */ }
+  let parsedOk = false; let keys = 0; let value: unknown = null;
+  try { value = JSON.parse(content.trim()); keys = Object.keys(value as Record<string, unknown>).length; parsedOk = true; } catch { /* not JSON */ }
   return {
+    value,
     frames, contentChars: content.length, reasoningChars, finishReasons,
     promptTokens: usage?.prompt_tokens ?? null,
     completionTokens: usage?.completion_tokens ?? null,
@@ -122,7 +143,7 @@ function createObserver(): { fetchImpl: typeof fetch; records: TransportRecord[]
     const record: TransportRecord = {
       httpStatus: response.status, frames: 0, contentChars: 0, reasoningChars: 0,
       finishReasons: [], promptTokens: null, completionTokens: null, reasoningTokens: null,
-      parsedOk: false, keys: 0, observedMs: 0,
+      parsedOk: false, keys: 0, observedMs: 0, value: null,
     };
     records.push(record);
     if (!response.body) { record.observedMs = Date.now() - startedAt; return response; }
@@ -151,8 +172,16 @@ function createRecorder() {
   const attempts: Array<{ stage: string; role: string; status: string; errorCode: string | null; latencyMs: number | null }> = [];
   const drafts: any[] = [];
   const states: Record<string, string | undefined> = {};
+  /**
+   * Per-locale PRIVACY-SAFE validator diagnostics.
+   *
+   * `TRANSLATION_SCHEMA_INVALID` is an umbrella code that hides which underlying
+   * validator rejected the locale, so nothing here records prose: only error
+   * codes, field PATHS, counts, lengths and booleans.
+   */
+  const diagnostics: Array<Record<string, unknown>> = [];
   return {
-    translations, attempts, drafts, states,
+    translations, attempts, drafts, states, diagnostics,
     async createArticleDraft(draft: any) {
       drafts.push(draft);
       return { articleId: 1, revisionId: 1, draft };
@@ -191,6 +220,57 @@ function createRecorder() {
         errorCode: input.errorCode ?? null, latencyMs: input.response?.latencyMs ?? null,
       });
       return 1;
+    },
+    /**
+     * Decode what the validator actually saw for one locale attempt. Called by
+     * the probe with the provider value it captured from the real transport.
+     */
+    diagnose(locale: string, article: any, value: unknown, parseOk: boolean, contentChars: number) {
+      const record = (value ?? {}) as Record<string, unknown>;
+      const expected = {
+        facts: Array.isArray(article.facts) ? article.facts.length : -1,
+        beneficiaries: Array.isArray(article.beneficiaries) ? article.beneficiaries.length : -1,
+        pressuredActors: Array.isArray(article.pressuredActors) ? article.pressuredActors.length : -1,
+        trajectories: Array.isArray(article.trajectories) ? article.trajectories.length : -1,
+      };
+      const actual = {
+        facts: Array.isArray(record.facts) ? (record.facts as unknown[]).length : -1,
+        beneficiaries: Array.isArray(record.beneficiaries) ? (record.beneficiaries as unknown[]).length : -1,
+        pressuredActors: Array.isArray(record.pressuredActors) ? (record.pressuredActors as unknown[]).length : -1,
+        trajectories: Array.isArray(record.trajectories) ? (record.trajectories as unknown[]).length : -1,
+      };
+      const scalarFields = ['headline', 'surfaceEvent', 'obviousLogic', 'thesis', 'mechanism', 'countercase', 'falsifier', 'uncertainty'];
+      const missingScalars = scalarFields.filter(f => typeof record[f] !== 'string' || !(record[f] as string).trim());
+      const trajectoryShape = Array.isArray(record.trajectories)
+        ? (record.trajectories as any[]).slice(0, 4).map(t => ({
+          keys: t && typeof t === 'object' ? Object.keys(t).sort() : null,
+          predictionStatement: typeof t?.predictionStatement === 'string' && t.predictionStatement.trim().length > 0,
+          reasoning: typeof t?.reasoning === 'string' && t.reasoning.trim().length > 0,
+          evidenceCriteria: typeof t?.evidenceCriteria === 'string' && t.evidenceCriteria.trim().length > 0,
+          falsifier: typeof t?.falsifier === 'string' && t.falsifier.trim().length > 0,
+          probabilityType: typeof t?.probability,
+          deadlineType: typeof t?.deadline,
+          idType: typeof t?.id,
+        }))
+        : null;
+      return {
+        locale,
+        parseOk,
+        contentChars,
+        topLevelKeyCount: Object.keys(record).length,
+        topLevelKeys: Object.keys(record).sort(),
+        expectedLengths: expected,
+        actualLengths: actual,
+        parity: {
+          facts: expected.facts === actual.facts,
+          beneficiaries: expected.beneficiaries === actual.beneficiaries,
+          pressuredActors: expected.pressuredActors === actual.pressuredActors,
+          trajectories: expected.trajectories === actual.trajectories,
+        },
+        missingScalarFields: missingScalars,
+        scalarFieldTypes: Object.fromEntries(scalarFields.map(f => [f, typeof record[f]])),
+        trajectoryShape,
+      };
     },
     async publishAutomaticallyArticle() { return { articleId: 1, revisionId: 1 }; },
     async recordCandidateAnalysisAttempts() { /* no-op */ },
@@ -233,6 +313,8 @@ describe.skipIf(!ENABLED)('Open Gambit translation and publication path (real pr
     expect(translationRole.tokenBudget).toBe(TRANSLATION_BUDGET);
     expect(translationRole.timeoutMs).toBe(TIMEOUT_MS);
 
+    // Mirror exactly what the production provider sends for translation.
+    const boundedOptions = boundedTranslationOptionsForProbe(BASE_URL);
     const observer = createObserver();
     const translationProvider = providerForRole(translationRole, {
       GAMBIT_LLM_API_KEY: apiKey,
@@ -312,6 +394,7 @@ describe.skipIf(!ENABLED)('Open Gambit translation and publication path (real pr
         continue;
       }
 
+      const draftForDiagnostics = stages.draft;
       const repository = createRecorder();
       const budget = new GambitRunBudget({
         maxLlmCalls: 12, maxLlmTokens: 33_000,
@@ -330,9 +413,16 @@ describe.skipIf(!ENABLED)('Open Gambit translation and publication path (real pr
       const records = observer.records.slice(before);
       const translationAttempts = repository.attempts.filter(a => a.stage === 'TRANSLATION');
       const ready = LOCALES.filter(l => repository.states[l] === 'TRANSLATION_READY');
+      // Pair each real transport record with the locale it belongs to, in order,
+      // and decode exactly what the validator would have seen.
+      const diagnostics = records.map((record, index) => repository.diagnose(
+        LOCALES[index] ?? `#${index}`, draftForDiagnostics, record.value, record.parsedOk, record.contentChars,
+      ));
 
       runs.push({
         replicate,
+        draftForDiagnostics,
+        diagnostics,
         published: published.published,
         translationStatus: published.translation.status,
         localeStates: published.translation.localeStates,
@@ -353,8 +443,88 @@ describe.skipIf(!ENABLED)('Open Gambit translation and publication path (real pr
       console.log(`calls=${records.length} completionTokens=${JSON.stringify(records.map(r => r.completionTokens))} reasoningTokens=${JSON.stringify(records.map(r => r.reasoningTokens))}`);
       console.log(`latenciesMs=${JSON.stringify(records.map(r => r.observedMs))} finish=${JSON.stringify(records.map(r => r.finishReasons.join('/') || 'none'))}`);
       console.log(`attemptErrors=${JSON.stringify(translationAttempts.map(a => a.errorCode))}`);
+      for (const d of diagnostics) console.log('DIAG ' + JSON.stringify(d));
       console.log(`budget used: ${budget.usage.translationLlmTokens}/${budget.limits.maxTranslationLlmTokens} tokens, ${budget.usage.translationLlmCalls}/${budget.limits.maxTranslationLlmCalls} calls`);
     }
+
+    // ---------------------------------------------------------------------
+    // PHASE 2 — DIRECT VALIDATOR DIAGNOSTICS.
+    //
+    // The publication path returns only the umbrella `TRANSLATION_SCHEMA_INVALID`
+    // for a locale, and the tee observer cannot see the value (the client
+    // cancels its branch, so a successful call also reports contentChars 0).
+    // So each locale is re-issued with the EXACT production prompt
+    // (`translationRequest` + the same provider options) and the response is run
+    // through the REAL validator against the REAL composed article. This
+    // attributes a failure to a specific error code and field.
+    // ---------------------------------------------------------------------
+    const direct: any[] = [];
+    const RUN_DIRECT = process.env.GAMBIT_TRANSLATION_DIRECT === '1';
+    if (RUN_DIRECT && runs[0]?.draftForDiagnostics) {
+      const { translationRequest, gambitTranslationValidationErrors } = await import('../src/open-gambit/publication');
+      const articleForValidation = runs[0].draftForDiagnostics;
+      for (const locale of LOCALES) {
+        const request = translationRequest(articleForValidation, locale, translationRole, { corrective: false });
+        const startedAt = Date.now();
+        const response = await fetch(`${BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+            'x-opencode-session': 'gambit-translation-diagnostic',
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            messages: [{ role: 'system', content: request.system }, { role: 'user', content: request.user }],
+            response_format: { type: 'json_object' },
+            temperature: 0,
+            max_tokens: request.tokenBudget,
+            stream: false,
+            ...boundedOptions,
+          }),
+          signal: AbortSignal.timeout(180_000),
+        });
+        const envelope: any = await response.json().catch(() => null);
+        const content: string = envelope?.choices?.[0]?.message?.content ?? '';
+        let value: any = null; let parseOk = false;
+        try { value = JSON.parse(content); parseOk = true; } catch { /* not JSON */ }
+        const errors = parseOk
+          ? gambitTranslationValidationErrors(value, locale, articleForValidation)
+          : [`UNPARSEABLE_JSON:${content.length}_chars`];
+        const record = (value ?? {}) as Record<string, unknown>;
+        const scalars = ['headline', 'surfaceEvent', 'obviousLogic', 'thesis', 'mechanism', 'countercase', 'falsifier', 'uncertainty'];
+        direct.push({
+          locale,
+          httpStatus: response.status,
+          latencyMs: Date.now() - startedAt,
+          parseOk,
+          contentChars: content.length,
+          errors,
+          completionTokens: envelope?.usage?.completion_tokens ?? null,
+          reasoningTokens: envelope?.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+          topLevelKeyCount: Object.keys(record).length,
+          topLevelKeys: Object.keys(record).sort(),
+          expectedLengths: {
+            facts: Array.isArray(articleForValidation.facts) ? articleForValidation.facts.length : -1,
+            beneficiaries: Array.isArray(articleForValidation.beneficiaries) ? articleForValidation.beneficiaries.length : -1,
+            pressuredActors: Array.isArray(articleForValidation.pressuredActors) ? articleForValidation.pressuredActors.length : -1,
+            trajectories: Array.isArray(articleForValidation.trajectories) ? articleForValidation.trajectories.length : -1,
+          },
+          actualLengths: {
+            facts: Array.isArray(record.facts) ? (record.facts as unknown[]).length : -1,
+            beneficiaries: Array.isArray(record.beneficiaries) ? (record.beneficiaries as unknown[]).length : -1,
+            pressuredActors: Array.isArray(record.pressuredActors) ? (record.pressuredActors as unknown[]).length : -1,
+            trajectories: Array.isArray(record.trajectories) ? (record.trajectories as unknown[]).length : -1,
+          },
+          missingScalars: scalars.filter(f => typeof record[f] !== 'string' || !(record[f] as string).trim()),
+          trajectoryKeys: Array.isArray(record.trajectories)
+            ? (record.trajectories as any[]).map(t => (t && typeof t === 'object' ? Object.keys(t).sort() : null))
+            : null,
+        });
+        console.log('DIRECT ' + JSON.stringify(direct[direct.length - 1]));
+      }
+    }
+    runs.forEach(r => { delete r.draftForDiagnostics; });
 
     const allReady = runs.filter(r => r.readyLocales?.length === LOCALES.length).length;
     console.log('\n===== VERDICT =====');
@@ -375,6 +545,7 @@ describe.skipIf(!ENABLED)('Open Gambit translation and publication path (real pr
     console.log('<<<TRANSPUB>>>' + JSON.stringify({
       config: { baseUrl: BASE_URL, model: MODEL, budget: TRANSLATION_BUDGET, quota: TRANSLATION_QUOTA, timeoutMs: TIMEOUT_MS },
       runs,
+      direct,
     }));
 
     expect(observer.records.length).toBeGreaterThan(0);

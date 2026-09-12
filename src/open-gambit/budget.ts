@@ -99,11 +99,19 @@ export function gambitBudgetFromEnv(env: Pick<Env, 'GAMBIT_MAX_LLM_CALLS_PER_RUN
     maxLlmCalls: bounded(env.GAMBIT_MAX_LLM_CALLS_PER_RUN, 12, 1, 100),
     maxLlmTokens: bounded(env.GAMBIT_MAX_LLM_TOKENS_PER_RUN, 24_000, 1_000, 500_000),
     // Measured worst case for the translation phase of one Workflow: 4 locales
-    // (zh/ja/fr/es) x 2 attempts (initial + the existing corrective retry) = 8
-    // calls, at the translation role's 2,000-token budget each = 16,000 tokens.
-    // These are the smallest bounds that complete the measured worst case.
+    // (zh/ja/fr/es) x 2 attempts (initial + the corrective retry) = 8 calls, at
+    // the translation role's 4,000-token budget each = 32,000 tokens.
+    //
+    // This default is the fallback whenever `GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN`
+    // is absent, so it must satisfy the same invariant the deployment configs do:
+    //   quota >= locales x maxAttemptsPerLocale x roleBudget
+    // It previously defaulted to 16,000 against a 2,000-token role budget, and
+    // Phase 1.7 measured that pair as unusable (empty content on every locale).
+    // Leaving 16,000 here while the role default became 4,000 would make the
+    // quota fund only TWO locales (4,000 x 2 x 2 = 16,000), silently failing the
+    // rest closed. The two must move together.
     maxTranslationLlmCalls: bounded(env.GAMBIT_MAX_TRANSLATION_LLM_CALLS_PER_RUN, 8, 1, 100),
-    maxTranslationLlmTokens: bounded(env.GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN, 16_000, 1_000, 500_000),
+    maxTranslationLlmTokens: bounded(env.GAMBIT_MAX_TRANSLATION_LLM_TOKENS_PER_RUN, 32_000, 1_000, 500_000),
     maxSearchRequests: bounded(env.GAMBIT_MAX_SEARCH_REQUESTS_PER_RUN, 6, 0, 100),
     maxXRequests: bounded(env.GAMBIT_MAX_X_REQUESTS_PER_RUN, 6, 0, 100),
     maxGithubRequests: bounded(env.GAMBIT_MAX_GITHUB_REQUESTS_PER_RUN, 6, 0, 100),
@@ -139,7 +147,7 @@ function normalizeBudgetLimits(limits: GambitBudgetLimits): GambitBudgetLimits {
     maxLlmCalls: positiveLimit(limits.maxLlmCalls, 12),
     maxLlmTokens: positiveLimit(limits.maxLlmTokens, 24_000),
     maxTranslationLlmCalls: positiveLimit(limits.maxTranslationLlmCalls, 8),
-    maxTranslationLlmTokens: positiveLimit(limits.maxTranslationLlmTokens, 16_000),
+    maxTranslationLlmTokens: positiveLimit(limits.maxTranslationLlmTokens, 32_000),
     maxSearchRequests: positiveLimit(limits.maxSearchRequests, 6),
     maxXRequests: positiveLimit(limits.maxXRequests, 6),
     maxGithubRequests: positiveLimit(limits.maxGithubRequests, 6),

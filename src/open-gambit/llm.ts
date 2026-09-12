@@ -62,10 +62,17 @@ const DEFAULT_ROLE_CONFIG: Array<GambitModelRoleConfig> = [
   { role: 'critic', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'Claude Fable 5', timeoutMs: 18_000, retryLimit: 1, tokenBudget: 1_800 },
   { role: 'trajectory', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'GPT-5.6 Sol', timeoutMs: 14_000, retryLimit: 1, tokenBudget: 1_600 },
   // Translation responses contain multiple localized prose fields plus up to
-  // three forecasts. The 2,000-token bound is the smallest measured bound
-  // that completes the real staging fixture; the 60-second deadline is still
-  // bounded and keeps the existing per-run token ceiling unchanged.
-  { role: 'translation', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 60_000, retryLimit: 1, tokenBudget: 2_000 },
+  // three forecasts. This default is a FALLBACK that applies whenever
+  // `GAMBIT_MODEL_ROLES_JSON` is absent, unparseable, or omits the translation
+  // role, so it must be a value that actually works.
+  //
+  // It previously declared 2,000, which Phase 1.7 measured as a KNOWN-BAD value:
+  // on a reasoning-emitting model the whole budget went to reasoning, content
+  // came back empty, and the pipeline recorded `empty_response` for every
+  // locale -- so a silently-defaulted deployment could never publish at all.
+  // The measured peak with reasoning disabled is 982 tokens; 4,000 is the
+  // measured-safe value and matches the deployment configs.
+  { role: 'translation', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'DeepSeek V4 Pro', timeoutMs: 60_000, retryLimit: 1, tokenBudget: 4_000 },
   { role: 'resolution', runtimeProvider: 'configured-compatible', runtimeModelId: null, publicAiIdentity: 'Claude Fable 5', timeoutMs: 12_000, retryLimit: 1, tokenBudget: 1_200 },
 ];
 

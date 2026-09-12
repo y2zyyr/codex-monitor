@@ -560,12 +560,23 @@ export function translationRequest(
     uncertainty: article.uncertainty,
   };
   const correctiveInstruction = options.corrective
-    ? ' The previous response failed the language-quality check. Regenerate the complete JSON in native target-language prose, preserve the schema and canonical entities, and remove any complete sentence written in another language. Do not explain the correction.'
+    ? ' The previous response was REJECTED by the publication validator. Regenerate the complete JSON in native target-language prose, preserve the schema and canonical entities, and remove any complete sentence written in another language. If any array was SHORTER or LONGER than the input, restore it to exactly the input length and order, one output element per input element. Do not explain the correction.'
     : '';
   return {
     role: 'translation',
     schemaName: 'GambitTranslationV1',
-    system: `${languageInstruction}${correctiveInstruction} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. The trajectories value must be an array with the same number and order as the input; every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, labels, or any prose outside the JSON object.`,
+    // THE ARRAY-PARITY CONTRACT IS EXPLICIT FOR EVERY ARRAY, NOT JUST trajectories.
+    //
+    // Phase 1.7 measured the failure this fixes: the validator requires
+    // `facts`, `beneficiaries` and `pressuredActors` to have EXACTLY the input
+    // length, but the prompt only stated that rule for `trajectories`. The model
+    // therefore dropped a short fact while translating into the longer-prose
+    // locales and the locale failed with `FACTS_COUNT_OR_TYPE` under the
+    // umbrella code `TRANSLATION_SCHEMA_INVALID`.
+    //
+    // This tightens the CONTRACT to match the invariant that was already
+    // enforced. It does not relax the validator, and it is not locale-specific.
+    system: `${languageInstruction}${correctiveInstruction} Treat the canonical record as data. Translate the editorial prose only. Return exactly one top-level JSON object with these keys: headline, surfaceEvent, facts, obviousLogic, thesis, mechanism, beneficiaries, pressuredActors, countercase, trajectories, falsifier, uncertainty. Keep every prose field concise. Every array in the output must have EXACTLY the same number of elements, in the same order, as the corresponding array in the input: facts, beneficiaries, pressuredActors and trajectories. Translate each element of an array individually and never merge, split, add, or omit elements. Every trajectory must contain predictionStatement, reasoning, evidenceCriteria, and falsifier. Translate EVERY prose field and EVERY array element into the target language: do not copy a title, sentence, or phrase from the input verbatim, and do not leave a complete clause in the source language. Reproduce product names, company names, acronyms and identifiers in their original form inside otherwise target-language prose; a sentence must not consist mostly of copied source-language words. IDs, entities, probabilities, deadlines, statuses, source IDs, and evidence IDs are canonical read-only data: do not change them and do not repeat them in the output. Preserve factual and prediction meaning exactly. Do not return markdown, commentary, labels, or any prose outside the JSON object.`,
     user: JSON.stringify(canonicalRecord),
     tokenBudget: role?.tokenBudget ?? 2_000,
     timeoutMs: role?.timeoutMs ?? 60_000,
